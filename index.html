@@ -288,19 +288,27 @@ function render(){
       <button class="btn sec" type="button" onclick="addEx()" style="margin-top:2px">+ เพิ่มรายการ (มัดจำ/อื่นๆ)</button>
       <button class="btn sec" type="button" onclick="saveExDeposits()" style="margin-top:2px">💾 บันทึกใบมัดจำเข้าทะเบียน</button>
       <div class="kv" style="margin-top:10px"><span>คืนเงิน ${TH(f.refund)} − CN คืนสด② <b id="excn">${TH(0)}</b> − มัดจำจากทะเบียน(auto) <b id="exdep">${TH(0)}</b> − มัดจำ/อื่นๆ① <b id="exdone">${TH(0)}</b></span><b id="exsum" style="font-size:15px">เหลือ ${TH(f.refund)}</b></div>
+      <div class="muted" id="excn_detail" style="margin-top:2px;color:#15803d"></div>
       <div class="muted" id="exnote" style="margin-top:4px"></div>
       <div class="kv" style="margin-top:8px"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>${TH(f.old)}</b></div>
     </div>
   </div>`;
 
-  let rowsHtml = p.cns.map((x,i)=>`<tr data-i="${i}"><td>${x.customer}</td><td>${x.cn_no||'—'}</td><td>${x.bill_no||'—'}</td><td class="num">${(p.billTotal&&p.billTotal[x.bill_no]!=null)?TH(p.billTotal[x.bill_no]):'—'}</td><td class="num">${TH(x.cn)}</td><td><input class="cell cash" type="number" placeholder="0" oninput="recalc(${i})"></td><td class="num left rem" id="rem${i}">${TH(x.cn)}</td><td><input class="rsn rsninp" placeholder="พนง.กรอกเหตุผล"></td><td><input class="rsn appinp" placeholder="ผู้ขาย"></td></tr>`).join("");
+  let rowsHtml = p.cns.map((x,i)=>{
+    const _bt=(p.billTotal&&p.billTotal[x.bill_no]!=null)?p.billTotal[x.bill_no]:null;
+    const _ac=(_bt!=null)?Math.max(0,x.cn-_bt):null;
+    const _cv=(_ac!=null)?_ac:"";
+    const _credit=x.cn-(_ac||0);
+    const _add=(_bt!=null)?(_bt-_credit):null;
+    return `<tr data-i="${i}"><td>${x.customer}</td><td>${x.cn_no||'—'}</td><td>${x.bill_no||'—'}</td><td class="num">${_bt!=null?TH(_bt):'—'}</td><td class="num">${TH(x.cn)}</td><td><input class="cell cash" type="number" placeholder="0" value="${_cv}" oninput="recalc(${i})"></td><td class="num left rem" id="rem${i}">${TH(_credit)}</td><td class="num addpay" id="addpay${i}">${_add!=null?TH(_add):'—'}</td><td><input class="rsn rsninp" placeholder="พนง.กรอกเหตุผล"></td><td><input class="rsn appinp" placeholder="ผู้ขาย"></td></tr>`;
+  }).join("");
   out.innerHTML += `
   <div class="card">
     <h2>② คุมใบลดหนี้ (CN) <span class="badge ${p.cns.length?'warn':'ok'}">${p.cns.length? p.cns.length+' ใบ — ต้องมีเหตุผลกำกับ 🚩':'ไม่มีใบลดหนี้ ✓'}</span></h2>
     <div class="muted" style="margin-bottom:10px">ใบลดหนี้ตัดยอดขายจริง — ดึงจากเครื่อง · พนักงานกรอกคืนสดจริง/เหตุผล/ผู้ขายทุกใบ · “ยอดบิลจริง” = ยอดรวมของบิลใหม่ที่ผูก (ดึงจากเครื่อง) · “เหลือเป็นมูลค่าบิล” = ส่วนของ CN ที่เป็นเครดิตเข้าบิลใหม่</div>
-    <table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead>
-      <tbody>${rowsHtml||'<tr><td colspan="9" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>'}</tbody>
-      ${p.cns.length?`<tfoot><tr class="tot"><td colspan="3">รวม</td><td></td><td class="num">${TH(p.cnTotal)}</td><td></td><td></td><td></td><td></td></tr></tfoot>`:''}
+    <table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>จ่ายเพิ่ม</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead>
+      <tbody>${rowsHtml||'<tr><td colspan="10" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>'}</tbody>
+      ${p.cns.length?`<tfoot><tr class="tot"><td colspan="3">รวม</td><td></td><td class="num">${TH(p.cnTotal)}</td><td></td><td></td><td></td><td></td><td></td></tr></tfoot>`:''}
     </table>
     ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
   </div>`;
@@ -348,10 +356,12 @@ function render(){
   if(document.getElementById("exsum")) recalcEx();
 }
 function recalc(i){
-  const tr=document.querySelector(`tr[data-i="${i}"]`); const cn=DATA.pos.cns[i].cn;
-  const cash=parseFloat(tr.querySelector(".cash").value)||0; const rem=cn-cash;
-  document.getElementById("rem"+i).textContent = rem.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
-  tr.classList.toggle("flag", rem>0 && !tr.querySelector(".rsninp").value);
+  const tr=document.querySelector(`tr[data-i="${i}"]`); const x=DATA.pos.cns[i]; const cn=x.cn;
+  const bt=(DATA.pos.billTotal&&DATA.pos.billTotal[x.bill_no]!=null)?DATA.pos.billTotal[x.bill_no]:null;
+  const cash=parseFloat(tr.querySelector(".cash").value)||0; const credit=cn-cash;
+  document.getElementById("rem"+i).textContent = credit.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const ap=document.getElementById("addpay"+i); if(ap) ap.textContent = (bt!=null)?(bt-credit).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";
+  tr.classList.toggle("flag", credit>0 && !tr.querySelector(".rsninp").value);
   recalcEx();
 }
 function addEx(){
@@ -371,6 +381,7 @@ function recalcEx(){
   const rem=refund-cnCash-depR-other; const fmt=v=>v.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
   const dep=document.getElementById("exdep"); if(dep) dep.textContent=fmt(depR);
   const cn=document.getElementById("excn"); if(cn) cn.textContent=fmt(cnCash);
+  const _cnd=document.getElementById("excn_detail"); if(_cnd){ let _parts=[]; document.querySelectorAll("tr[data-i]").forEach(function(tr){ const _cc=parseFloat(tr.querySelector(".cash").value)||0; if(_cc>0){ const _ix=tr.getAttribute("data-i"); const _xx=(DATA.pos&&DATA.pos.cns[_ix])||{}; _parts.push((_xx.cn_no||"CN")+(_xx.bill_no?" / "+_xx.bill_no:"")+" = "+fmt(_cc)); } }); _cnd.innerHTML=_parts.length?("↳ คืนสดจาก: "+_parts.join(" · ")):""; }
   const done=document.getElementById("exdone"); if(done) done.textContent=fmt(other);
   const el=document.getElementById("exsum"); const note=document.getElementById("exnote");
   if(Math.abs(rem)<=1){ if(el){ el.textContent="✓ อธิบายครบ"; el.style.color="#15803d"; } if(note) note.innerHTML=""; }
@@ -396,8 +407,8 @@ function renderDetail(d){
   h+="</div>"; return h;
 }
 function exportCN(){
-  const rows=[["ลูกค้า","เลขที่ CN","บิลที่ผูก","ยอดบิลจริง","ยอด CN","คืนสดจริง","เหลือเป็นมูลค่าบิล","เหตุผล","ผู้ขาย"]];
-  document.querySelectorAll("tr[data-i]").forEach((tr,i)=>{ const x=DATA.pos.cns[i]; const cn=x.cn; const cash=parseFloat(tr.querySelector(".cash").value)||0; rows.push([x.customer, x.cn_no||"", x.bill_no||"", ((DATA.pos.billTotal&&DATA.pos.billTotal[x.bill_no]!=null)?DATA.pos.billTotal[x.bill_no]:""), cn, cash, cn-cash, tr.querySelector(".rsninp").value, tr.querySelector(".appinp").value]); });
+  const rows=[["ลูกค้า","เลขที่ CN","บิลที่ผูก","ยอดบิลจริง","ยอด CN","คืนสดจริง","เหลือเป็นมูลค่าบิล","จ่ายเพิ่ม","เหตุผล","ผู้ขาย"]];
+  document.querySelectorAll("tr[data-i]").forEach((tr,i)=>{ const x=DATA.pos.cns[i]; const cn=x.cn; const cash=parseFloat(tr.querySelector(".cash").value)||0; rows.push([x.customer, x.cn_no||"", x.bill_no||"", ((DATA.pos.billTotal&&DATA.pos.billTotal[x.bill_no]!=null)?DATA.pos.billTotal[x.bill_no]:""), cn, cash, cn-cash, ((DATA.pos.billTotal&&DATA.pos.billTotal[x.bill_no]!=null)?(DATA.pos.billTotal[x.bill_no]-(cn-cash)):""), tr.querySelector(".rsninp").value, tr.querySelector(".appinp").value]); });
   const csv="﻿"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="สมุดคุม-CN.csv"; a.click();
 }
@@ -582,10 +593,10 @@ async function sendAuditAlert(){
 async function markHoliday(date){ if(!sb) return; await sb.from("rev_audit").upsert([{date, status:"วันหยุด"}],{onConflict:"date"}); loadMonthStatus(); showDayDetail(date); }
 async function unmarkHoliday(date){ if(!sb) return; await sb.from("rev_audit").delete().eq("date",date); loadMonthStatus(); showDayDetail(date); }
 function escAttr(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
-function recalcRem(inp){ const tr=inp.closest("tr"); if(!tr) return; const aEl=tr.querySelector(".k-amt"), cEl=tr.querySelector(".k-cash"); const amt=aEl?(parseFloat(aEl.value)||0):0; const cash=cEl?(parseFloat(cEl.value)||0):0; const rem=tr.querySelector(".k-rem"); if(rem) rem.textContent=TH(amt-cash); }
-function cnRowHtml(c,edit){ c=c||{}; const amt=parseFloat(c.amt)||0, cash=parseFloat(c.cash)||0, rem=amt-cash;
-  if(edit) return '<tr data-cn><td><input class="rsn k-cust" value="'+escAttr(c.cust)+'" style="max-width:120px"></td><td><input class="rsn k-cn" value="'+escAttr(c.cn_no)+'" style="max-width:110px"></td><td><input class="rsn k-bill" value="'+escAttr(c.bill)+'" style="max-width:110px"></td><td class="num left k-billtot" data-bt="'+(c.bill_total==null?"":c.bill_total)+'">'+(c.bill_total!=null?TH(c.bill_total):"—")+'</td><td><input class="cell k-amt" type="number" value="'+(c.amt==null?"":c.amt)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td><input class="cell k-cash" type="number" value="'+(c.cash==null?"":c.cash)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td class="num left k-rem">'+TH(rem)+'</td><td><input class="rsn k-reason" value="'+escAttr(c.reason)+'" style="max-width:130px"></td><td><input class="rsn k-seller" value="'+escAttr(c.seller)+'" style="max-width:90px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
-  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+(c.bill_total!=null?TH(c.bill_total):"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="num">'+TH(rem)+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
+function recalcRem(inp){ const tr=inp.closest("tr"); if(!tr) return; const aEl=tr.querySelector(".k-amt"), cEl=tr.querySelector(".k-cash"); const amt=aEl?(parseFloat(aEl.value)||0):0; const cash=cEl?(parseFloat(cEl.value)||0):0; const rem=tr.querySelector(".k-rem"); if(rem) rem.textContent=TH(amt-cash); const btEl=tr.querySelector(".k-billtot"); const bt=(btEl&&btEl.dataset.bt!=null&&btEl.dataset.bt!=="")?parseFloat(btEl.dataset.bt):null; const ap=tr.querySelector(".k-addpay"); if(ap) ap.textContent=(bt!=null&&!isNaN(bt))?TH(bt-(amt-cash)):"—"; }
+function cnRowHtml(c,edit){ c=c||{}; const amt=parseFloat(c.amt)||0, cash=parseFloat(c.cash)||0, rem=amt-cash; const bt=(c.bill_total!=null?parseFloat(c.bill_total):null); const addpay=(bt!=null?(bt-rem):null);
+  if(edit) return '<tr data-cn><td><input class="rsn k-cust" value="'+escAttr(c.cust)+'" style="max-width:120px"></td><td><input class="rsn k-cn" value="'+escAttr(c.cn_no)+'" style="max-width:110px"></td><td><input class="rsn k-bill" value="'+escAttr(c.bill)+'" style="max-width:110px"></td><td class="num left k-billtot" data-bt="'+(c.bill_total==null?"":c.bill_total)+'">'+(c.bill_total!=null?TH(c.bill_total):"—")+'</td><td><input class="cell k-amt" type="number" value="'+(c.amt==null?"":c.amt)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td><input class="cell k-cash" type="number" value="'+(c.cash==null?"":c.cash)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td class="num left k-rem">'+TH(rem)+'</td><td class="num left k-addpay">'+(addpay!=null?TH(addpay):"—")+'</td><td><input class="rsn k-reason" value="'+escAttr(c.reason)+'" style="max-width:130px"></td><td><input class="rsn k-seller" value="'+escAttr(c.seller)+'" style="max-width:90px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
+  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+(c.bill_total!=null?TH(c.bill_total):"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="num">'+TH(rem)+'</td><td class="num">'+(addpay!=null?TH(addpay):"—")+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
 }
 function exRowHtml(e,edit){ e=e||{};
   if(edit) return '<tr data-ex2><td><input class="rsn x-cat" value="'+escAttr(e.cat)+'" placeholder="ประเภท" style="max-width:150px"></td><td><input class="rsn x-ref" value="'+escAttr(e.ref)+'" placeholder="อ้างอิง" style="max-width:170px"></td><td><input class="cell x-amt" type="number" value="'+(e.amt==null?"":e.amt)+'" style="max-width:100px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
@@ -607,7 +618,7 @@ function renderFrozen(det){
   h+='<div class="kv" style="margin-top:8px"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>'+TH(v.old)+'</b></div></div>';
   const cns=det.cns||[];
   h+='<div class="card"><h2>② คุมใบลดหนี้ (CN) <span class="badge '+(cns.length?'warn':'ok')+'">'+(cns.length?cns.length+' ใบ':'ไม่มีใบลดหนี้ ✓')+'</span></h2>';
-  h+='<table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,false);}).join(""):'<tr><td colspan="9" class="muted">ไม่มีใบลดหนี้</td></tr>')+'</tbody></table></div>';
+  h+='<table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>จ่ายเพิ่ม</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,false);}).join(""):'<tr><td colspan="10" class="muted">ไม่มีใบลดหนี้</td></tr>')+'</tbody></table></div>';
   const kp=v.kplus||{present:false}, bk=v.bank||{present:false};
   h+='<div class="card"><h2>③ ตรงธนาคาร'+((kp.present&&bk.present)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>')+'</h2>';
   h+='<div style="margin-bottom:8px"><b>③a K+ (QR ผ่าน K+shop)</b></div>';
@@ -631,7 +642,7 @@ function renderItems(det, edit){ det=det||{};
   if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
   const cns=det.cns||[];
   h+='<div style="font-weight:700;margin:6px 0 4px">📋 ใบลดหนี้ (CN)'+(edit?' — แก้ไขได้':'')+'</div>';
-  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="9" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
+  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>จ่ายเพิ่ม</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="10" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';

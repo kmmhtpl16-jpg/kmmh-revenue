@@ -584,14 +584,14 @@ async function renderDay(date, edit){
   if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้ — ไม่นับว่าข้อมูลขาด</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
   if(au){
     const miss=[]; if(au.kplus_today==null && !(da&&da.kplus_total!=null)) miss.push("รายงาน K+"); if(au.bank_dep_today==null && !(da&&da.bank_dep_total!=null)) miss.push("สเตทเมนต์ธนาคาร");
-    const numRow=(label,val,key)=> edit
+    const numRow=(label,val,key,fb)=> edit
       ? '<div class="kv"><span>'+label+'</span><input class="cell ed" data-k="'+key+'" type="number" value="'+(val==null?"":val)+'" style="max-width:150px"></div>'
-      : '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):"—")+'</b></div>';
+      : '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):(fb||"—"))+'</b></div>';
     html+=numRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,"machine_net");
     html+=numRow("ยอดฟอร์ม",au.form_main,"form_main");
     html+=numRow("ใบลดหนี้",au.cn_total,"cn_total");
-    html+=numRow("K+ (วันนี้)",au.kplus_today,"kplus_today");
-    html+=numRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,"bank_dep_today");
+    html+=numRow("K+ (วันนี้)",au.kplus_today,"kplus_today",(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
+    html+=numRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,"bank_dep_today",(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
     if(!edit){ if(miss.length) html+='<div style="color:#b45309;margin-top:8px">⚠ ข้อมูลไม่ครบ: ขาด '+miss.join(", ")+'</div>'; else html+='<div style="color:#15803d;margin-top:8px">✓ ครบแล้ว</div>'; }
     html+= edit ? renderDetailEdit(au.detail) : renderDetail(au.detail);
     if(edit) html+='<div style="text-align:right;margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';

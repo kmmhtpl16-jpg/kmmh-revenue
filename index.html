@@ -216,7 +216,14 @@ function parseForm(wb){
   let refund=0, upk=0, old=0;
   R.forEach(r=>{ const a=lab(r); if(a==="คืนเงิน")refund=num(r[3]); if(a==="UPK")upk=num(r[3]); });
   if(iref>iold) for(let i=iold+1;i<iref;i++) old+=num(R[i][3]);
-  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr };
+  let submitForm=null; const DENS=new Set([1000,500,100,50,20,10,5,2,1]); let counted=0, hasDen=false; const denoms=[];
+  R.forEach(r=>{ if(!r) return;
+    if(r.some(c=>String(c==null?"":c).includes("นำส่งรายวัน"))) submitForm=num(r[3]);
+    const a0=r[0]; if(typeof a0==="number" && DENS.has(a0)){ const cnt=num(r[1]); if(cnt>0){ counted+=a0*cnt; hasDen=true; denoms.push({d:a0,count:cnt,amt:a0*cnt}); } }
+  });
+  const cashCounted = hasDen? counted : null;
+  const cashSubmit = (submitForm!=null && submitForm>0)? submitForm : (cash - refund);
+  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr, cashSubmit:cashSubmit, cashCounted:cashCounted, denoms:denoms };
 }
 function parsePos(wb){
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -265,7 +272,10 @@ function render(){
   const okAdj = Math.abs(diffAdj) <= 1;
   const ok1 = okRaw || okAdj;
   const ok2 = p.cns.length === 0;
-  const allOk = ok1 && ok2;
+  const cashSubmit = f.cashSubmit; const cashCounted = f.cashCounted;
+  const cashDiff = (cashCounted!=null && cashSubmit!=null) ? (cashCounted - cashSubmit) : null;
+  const cashOk = (cashDiff==null) ? true : Math.abs(cashDiff)<=1;
+  const allOk = ok1 && ok2 && cashOk;
   const kPending = !DATA.kplus || !DATA.bank;
   out.innerHTML += `<div class="verdict ${allOk?'v-ok':'v-warn'}">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
   out.innerHTML += `<div style="text-align:center;margin:-4px 0 16px"><button class="btn" type="button" onclick="saveAudit()">✓ ยืนยัน & บันทึกผลตรวจวันนี้ (${f.date?beDate(f.date):'-'})</button> <span id="audit_msg" class="muted" style="margin-left:8px"></span></div>`;
@@ -335,8 +345,8 @@ function render(){
   DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_refund:f.refund, cn_total:p.cnTotal,
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
-  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
-  DATA._auditView = { gross:p.gross, cnTotal:p.cnTotal, net:p.net, main:f.main, upk:f.upk, sumForm:sumForm, refund:f.refund, cash:f.cash, knv:f.knv, ksk:f.ksk, acc:f.acc, old:f.old, diffRaw:diffRaw, diffAdj:diffAdj, okRaw:okRaw, okAdj:okAdj, ok1:ok1, scenario:scenario,
+  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending, cashDiff:cashDiff, cashOk:cashOk };
+  DATA._auditView = { cash_submit:cashSubmit, cash_counted:cashCounted, cash_diff:cashDiff, cash_ok:cashOk, denoms:(f.denoms||[]), gross:p.gross, cnTotal:p.cnTotal, net:p.net, main:f.main, upk:f.upk, sumForm:sumForm, refund:f.refund, cash:f.cash, knv:f.knv, ksk:f.ksk, acc:f.acc, old:f.old, diffRaw:diffRaw, diffAdj:diffAdj, okRaw:okRaw, okAdj:okAdj, ok1:ok1, scenario:scenario,
     kplus: kp ? {present:true, day:(f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null, knv:f.knv, total:kp.total, count:kp.count} : {present:false},
     bank: bank ? ((f.date&&bank.map[f.date]) ? {present:true, dep:bank.map[f.date].dep, kplus:bank.map[f.date].kplus, direct:bank.map[f.date].dep-bank.map[f.date].kplus, ksk:f.ksk} : {present:true, nodata:true, ksk:f.ksk}) : {present:false} };
   out.innerHTML += `
@@ -346,6 +356,19 @@ function render(){
     <div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px;margin-bottom:6px"><b>③b โอนเข้าบัญชีกสิกร</b></div>${b3}
   </div>`;
 
+
+  if(f.cashSubmit!=null || f.cashCounted!=null){
+    const denRows=(f.denoms||[]).map(x=>`<tr><td>${TH0(x.d)}</td><td class="num">${x.count}</td><td class="num">${TH(x.d*x.count)}</td></tr>`).join("");
+    out.innerHTML += `
+  <div class="card">
+    <h2>④ ตรวจเงินสดนำส่ง (นับเงิน) <span class="badge ${cashOk?'ok':'warn'}">${cashDiff==null?'รอนับ':(cashOk?'ตรง ✓':(cashDiff>0?'นับเกิน '+TH0(cashDiff)+' 🚩':'นับขาด '+TH0(-cashDiff)+' 🚩'))}</span></h2>
+    <div class="kv"><span>เงินสดนำส่ง (คำนวณ: เงินสดรับ ${TH0(f.cash)} − คืนเงินสด ${TH0(f.refund)})</span><b>${cashSubmit!=null?TH(cashSubmit):'—'}</b></div>
+    <div class="kv"><span>นับจริง (รวมแบงค์/เหรียญในฟอร์ม)</span><b>${cashCounted!=null?TH(cashCounted):'—'}</b></div>
+    <div class="kv"><span>ส่วนต่าง (นับจริง − คำนวณ)</span><b style="color:${cashOk?'#15803d':'#b91c1c'}">${cashDiff!=null?TH(cashDiff):'—'}</b></div>
+    ${denRows?`<div class="muted" style="margin:8px 0 4px">รายละเอียดการนับ:</div><table><thead><tr><th>แบงค์/เหรียญ</th><th>จำนวน</th><th>เป็นเงิน</th></tr></thead><tbody>${denRows}</tbody><tfoot><tr class="tot"><td colspan="2">รวมนับจริง</td><td class="num">${TH(cashCounted)}</td></tr></tfoot></table>`:''}
+    <div class="muted" style="margin-top:6px">${cashOk?'✓ เงินสดในมือตรงกับที่ควรนำส่ง':'🚩 เงินสดนับได้ไม่ตรงกับที่ควรนำส่ง — เช็กการนับ / เงินทอน / การบันทึก'}</div>
+  </div>`;
+  }
   const odSet=new Set();
   if(kp) Object.keys(kp.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
   if(bank) Object.keys(bank.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
@@ -579,10 +602,12 @@ async function sendAuditAlert(){
   const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
   const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
   const l3 = m.kPending ? "⏳ รอตรวจ K+/สเตทเมนต์" : "ตรวจแล้ว ✓";
+  const l4 = (m.cashDiff==null) ? "—" : (m.cashOk ? "ตรง ✓" : ((m.cashDiff>0?"นับเกิน ":"นับขาด ")+TH0(Math.abs(m.cashDiff))+" 🚩"));
   const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+"\n\n"
     +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" · ฟอร์ม "+TH(m.sumForm)+"\n"
     +"② ใบลดหนี้: "+l2+"\n"
-    +"③ ธนาคาร: "+l3+"\n\n"
+    +"③ ธนาคาร: "+l3+"\n"
+    +"④ เงินสดนำส่ง: "+l4+"\n\n"
     +"<i>พนักงานยืนยันแล้ว</i>";
   const msg=document.getElementById("audit_msg");
   try{
@@ -629,6 +654,15 @@ function renderFrozen(det){
   else if(bk.present && bk.nodata){ h+='<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันนี้</div>'; }
   else h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — ยังไม่ได้อัปสเตทเมนต์กสิกร</div>';
   h+='</div>';
+  const _cs=v.cash_submit, _cc=v.cash_counted, _cd=v.cash_diff, _cok=v.cash_ok;
+  if(_cs!=null || _cc!=null){
+    h+='<div class="card"><h2>④ ตรวจเงินสดนำส่ง (นับเงิน) <span class="badge '+(_cok?'ok':'warn')+'">'+(_cd==null?'รอนับ':(_cok?'ตรง ✓':(_cd>0?'นับเกิน '+TH0(_cd)+' 🚩':'นับขาด '+TH0(-_cd)+' 🚩')))+'</span></h2>';
+    h+='<div class="kv"><span>เงินสดนำส่ง (คำนวณ)</span><b>'+(_cs!=null?TH(_cs):'—')+'</b></div>';
+    h+='<div class="kv"><span>นับจริง (รวมแบงค์/เหรียญ)</span><b>'+(_cc!=null?TH(_cc):'—')+'</b></div>';
+    h+='<div class="kv"><span>ส่วนต่าง</span><b style="color:'+(_cok?'#15803d':'#b91c1c')+'">'+(_cd!=null?TH(_cd):'—')+'</b></div>';
+    var _dn=v.denoms||[]; if(_dn.length){ h+='<table><thead><tr><th>แบงค์/เหรียญ</th><th>จำนวน</th><th>เป็นเงิน</th></tr></thead><tbody>'+_dn.map(function(x){return '<tr><td>'+TH0(x.d)+'</td><td class="num">'+x.count+'</td><td class="num">'+TH(x.d*x.count)+'</td></tr>';}).join("")+'</tbody></table>'; }
+    h+='</div>';
+  }
   const dep=det.deposits||[];
   if(dep.length){ h+='<div class="card" style="border-color:#f59e0b;background:#fffbeb"><h2>⚠ เตือนมัดจำ — ลูกค้าที่ซื้อวันนี้มีมัดจำค้าง</h2><table><thead><tr><th>ลูกค้า</th><th>ใบมัดจำ</th><th>มัดจำเหลือ</th><th>บิลวันนี้</th><th>หักแล้วเป็นยังไง</th><th>สถานะ</th></tr></thead><tbody>'+dep.map(function(d){return '<tr class="flag"><td>'+esc(d.customer)+'</td><td>'+esc(d.deposit_no)+'</td><td class="num">'+TH(d.rem)+'</td><td class="num">'+(d.bill?TH(d.bill):'—')+'</td><td class="muted" style="text-align:left">'+esc(d.rel)+'</td><td style="text-align:left">'+esc(d.status)+'</td></tr>';}).join("")+'</tbody></table></div>'; }
   const ex=det.ex||[];

@@ -569,6 +569,7 @@ function exRowHtml(e,edit){ e=e||{};
 }
 function addCnRow(){ const tb=document.querySelector("#edcn tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=cnRowHtml({},true); tb.appendChild(t.firstChild); }
 function addExRow(){ const tb=document.querySelector("#edex tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=exRowHtml({},true); tb.appendChild(t.firstChild); }
+function figRow(label,val,fb){ return '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):(fb||"—"))+'</b></div>'; }
 function renderItems(det, edit){ det=det||{};
   let h="";
   const f=det.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
@@ -595,6 +596,13 @@ async function renderDay(date, edit){
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
   if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
   if(au){
+    html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
+    html+=figRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,null);
+    html+=figRow("ยอดฟอร์ม",au.form_main,null);
+    html+=figRow("ใบลดหนี้",au.cn_total,null);
+    html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
+    html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
+    html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
     else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';

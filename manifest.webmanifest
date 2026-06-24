@@ -1,0 +1,13 @@
+{
+  "name": "โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม",
+  "short_name": "ตรวจรายได้",
+  "description": "ระบบสรุปและตรวจสอบรายได้ ร้านวัสดุ กิจมั่งมีโฮม",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f4f5",
+  "theme_color": "#16a34a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

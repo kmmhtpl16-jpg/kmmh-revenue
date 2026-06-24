@@ -157,9 +157,9 @@ function isoFromExcel(v){
   return null;
 }
 const FMAP={form:["d_form","fn_form"],pos:["d_pos","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
-function setFn(fnId,name,kind){ const el=document.getElementById(fnId); if(!el) return;
+function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
   el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
-function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null;
+function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null;
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
@@ -370,6 +370,24 @@ function recalcEx(){
   else if(rem<0){ if(el){ el.textContent="เกิน "+fmt(-rem); el.style.color="#b91c1c"; } if(note){ note.innerHTML="⚠ อธิบายเกินยอดคืนเงินไป "+fmt(-rem); note.style.color="#b91c1c"; } }
   else { if(el){ el.textContent="เหลือ "+fmt(rem); el.style.color="#c2410c"; } if(note){ note.innerHTML="ยังไม่ครบ — เหลืออีก "+fmt(rem); note.style.color="#c2410c"; } }
 }
+function collectDetail(){
+  const cns=[]; document.querySelectorAll("tr[data-i]").forEach(function(tr,i){ const x=(DATA.pos&&DATA.pos.cns[i])||{}; const cEl=tr.querySelector(".cash"); const cash=cEl?(parseFloat(cEl.value)||0):0; const cn=x.cn||0; const rEl=tr.querySelector(".rsninp"), aEl=tr.querySelector(".appinp"); cns.push({cust:x.customer||"",cn_no:x.cn_no||"",bill:x.bill_no||"",amt:cn,cash:cash,rem:cn-cash,reason:rEl?rEl.value:"",seller:aEl?aEl.value:""}); });
+  const ex=[]; document.querySelectorAll("#exrows [data-ex]").forEach(function(r){ const cEl=r.querySelector(".ex-cat"),fEl=r.querySelector(".ex-ref"),aEl=r.querySelector(".ex-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; const ref=fEl?fEl.value:""; if(amt||ref) ex.push({cat:cEl?cEl.value:"",ref:ref,amt:amt}); });
+  const f=DATA._files||{};
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, saved_at:new Date().toISOString() };
+}
+function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function renderDetail(d){
+  if(!d) return "<div class=\"muted\" style=\"margin-top:8px\">— วันนี้ยืนยันก่อนมีฟีเจอร์เก็บรายละเอียด เลยไม่มีรายการย้อนหลัง</div>";
+  let h="<div style=\"margin-top:10px;border-top:1px dashed #e7e5e4;padding-top:8px\">";
+  const f=d.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
+  if(fl.length) h+="<div class=\"muted\" style=\"font-size:12.5px;margin-bottom:8px\">📎 ไฟล์ที่อัป: "+fl.join(" · ")+"</div>";
+  if(d.cns&&d.cns.length){ h+="<div style=\"font-weight:700;margin-bottom:4px\">📋 ใบลดหนี้ที่บันทึก ("+d.cns.length+" ใบ)</div><table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิล</th><th>ยอด</th><th>คืนสด</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>"+d.cns.map(function(c){return "<tr><td>"+esc(c.cust||"—")+"</td><td>"+esc(c.cn_no||"—")+"</td><td>"+esc(c.bill||"—")+"</td><td class=\"num\">"+TH(c.amt)+"</td><td class=\"num\">"+TH(c.cash)+"</td><td>"+esc(c.reason||"—")+"</td><td>"+esc(c.seller||"—")+"</td></tr>";}).join("")+"</tbody></table>"; }
+  if(d.ex&&d.ex.length){ h+="<div style=\"font-weight:700;margin:8px 0 4px\">💸 คืนเงิน/มัดจำที่ระบุ</div><table><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th></tr></thead><tbody>"+d.ex.map(function(e){return "<tr><td>"+esc(e.cat||"—")+"</td><td>"+esc(e.ref||"—")+"</td><td class=\"num\">"+TH(e.amt)+"</td></tr>";}).join("")+"</tbody></table>"; }
+  if(!(d.cns&&d.cns.length)&&!(d.ex&&d.ex.length)) h+="<div class=\"muted\" style=\"font-size:12.5px\">วันนี้ไม่มีใบลดหนี้/รายการคืนเงิน</div>";
+  if(d.saved_at) h+="<div class=\"muted\" style=\"font-size:11.5px;margin-top:6px\">บันทึกเมื่อ "+new Date(d.saved_at).toLocaleString("th-TH")+"</div>";
+  h+="</div>"; return h;
+}
 function exportCN(){
   const rows=[["ลูกค้า","เลขที่ CN","บิลที่ผูก","ยอด CN","คืนสดจริง","เหลือเป็นมูลค่าบิล","เหตุผล","ผู้ขาย"]];
   document.querySelectorAll("tr[data-i]").forEach((tr,i)=>{ const x=DATA.pos.cns[i]; const cn=x.cn; const cash=parseFloat(tr.querySelector(".cash").value)||0; rows.push([x.customer, x.cn_no||"", x.bill_no||"", cn, cash, cn-cash, tr.querySelector(".rsninp").value, tr.querySelector(".appinp").value]); });
@@ -517,7 +535,7 @@ async function saveAudit(){
   const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
   if(!s||!s.date){ if(msg){msg.textContent="ยังไม่มีข้อมูลให้บันทึก";msg.style.color="#b91c1c";} return; }
   if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; }
-  const {error}=await sb.from("rev_audit").upsert([{...s, status:"ตรวจแล้ว", confirmed_at:new Date().toISOString()}],{onConflict:"date"});
+  const {error}=await sb.from("rev_audit").upsert([{...s, status:"ตรวจแล้ว", confirmed_at:new Date().toISOString(), detail: collectDetail()}],{onConflict:"date"});
   if(error){ if(msg){msg.textContent="ผิดพลาด: "+error.message;msg.style.color="#b91c1c";} return; }
   const need=[!DATA.kplus?"รายงาน K+":null, !DATA.bank?"สเตทเมนต์ธนาคาร":null].filter(Boolean);
   if(msg){ msg.innerHTML = need.length ? "✓ บันทึกส่วนที่มีแล้ว ("+beDate(s.date)+") — ยังรอ "+need.join(" + ")+" · คุณหลิงอัปเติมทีหลังแล้วกดยืนยันอีกครั้ง (ทับของเดิม)" : "✓ บันทึกครบแล้ว "+beDate(s.date)+" · ข้อมูลวันอื่นเก็บไว้รอตรวจในวันของมัน"; msg.style.color="#15803d"; }
@@ -554,6 +572,7 @@ async function showDayDetail(date){
     html+='<div class="kv"><span>ยอดขายเครื่อง (สุทธิ)</span><b>'+TH(au.machine_net)+'</b></div><div class="kv"><span>ยอดฟอร์ม</span><b>'+TH(au.form_main)+'</b></div><div class="kv"><span>ใบลดหนี้</span><b>'+TH(au.cn_total)+'</b></div><div class="kv"><span>K+ (วันนี้)</span><b>'+(au.kplus_today!=null?TH(au.kplus_today):(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":"— ยังไม่ตรวจ"))+'</b></div><div class="kv"><span>ฝากเข้าบัญชี (วันนี้)</span><b>'+(au.bank_dep_today!=null?TH(au.bank_dep_today):(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":"— ยังไม่ตรวจ"))+'</b></div>';
     if(miss.length) html+='<div style="color:#b45309;margin-top:8px">⚠ ข้อมูลไม่ครบ: ขาด '+miss.join(", ")+'</div>';
     else html+='<div style="color:#15803d;margin-top:8px">✓ ครบแล้ว</div>';
+    html+=renderDetail(au.detail);
   } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ (ยังไม่อัปฟอร์ม+เครื่อง หรือยังไม่กดยืนยัน)</div><div class="kv"><span>ยอด K+</span><b>'+TH(da.kplus_total)+'</b></div>';
   } else html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div>';
   html+='<div class="muted" style="margin-top:10px;border-top:1px dashed #e7e5e4;padding-top:8px">✏️ <b>วิธีแก้ไข:</b> กด "เริ่มตรวจวันถัดไป (ล้างไฟล์)" → อัปไฟล์ของ '+beDate(date)+' ให้ครบ → กด "✓ ยืนยัน & บันทึก" ระบบจะทับข้อมูลเดิมของวันนั้นให้</div><div style="text-align:right;margin-top:6px"><button class="btn sec r-fin" style="padding:3px 10px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ ทำเครื่องหมายวันหยุด</button><button class="btn sec" style="padding:3px 10px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>';

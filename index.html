@@ -74,8 +74,8 @@
   <div class="drops">
     <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">1. ไฟล์รายรับ (ฟอร์มพนักงาน)</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
     <label class="drop" id="d_pos"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><div class="ic">🖥️</div><div class="nm">2. ไฟล์จากเครื่อง (รายลูกค้า)</div><div class="hint">มี ยอดบิลรวม / ใบลดหนี้ / สุทธิ</div><div class="fn" id="fn_pos"></div></label>
-    <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">3. รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
-    <label class="drop r-fin" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">4. สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
+    <label class="drop" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">3. รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
+    <label class="drop" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">4. สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
   </div>
 
   <div class="card" id="statusCard">
@@ -328,6 +328,9 @@ function render(){
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
   DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
+  DATA._auditView = { gross:p.gross, cnTotal:p.cnTotal, net:p.net, main:f.main, upk:f.upk, sumForm:sumForm, refund:f.refund, cash:f.cash, knv:f.knv, ksk:f.ksk, acc:f.acc, old:f.old, diffRaw:diffRaw, diffAdj:diffAdj, okRaw:okRaw, okAdj:okAdj, ok1:ok1, scenario:scenario,
+    kplus: kp ? {present:true, day:(f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null, knv:f.knv, total:kp.total, count:kp.count} : {present:false},
+    bank: bank ? ((f.date&&bank.map[f.date]) ? {present:true, dep:bank.map[f.date].dep, kplus:bank.map[f.date].kplus, direct:bank.map[f.date].dep-bank.map[f.date].kplus, ksk:f.ksk} : {present:true, nodata:true, ksk:f.ksk}) : {present:false} };
   out.innerHTML += `
   <div class="card">
     <h2>③ ตรงธนาคาร${(kp&&bank)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>'}</h2>
@@ -378,7 +381,7 @@ function collectDetail(){
   const cns=[]; document.querySelectorAll("tr[data-i]").forEach(function(tr,i){ const x=(DATA.pos&&DATA.pos.cns[i])||{}; const cEl=tr.querySelector(".cash"); const cash=cEl?(parseFloat(cEl.value)||0):0; const cn=x.cn||0; const rEl=tr.querySelector(".rsninp"), aEl=tr.querySelector(".appinp"); cns.push({cust:x.customer||"",cn_no:x.cn_no||"",bill:x.bill_no||"",amt:cn,cash:cash,rem:cn-cash,reason:rEl?rEl.value:"",seller:aEl?aEl.value:""}); });
   const ex=[]; document.querySelectorAll("#exrows [data-ex]").forEach(function(r){ const cEl=r.querySelector(".ex-cat"),fEl=r.querySelector(".ex-ref"),aEl=r.querySelector(".ex-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; const ref=fEl?fEl.value:""; if(amt||ref) ex.push({cat:cEl?cEl.value:"",ref:ref,amt:amt}); });
   const f=DATA._files||{};
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, saved_at:new Date().toISOString() };
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, view:(DATA._auditView||null), deposits:(DATA._depHits||[]), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -426,12 +429,24 @@ if(fdep) fdep.addEventListener("change", e=>{
 function matchReminder(){
   const box=document.getElementById("matchbox"); if(!box) return;
   const open=DATA._open||[], pos=DATA.pos;
-  if(!pos || !open.length || !pos.codes){ box.innerHTML=""; return; }
+  if(!pos || !open.length || !pos.codes){ box.innerHTML=""; DATA._depHits=[]; return; }
   const codes=new Set(pos.codes.map(c=>String(c).trim()));
   const hits=open.filter(d=>d.customer_code && codes.has(String(d.customer_code).trim()));
-  if(!hits.length){ box.innerHTML=""; return; }
-  box.innerHTML='<div class="card" style="border-color:#f59e0b;background:#fffbeb"><h2>⚠ เตือนมัดจำ — ลูกค้าที่ซื้อวันนี้มีมัดจำค้าง</h2><div class="muted" style="margin-bottom:8px">ลูกค้าเหล่านี้มีบิลในไฟล์วันนี้ และยังมีมัดจำค้างในทะเบียน — เช็กว่าหักมัดจำให้แล้ว (โดยเฉพาะถ้าก๊อปบิลจากใบเสนอราคา) ถ้าหักแล้วกดปิดใบ</div><table><thead><tr><th>ลูกค้า</th><th>ใบมัดจำ</th><th>มัดจำเหลือ</th><th>บิลวันนี้</th><th>หักแล้วเป็นยังไง</th><th></th></tr></thead><tbody>'+
-    hits.map(d=>{ const rem=(parseFloat(d.amount)||0)-(parseFloat(d.used_amount)||0); const code=String(d.customer_code||"").trim(); const bill=(pos.custTotal&&pos.custTotal[code])||0; const billNo=(pos.custBill&&pos.custBill[code])||""; const full=parseFloat(d.amount)||0; const deduct=Math.min(rem, Math.max(0, bill-(full-rem))); let rel; if(bill<=0) rel="ไม่พบบิลวันนี้"; else if(bill>=full) rel="บิล "+TH0(bill)+" = มัดจำ "+TH0(full)+" + ลงบัญชี "+TH0(bill-full); else rel="มัดจำ "+TH0(full)+" = บิล "+TH0(bill)+" + เหลือมัดจำ "+TH0(full-bill); return '<tr class="flag"><td>'+(d.customer||'—')+'</td><td>'+(d.deposit_no||'—')+'</td><td class="num">'+TH(rem)+'</td><td class="num">'+(bill?TH(bill):'—')+'</td><td class="muted" style="text-align:left">'+rel+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+d.id+'\','+rem+',\''+billNo+'\','+deduct+')">หักมัดจำ</button></td></tr>'; }).join("")+'</tbody></table></div>';
+  if(!hits.length){ box.innerHTML=""; DATA._depHits=[]; return; }
+  const rows=hits.map(d=>{
+    const full=parseFloat(d.amount)||0, used=parseFloat(d.used_amount)||0, rem=full-used;
+    const code=String(d.customer_code||"").trim();
+    const bill=(pos.custTotal&&pos.custTotal[code])||0;
+    const billNo=(pos.custBill&&pos.custBill[code])||"";
+    const deduct=Math.min(rem, Math.max(0, bill-(full-rem)));
+    let rel; if(bill<=0) rel="ไม่พบบิลวันนี้"; else if(bill>=full) rel="บิล "+TH0(bill)+" = มัดจำ "+TH0(full)+" + ลงบัญชี "+TH0(bill-full); else rel="มัดจำ "+TH0(full)+" = บิล "+TH0(bill)+" + เหลือมัดจำ "+TH0(full-bill);
+    const stTxt = used>0 ? "🟡 หักบางส่วน (เหลือ "+TH0(rem)+")" : "🚩 ยังไม่หัก";
+    const stCol = used>0 ? "#b45309" : "#b91c1c";
+    return {id:d.id, customer:d.customer||"—", deposit_no:d.deposit_no||"—", rem:rem, bill:bill, rel:rel, billNo:billNo, deduct:deduct, stTxt:stTxt, stCol:stCol};
+  });
+  DATA._depHits = rows.map(r=>({customer:r.customer, deposit_no:r.deposit_no, rem:r.rem, bill:r.bill, rel:r.rel, status:r.stTxt}));
+  box.innerHTML='<div class="card" style="border-color:#f59e0b;background:#fffbeb"><h2>⚠ เตือนมัดจำ — ลูกค้าที่ซื้อวันนี้มีมัดจำค้าง <span class="badge warn">จับคู่อัตโนมัติ</span></h2><div class="muted" style="margin-bottom:8px">จับคู่ด้วยรหัสลูกค้าให้อัตโนมัติ · ✓=หักครบ 🟡=หักบางส่วน 🚩=ยังไม่หัก · เงินไม่ถูกหักให้อัตโนมัติ กดปุ่ม "หักมัดจำ" เพื่อยืนยันเอง</div><table><thead><tr><th>ลูกค้า</th><th>ใบมัดจำ</th><th>มัดจำเหลือ</th><th>บิลวันนี้</th><th>หักแล้วเป็นยังไง</th><th>สถานะ</th><th></th></tr></thead><tbody>'+
+    rows.map(r=>'<tr class="flag"><td>'+esc(r.customer)+'</td><td>'+esc(r.deposit_no)+'</td><td class="num">'+TH(r.rem)+'</td><td class="num">'+(r.bill?TH(r.bill):'—')+'</td><td class="muted" style="text-align:left">'+esc(r.rel)+'</td><td style="text-align:left;font-weight:700;color:'+r.stCol+'">'+r.stTxt+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+r.id+'\','+r.rem+',\''+r.billNo+'\','+r.deduct+')">หักมัดจำ</button></td></tr>').join("")+'</tbody></table></div>';
 }
 
 function parseCSV(text){
@@ -497,7 +512,8 @@ async function loadDeposits(){
     data.map(d=>{ const amt=parseFloat(d.amount)||0, used=parseFloat(d.used_amount)||0, rem=amt-used;
       const days=Math.floor((today-new Date(d.received_date))/86400000); const warn=days>30;
       const matched = DATA.form && DATA.form.refund>0 && Math.abs(amt-DATA.form.refund)<=1;
-      const cust=(d.customer||'—')+(matched?' <span style="color:#15803d;font-size:11.5px;font-weight:700">✓ ประกบฟอร์มวันนี้</span>':'');
+      const _cs=(DATA.pos&&DATA.pos.codes)?new Set(DATA.pos.codes.map(c=>String(c).trim())):null; const codeHit=_cs && d.customer_code && _cs.has(String(d.customer_code).trim());
+      const cust=(d.customer||'—')+(matched?' <span style="color:#15803d;font-size:11.5px;font-weight:700">✓ ประกบฟอร์มวันนี้</span>':'')+(codeHit?' <span style="color:#b91c1c;font-size:11.5px;font-weight:700">🚩 ซื้อวันนี้ ยังไม่หัก</span>':'');
       return '<tr class="'+(warn?'flag':'')+'" style="'+(matched?'background:#f0fdf4':'')+'"><td>'+beDate(d.received_date)+'</td><td>'+(d.deposit_no||'—')+'</td><td>'+cust+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+(used?TH(used):'—')+'</td><td class="num"><b>'+TH(rem)+'</b></td><td class="num">'+days+(warn?' ⚠':'')+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+d.id+'\','+rem+')">หักมัดจำ</button></td></tr>';
     }).join("")+'</tbody></table>';
 }
@@ -578,6 +594,37 @@ function exRowHtml(e,edit){ e=e||{};
 function addCnRow(){ const tb=document.querySelector("#edcn tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=cnRowHtml({},true); tb.appendChild(t.firstChild); }
 function addExRow(){ const tb=document.querySelector("#edex tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=exRowHtml({},true); tb.appendChild(t.firstChild); }
 function figRow(label,val,fb){ return '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):(fb||"—"))+'</b></div>'; }
+function renderFrozen(det){
+  const v=det.view||{}; let h="";
+  const f=det.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
+  if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
+  h+='<div class="card"><h2>① ยอดขายตรง <span class="badge '+(v.ok1?'ok':'warn')+'">'+(v.ok1?'ตรง ✓':'ต่าง '+TH0(Math.abs(v.diffRaw||0))+' 🚩')+'</span></h2>';
+  h+='<div class="kv"><span>ยอดสุทธิจากเครื่อง (ยอดบิล '+TH0(v.gross)+' − ใบลดหนี้ '+TH0(v.cnTotal)+')</span><b>'+TH(v.net)+'</b></div>';
+  h+='<div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด '+TH0(v.main)+' + UPK '+TH0(v.upk)+'</span><b>'+TH(v.sumForm)+'</b></div>';
+  h+='<div class="kv"><span>ส่วนต่าง (ไม่หักคืนเงิน)</span><b style="color:'+(v.okRaw?'#15803d':'#b91c1c')+'">'+TH(v.diffRaw)+'</b></div>';
+  h+='<div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน '+TH0(v.refund)+')</span><b style="color:'+(v.okAdj?'#15803d':'#b91c1c')+'">'+TH(v.diffAdj)+'</b></div>';
+  if(v.scenario) h+='<div class="muted" style="margin-top:8px">📌 '+esc(v.scenario)+'</div>';
+  h+='<div class="kv" style="margin-top:8px"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>'+TH(v.old)+'</b></div></div>';
+  const cns=det.cns||[];
+  h+='<div class="card"><h2>② คุมใบลดหนี้ (CN) <span class="badge '+(cns.length?'warn':'ok')+'">'+(cns.length?cns.length+' ใบ':'ไม่มีใบลดหนี้ ✓')+'</span></h2>';
+  h+='<table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,false);}).join(""):'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>')+'</tbody></table></div>';
+  const kp=v.kplus||{present:false}, bk=v.bank||{present:false};
+  h+='<div class="card"><h2>③ ตรงธนาคาร'+((kp.present&&bk.present)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>')+'</h2>';
+  h+='<div style="margin-bottom:8px"><b>③a K+ (QR ผ่าน K+shop)</b></div>';
+  if(kp.present){ if(kp.day!=null){ h+='<div class="kv"><span>K+ ใหม่ (จากรายงาน)</span><b>'+TH(kp.day)+'</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม</span><b>'+TH(kp.knv)+'</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>'+TH((kp.knv||0)-(kp.day||0))+'</b></div>'; } else h+='<div class="muted">ไม่พบรายการ K+ ของวันนี้ในรายงานที่อัป</div>'; }
+  else h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — ยังไม่ได้อัปรายงาน K+</div>';
+  h+='<div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px;margin-bottom:6px"><b>③b โอนเข้าบัญชีกสิกร</b></div>';
+  if(bk.present && !bk.nodata){ h+='<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์)</span><b>'+TH(bk.dep)+'</b></div><div class="kv"><span>— เป็น K+ QR settlement</span><b>'+TH(bk.kplus)+'</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>'+TH(bk.direct)+'</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>'+TH(bk.ksk)+'</b></div>'; }
+  else if(bk.present && bk.nodata){ h+='<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันนี้</div>'; }
+  else h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — ยังไม่ได้อัปสเตทเมนต์กสิกร</div>';
+  h+='</div>';
+  const dep=det.deposits||[];
+  if(dep.length){ h+='<div class="card" style="border-color:#f59e0b;background:#fffbeb"><h2>⚠ เตือนมัดจำ — ลูกค้าที่ซื้อวันนี้มีมัดจำค้าง</h2><table><thead><tr><th>ลูกค้า</th><th>ใบมัดจำ</th><th>มัดจำเหลือ</th><th>บิลวันนี้</th><th>หักแล้วเป็นยังไง</th><th>สถานะ</th></tr></thead><tbody>'+dep.map(function(d){return '<tr class="flag"><td>'+esc(d.customer)+'</td><td>'+esc(d.deposit_no)+'</td><td class="num">'+TH(d.rem)+'</td><td class="num">'+(d.bill?TH(d.bill):'—')+'</td><td class="muted" style="text-align:left">'+esc(d.rel)+'</td><td style="text-align:left">'+esc(d.status)+'</td></tr>';}).join("")+'</tbody></table></div>'; }
+  const ex=det.ex||[];
+  if(ex.length){ h+='<div class="card"><h2>💸 คืนเงิน/มัดจำที่ระบุ</h2><table><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th></tr></thead><tbody>'+ex.map(function(e){return exRowHtml(e,false);}).join("")+'</tbody></table></div>'; }
+  if(det.saved_at) h+='<div class="muted" style="font-size:11.5px;margin-top:4px">บันทึกเมื่อ '+new Date(det.saved_at).toLocaleString("th-TH")+(det.edited?" (แก้ไขแล้ว)":"")+'</div>';
+  return h;
+}
 function renderItems(det, edit){ det=det||{};
   let h="";
   const f=det.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
@@ -596,6 +643,7 @@ function renderItems(det, edit){ det=det||{};
 }
 async function showDayDetail(date){ return renderDay(date,false); }
 async function editDay(date){ return renderDay(date,true); }
+function requestEdit(date){ if(ROLE==="finance"||ROLE==="owner"){ editDay(date); return; } const pin=prompt("การแก้ไขต้องใช้รหัสการเงิน — ใส่ PIN การเงิน:"); if(pin===null) return; const r=PINMAP[(pin||"").trim()]; if(r==="finance"||r==="owner"){ editDay(date); } else alert("PIN ไม่ถูกต้อง หรือไม่ใช่สิทธิ์การเงิน (ให้พนักงานการเงินมากรอก)"); }
 async function renderDay(date, edit){
   const box=document.getElementById("dayDetail"); if(!box||!sb) return;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
@@ -604,16 +652,19 @@ async function renderDay(date, edit){
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
   if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
   if(au){
-    html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
-    html+=figRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,null);
-    html+=figRow("ยอดฟอร์ม",au.form_main,null);
-    html+=figRow("ใบลดหนี้",au.cn_total,null);
-    html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
-    html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
-    html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
-    html+=renderItems(au.detail, edit);
+    if(!edit && au.detail && au.detail.view){ html+=renderFrozen(au.detail); }
+    else {
+      html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
+      html+=figRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,null);
+      html+=figRow("ยอดฟอร์ม",au.form_main,null);
+      html+=figRow("ใบลดหนี้",au.cn_total,null);
+      html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
+      html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
+      html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
+      html+=renderItems(au.detail, edit);
+    }
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
-    else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
+    else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="requestEdit(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else { html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>'; }
   html+='</div>'; box.innerHTML=html; if(window.applyGating)applyGating();

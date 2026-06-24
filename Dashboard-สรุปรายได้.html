@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard สรุปรายได้ — กิจมั่งมีโฮม</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{ color-scheme:light; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:#f4f4f5; color:#1c1917; font-family:"Sarabun","Segoe UI",system-ui,sans-serif; padding:24px 16px 60px; }
+  .wrap{ max-width:1000px; margin:0 auto; }
+  h1{ font-size:23px; } .lead{ color:#57534e; font-size:14px; margin:6px 0 16px; }
+  .bar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+  input[type=month]{ border:1.5px solid #d6d3d1; border-radius:8px; padding:7px 10px; font:inherit; }
+  .btn{ background:#16a34a; color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; font-weight:700; cursor:pointer; }
+  .cards{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .kpi{ flex:1; min-width:180px; background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:14px 16px; }
+  .kpi .l{ color:#78716c; font-size:13px; } .kpi .v{ font-size:24px; font-weight:800; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .kpi .s{ font-size:12px; color:#a8a29e; margin-top:2px; }
+  .card{ background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:18px; margin-bottom:14px; }
+  .card h2{ font-size:17px; margin-bottom:12px; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td{ text-align:right; padding:7px 9px; border-bottom:1px solid #f0efed; }
+  th:first-child,td:first-child{ text-align:left; }
+  th{ color:#57534e; font-weight:700; font-size:12.5px; background:#fafaf9; }
+  .num{ font-variant-numeric:tabular-nums; }
+  .flag{ background:#fef2f2; }
+  .ok{ color:#15803d; } .warn{ color:#b91c1c; }
+  .muted{ color:#78716c; font-size:13px; }
+  .badge{ font-size:12px; font-weight:800; padding:2px 9px; border-radius:20px; background:#dcfce7; color:#15803d; }
+  .badge.w{ background:#fef2f2; color:#b91c1c; }
+  canvas{ max-height:240px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📊 Dashboard สรุปรายได้ — กิจมั่งมีโฮม</h1>
+  <div class="lead">ดึงสดจาก Supabase · วันที่แสดงเป็น พ.ศ. · เลือกเดือนเพื่อดูสรุป</div>
+  <div style="margin-bottom:14px"><a href="โปรแกรมตรวจรายได้.html" style="display:inline-block;background:#f0fdf4;color:#15803d;border:1.5px solid #16a34a;border-radius:8px;padding:8px 14px;text-decoration:none;font-weight:700">🧮 ไปหน้าตรวจรายได้รายวัน →</a></div>
+  <div class="bar">
+    <label>เดือน: <input type="month" id="month"></label>
+    <button class="btn" onclick="load()">↻ โหลดใหม่</button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div class="cards" id="kpis"></div>
+
+  <div class="card"><h2>📈 ยอด K+ (QR) รายวัน</h2><canvas id="chart"></canvas></div>
+
+  <div class="card"><h2>📋 ผลตรวจรายวัน (ที่ยืนยันแล้ว)</h2><div id="auditTbl" class="muted">—</div></div>
+
+  <div class="cards">
+    <div class="card" style="flex:1;min-width:300px"><h2>📌 มัดจำคงค้าง</h2><div id="depTbl" class="muted">—</div></div>
+    <div class="card" style="flex:1;min-width:300px"><h2>💸 เงินรอจับคู่</h2><div id="pendTbl" class="muted">—</div></div>
+  </div>
+</div>
+
+<script>
+// ---- ล็อกรหัส (เฉพาะคุณหลิง) — เปลี่ยนรหัสที่ตัวแปร PIN ----
+const PIN="0402";
+(function gate(){
+  if(sessionStorage.getItem("rev_dash_ok")==="1") return;
+  const p=prompt("🔒 ใส่รหัสผ่านเพื่อดู Dashboard สรุปรายได้:");
+  if(p===PIN){ sessionStorage.setItem("rev_dash_ok","1"); return; }
+  document.documentElement.innerHTML='<body style="font-family:Sarabun,system-ui,sans-serif;text-align:center;padding:80px 20px;color:#1c1917"><div style="font-size:40px">🔒</div><div style="font-size:18px;margin-top:10px">รหัสไม่ถูกต้อง — เฉพาะผู้มีสิทธิ์เท่านั้น</div><button onclick="location.reload()" style="margin-top:18px;padding:9px 18px;border:0;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">ลองใหม่</button></body>';
+  throw new Error("locked");
+})();
+
+const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+const sb = window.supabase.createClient(SB_URL, SB_KEY);
+const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
+const beDate = s => { if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); };
+let chart=null;
+
+async function load(){
+  const st=document.getElementById("status"); st.textContent="กำลังโหลด…";
+  const msel=document.getElementById("month").value; // YYYY-MM
+  const [a,d,dep,pend]=await Promise.all([
+    sb.from("rev_audit").select("*").order("date"),
+    sb.from("rev_daily").select("*").order("date"),
+    sb.from("rev_deposits").select("*").eq("status","open").order("received_date"),
+    sb.from("rev_pending").select("*").eq("status","open").order("date"),
+  ]);
+  if(a.error||d.error){ st.textContent="โหลดไม่ได้: "+((a.error||d.error).message); return; }
+  st.textContent="";
+  const inM = s => !msel || String(s).slice(0,7)===msel;
+  const audit=(a.data||[]).filter(x=>inM(x.date));
+  const daily=(d.data||[]).filter(x=>inM(x.date));
+  const deps=dep.data||[], pends=pend.data||[];
+
+  // KPIs
+  const auditedRev=audit.reduce((s,x)=>s+(parseFloat(x.machine_net)||0),0);
+  const kplusMonth=daily.reduce((s,x)=>s+(parseFloat(x.kplus_total)||0),0);
+  const depRemain=deps.reduce((s,x)=>s+((parseFloat(x.amount)||0)-(parseFloat(x.used_amount)||0)),0);
+  const pendSum=pends.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  document.getElementById("kpis").innerHTML=
+    kpi("รายได้ที่ตรวจแล้ว (เดือนนี้)", TH(auditedRev), audit.length+" วันที่ยืนยัน")+
+    kpi("ยอด K+ สะสม (เดือนนี้)", TH(kplusMonth), daily.length+" วันมีข้อมูล")+
+    kpi("มัดจำคงค้าง", TH(depRemain), deps.length+" ใบ")+
+    kpi("เงินรอจับคู่", TH(pendSum), pends.length+" รายการ");
+
+  // Chart
+  const labels=daily.map(x=>beDate(x.date)), vals=daily.map(x=>parseFloat(x.kplus_total)||0);
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById("chart"),{type:"bar",
+    data:{labels,datasets:[{label:"ยอด K+ (บาท)",data:vals,backgroundColor:"#60a5fa"}]},
+    options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v.toLocaleString()}}}}});
+
+  // Audit table
+  document.getElementById("auditTbl").innerHTML = audit.length ? (
+    '<table><thead><tr><th>วันที่</th><th>ยอดขายเครื่อง</th><th>ยอดฟอร์ม</th><th>ใบลดหนี้</th><th>K+</th><th>ฝากบัญชี</th><th>สถานะ</th></tr></thead><tbody>'+
+    audit.map(x=>{ const cn=parseFloat(x.cn_total)||0; return '<tr class="'+(cn>0?'flag':'')+'"><td>'+beDate(x.date)+'</td><td class="num">'+TH(x.machine_net)+'</td><td class="num">'+TH(x.form_main)+'</td><td class="num">'+(cn>0?'<span class="warn">'+TH(cn)+'</span>':'—')+'</td><td class="num">'+TH(x.kplus_today)+'</td><td class="num">'+TH(x.bank_dep_today)+'</td><td><span class="badge">'+(x.status||'ตรวจแล้ว')+'</span></td></tr>'; }).join("")+
+    '</tbody></table>') : '<div class="muted">ยังไม่มีผลตรวจที่ยืนยันในเดือนนี้ — กด "ยืนยัน & บันทึกผลตรวจ" ในโปรแกรมตรวจ</div>';
+
+  // Deposits
+  document.getElementById("depTbl").innerHTML = deps.length ? (
+    '<table><thead><tr><th>วันที่รับ</th><th>เลขที่</th><th>ลูกค้า</th><th>เหลือ</th></tr></thead><tbody>'+
+    deps.map(x=>{ const rem=(parseFloat(x.amount)||0)-(parseFloat(x.used_amount)||0); return '<tr><td>'+beDate(x.received_date)+'</td><td>'+(x.deposit_no||'—')+'</td><td>'+(x.customer||'—')+'</td><td class="num"><b>'+TH(rem)+'</b></td></tr>'; }).join("")+
+    '<tr class="tot"><td colspan="3"><b>รวม</b></td><td class="num"><b>'+TH(depRemain)+'</b></td></tr></tbody></table>') : '<div class="muted">ไม่มีมัดจำค้าง 👍</div>';
+
+  // Pending
+  document.getElementById("pendTbl").innerHTML = pends.length ? (
+    '<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>ยอด</th></tr></thead><tbody>'+
+    pends.map(x=>'<tr><td>'+beDate(x.date)+'</td><td>'+(x.source||'—')+'</td><td>'+(x.from_name||'—')+'</td><td class="num">'+TH(x.amount)+'</td></tr>').join("")+
+    '<tr class="tot"><td colspan="3"><b>รวม</b></td><td class="num"><b>'+TH(pendSum)+'</b></td></tr></tbody></table>') : '<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>';
+}
+function kpi(l,v,s){ return '<div class="kpi"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>'; }
+
+// default month = ล่าสุดที่มีข้อมูล
+(async ()=>{
+  const {data}=await sb.from("rev_daily").select("date").order("date",{ascending:false}).limit(1);
+  const m=(data&&data[0])? String(data[0].date).slice(0,7) : new Date().toISOString().slice(0,7);
+  document.getElementById("month").value=m;
+  load();
+})();
+</script>
+</body>
+</html>

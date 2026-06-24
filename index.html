@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{ color-scheme:light; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:#f4f4f5; color:#1c1917; font-family:"Sarabun","Segoe UI",system-ui,sans-serif; padding:24px 16px 60px; }
+  .wrap{ max-width:980px; margin:0 auto; }
+  h1{ font-size:23px; } .lead{ color:#57534e; font-size:14px; margin:6px 0 12px; }
+  .drops{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  .drop{ flex:1; min-width:200px; background:#fff; border:2px dashed #cbd5c0; border-radius:12px; padding:16px; text-align:center; cursor:pointer; transition:.15s; }
+  .drop:hover{ border-color:#16a34a; background:#f0fdf4; }
+  .drop.on{ border-style:solid; border-color:#16a34a; background:#f0fdf4; }
+  .drop .ic{ font-size:26px; } .drop .nm{ font-weight:800; font-size:15px; margin-top:4px; }
+  .drop .hint{ font-size:12px; color:#78716c; margin-top:3px; }
+  .drop .fn{ font-size:12px; color:#16a34a; margin-top:6px; word-break:break-all; font-weight:700; }
+  .card{ background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:18px; margin-bottom:14px; }
+  .card h2{ font-size:17px; margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .badge{ font-size:12.5px; font-weight:800; padding:3px 10px; border-radius:20px; }
+  .ok{ background:#dcfce7; color:#15803d; } .warn{ background:#fef2f2; color:#b91c1c; } .info{ background:#e0e7ff; color:#3730a3; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td{ text-align:right; padding:7px 9px; border-bottom:1px solid #f0efed; }
+  th:first-child,td:first-child{ text-align:left; }
+  th{ color:#57534e; font-weight:700; font-size:12.5px; background:#fafaf9; }
+  .tot td{ font-weight:800; border-top:2px solid #d6d3d1; }
+  input.cell{ width:96px; text-align:right; border:1px solid #d6d3d1; border-radius:6px; padding:4px 6px; font:inherit; }
+  input.rsn,select.rsn{ width:100%; min-width:120px; text-align:left; border:1px solid #d6d3d1; border-radius:6px; padding:4px 6px; font:inherit; }
+  .flag{ background:#fef2f2; }
+  .verdict{ font-size:16px; font-weight:800; padding:14px 18px; border-radius:12px; margin-bottom:16px; }
+  .v-ok{ background:#dcfce7; color:#15803d; } .v-warn{ background:#fff7ed; color:#c2410c; border:1px solid #fdba74; }
+  .muted{ color:#78716c; font-size:12.5px; }
+  .btn{ background:#16a34a; color:#fff; border:0; border-radius:8px; padding:9px 16px; font:inherit; font-weight:700; cursor:pointer; }
+  .btn.sec{ background:#fff; color:#1c1917; border:1.5px solid #d6d3d1; }
+  .hide{ display:none; }
+  .num{ font-variant-numeric:tabular-nums; }
+  .rowflex{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .kv{ display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #f5f5f4; font-size:14px; }
+  .kv b{ font-variant-numeric:tabular-nums; }
+.gated{display:none!important}
+#pinGate{position:fixed;inset:0;background:#f5f5f4;z-index:9999;display:flex;align-items:center;justify-content:center}
+#pinGate .box{background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:30px 32px;max-width:340px;width:90%;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.10)}
+#pinGate input{font-size:24px;letter-spacing:8px;text-align:center;padding:10px;width:170px;border:1.5px solid #d6d3d1;border-radius:8px;margin:14px 0 4px}
+#pinGate .perr{color:#b91c1c;font-size:13px;min-height:18px}
+</style>
+</head>
+<body>
+<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?'))location.reload()">👤 <span id="roleBarTxt"></span> · ออก</div>
+<div id="pinGate"><div class="box">
+  <div style="font-size:34px">🔒</div>
+  <h2 style="margin:8px 0 2px;font-size:19px">ตรวจรายได้ KMMH</h2>
+  <div style="color:#78716c;font-size:13px">ใส่ PIN เพื่อเข้าใช้งาน</div>
+  <div><input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()"></div>
+  <div class="perr" id="pinErr"></div>
+  <button class="btn" type="button" onclick="submitPin()" style="width:100%;margin-top:6px">เข้าใช้งาน</button>
+</div></div>
+<div class="wrap">
+  <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
+  <div class="lead">อัปโหลดไฟล์ → โปรแกรมตรวจให้อัตโนมัติ · วันที่แสดงเป็น พ.ศ. · <b>v0.1</b></div>
+  <div class="r-owner" style="margin-bottom:14px"><a href="Dashboard-สรุปรายได้.html" style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1.5px solid #2563eb;border-radius:8px;padding:8px 14px;text-decoration:none;font-weight:700">📊 ไปหน้า Dashboard สรุป →</a></div>
+
+  <div class="drops">
+    <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">1. ไฟล์รายรับ (ฟอร์มพนักงาน)</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
+    <label class="drop" id="d_pos"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><div class="ic">🖥️</div><div class="nm">2. ไฟล์จากเครื่อง (รายลูกค้า)</div><div class="hint">มี ยอดบิลรวม / ใบลดหนี้ / สุทธิ</div><div class="fn" id="fn_pos"></div></label>
+    <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">3. รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
+    <label class="drop r-fin" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">4. สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
+  </div>
+
+  <div class="card" id="statusCard">
+    <h2>📅 สถานะการส่งรายงานเดือนนี้ <span class="badge info" id="statusBadge">…</span></h2>
+    <div class="muted" style="margin-bottom:8px">✓ เขียว = ตรวจครบ ยืนยันแล้ว · ⚠ เหลือง = ยืนยันแล้วแต่ข้อมูลไม่ครบ · ⏳ เทา = มีข้อมูลแต่ยังไม่ยืนยัน</div>
+    <div id="monthStatus" class="muted">กำลังโหลด…</div>
+    <div id="dayDetail"></div>
+    <div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px">
+      <button class="btn sec" type="button" onclick="clearAll()">🔄 เริ่มตรวจวันถัดไป (ล้างไฟล์ที่อัป)</button>
+      <span class="muted"> — ล้างไฟล์ปัจจุบัน แล้วอัปของวันถัดไป กดยืนยันใหม่</span>
+    </div>
+  </div>
+
+  <div id="err" class="card warn hide" style="background:#fef2f2;border-color:#fca5a5"></div>
+  <div id="out"></div>
+  <div id="matchbox" class="r-fin"></div>
+
+  <div class="card r-fin" id="depcard">
+    <h2>📌 ทะเบียนมัดจำค้าง <span class="badge info" id="depcount">…</span></h2>
+    <div class="muted" style="margin-bottom:10px">มัดจำที่รับไว้แต่ยังไม่ออกบิล — เก็บถาวรใน Supabase · ประกบบิลตอนออกของ กันลืมหักให้ลูกค้า · ค้างเกิน 30 วันจะเตือน ⚠</div>
+    <div style="margin-bottom:12px"><label class="btn" style="cursor:pointer;display:inline-block">⬆ อัปรายงาน “รับมัดจำ” (ดูดเข้าทะเบียนอัตโนมัติ)<input type="file" accept=".xlsx,.xls" class="hide" id="f_dep"></label></div>
+    <div id="deplist" class="muted">กำลังโหลด…</div>
+    <div class="rowflex" style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px">
+      <input class="rsn" id="nd_no" placeholder="เลขที่ใบมัดจำ" style="max-width:150px">
+      <input class="rsn" id="nd_cust" placeholder="ลูกค้า" style="max-width:160px">
+      <input class="cell" id="nd_amt" type="number" placeholder="ยอด">
+      <input class="rsn" id="nd_date" type="date" style="max-width:150px">
+      <button class="btn" type="button" onclick="addDeposit()">+ บันทึกมัดจำ</button>
+      <button class="btn sec" type="button" onclick="loadDeposits()">↻ รีเฟรช</button>
+    </div>
+    <div class="muted" id="dep_msg" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card" id="pendcard">
+    <h2>💸 ยอดเงินรอจับคู่ <span class="badge info" id="pendcount">…</span></h2>
+    <div class="muted" style="margin-bottom:10px">เงินเข้าแล้ว (บัญชีไหนก็ได้) แต่ยังไม่เปิดบิล — รวมไว้ที่นี่ จนกว่าจะออกบิลแล้วจับคู่ · เก็บถาวรใน Supabase</div>
+    <div id="pendlist" class="muted">กำลังโหลด…</div>
+    <div class="rowflex" style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px">
+      <input class="rsn" id="np_date" type="date" style="max-width:140px">
+      <input class="cell" id="np_amt" type="number" placeholder="ยอด">
+      <select class="rsn" id="np_src" style="max-width:130px"><option>เงินสด</option><option>โอนกสิกร</option><option>K+</option><option>อื่นๆ</option></select>
+      <input class="rsn" id="np_from" placeholder="ใครโอน" style="max-width:150px">
+      <input class="rsn" id="np_ref" placeholder="อ้างอิง/สลิป" style="max-width:140px">
+      <input class="rsn" id="np_slip" type="file" accept="image/*,application/pdf" style="max-width:170px" title="แนบสลิป (ถ้ามี)">
+      <button class="btn" type="button" onclick="addPending()">+ เพิ่มเงินรอจับคู่</button>
+      <button class="btn sec" type="button" onclick="loadPending()">↻</button>
+    </div>
+    <div class="muted" id="pend_msg" style="margin-top:6px"></div>
+  </div>
+</div>
+<script>
+
+let ROLE=null;
+const PINMAP={"1234":"cashier","9989":"finance","0402":"owner"};
+const ROLE_LABEL={cashier:"แคชเชียร์",finance:"การเงิน",owner:"เจ้าของ"};
+function submitPin(){
+  const el=document.getElementById("pinInput"); const v=(el.value||"").trim();
+  const r=PINMAP[v];
+  if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง ลองใหม่"; el.value=""; el.focus(); return; }
+  ROLE=r; document.body.classList.add("role-"+r);
+  document.getElementById("pinGate").style.display="none";
+  const rb=document.getElementById("roleBar"); if(rb){ document.getElementById("roleBarTxt").textContent=ROLE_LABEL[r]; rb.style.display="block"; }
+  applyGating();
+}
+function applyGating(){
+  const showFin=(ROLE==="finance"||ROLE==="owner"), showOwner=(ROLE==="owner");
+  document.querySelectorAll(".r-fin").forEach(e=>e.classList.toggle("gated",!showFin));
+  document.querySelectorAll(".r-owner").forEach(e=>e.classList.toggle("gated",!showOwner));
+}
+try{ new MutationObserver(function(){ if(ROLE) applyGating(); }).observe(document.body,{childList:true,subtree:true}); }catch(e){}
+const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
+const num = v => (typeof v==="number") ? v : (parseFloat(String(v).replace(/,/g,""))||0);
+let DATA = { form:null, pos:null };
+
+const SB_URL = "https://hfystbdqjhftrlelmkjm.supabase.co";
+const SB_KEY = "sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+let sb = null;
+try { sb = window.supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn("supabase init failed", e); }
+function beDate(s){ if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); }
+function pad2(n){ return String(n).padStart(2,"0"); }
+function isoFromExcel(v){
+  if(v==null) return null;
+  if(typeof v==="number" && window.XLSX && XLSX.SSF){ const dc=XLSX.SSF.parse_date_code(v); if(dc){ let y=dc.y; if(y>2400)y-=543; return y+"-"+pad2(dc.m)+"-"+pad2(dc.d); } }
+  if(v instanceof Date && !isNaN(v)){ let y=v.getUTCFullYear(); if(y>2400)y-=543; return y+"-"+pad2(v.getUTCMonth()+1)+"-"+pad2(v.getUTCDate()); }
+  const m=String(v).match(/(\d{2,4})-(\d{2})-(\d{2})/); if(m){ let y=parseInt(m[1],10); if(y>2400)y-=543; return y+"-"+m[2]+"-"+m[3]; }
+  return null;
+}
+const FMAP={form:["d_form","fn_form"],pos:["d_pos","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
+function setFn(fnId,name,kind){ const el=document.getElementById(fnId); if(!el) return;
+  el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
+function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null;
+  const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
+  const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
+function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
+async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entries(kp.map).map(([date,total])=>({date, kplus_total:Math.round(total*100)/100})); if(!rows.length) return;
+  try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
+    const {data:au}=await sb.from("rev_audit").select("date").is("kplus_today",null);
+    const set=new Set((au||[]).map(x=>x.date));
+    for(const [date,total] of Object.entries(kp.map)){ if(set.has(date)) await sb.from("rev_audit").update({kplus_today:Math.round(total*100)/100}).eq("date",date); }
+    loadMonthStatus();
+  }catch(e){} }
+async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100})); if(!rows.length) return;
+  try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
+    const {data:au}=await sb.from("rev_audit").select("date").is("bank_dep_today",null);
+    const set=new Set((au||[]).map(x=>x.date));
+    for(const [date,o] of Object.entries(bk.map)){ if(set.has(date)) await sb.from("rev_audit").update({bank_dep_today:Math.round(o.dep*100)/100}).eq("date",date); }
+    loadMonthStatus();
+  }catch(e){} }
+
+function readFile(input, kind, onName){
+  input.addEventListener("change", e=>{
+    const file = e.target.files[0]; if(!file) return; onName(file.name);
+    const r = new FileReader();
+    r.onload = ev=>{
+      try{ const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
+        DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null;
+      }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null; }
+      render(); matchReminder(); if(kind==="form") loadDeposits();
+    };
+    r.readAsArrayBuffer(file);
+  });
+}
+function rowsOf(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
+
+function parseForm(wb){
+  let ws = wb.Sheets["สรุปรายรับ-รายจ่าย"] || wb.Sheets[wb.SheetNames[0]];
+  const R = rowsOf(ws);
+  const lab = r => (r&&r[0]!=null)? String(r[0]).trim() : "";
+  const dstr = isoFromExcel(R[0] && R[0][3]);
+  let iold=-1, iref=-1;
+  R.forEach((r,i)=>{ const a=lab(r); if(a==="บิลเก่า"&&iold<0)iold=i; if(a==="คืนเงิน"&&iref<0)iref=i; });
+  if(iold<0) throw new Error("ไม่พบหัวข้อ 'บิลเก่า' — ไฟล์รายรับอาจผิดแบบฟอร์ม");
+  let cash=0,knv=0,ksk=0,acc=0; const seen={};
+  for(let i=0;i<iold;i++){ const a=lab(R[i]); if(seen[a]) continue;
+    if(a.includes("เงินสด")&&a.includes("มัดจำ")){ cash=num(R[i][3]); seen[a]=1; }
+    else if(a.includes("K+NV")){ knv=num(R[i][3]); seen[a]=1; }
+    else if(a.includes("กสิกร")){ ksk=num(R[i][3]); seen[a]=1; }
+    else if(a.includes("ลงบัญชี")&&a.includes("สั่งทำ")){ acc=num(R[i][3]); seen[a]=1; }
+  }
+  const main=cash+knv+ksk+acc;
+  let refund=0, upk=0, old=0;
+  R.forEach(r=>{ const a=lab(r); if(a==="คืนเงิน")refund=num(r[3]); if(a==="UPK")upk=num(r[3]); });
+  if(iref>iold) for(let i=iold+1;i<iref;i++) old+=num(R[i][3]);
+  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr };
+}
+function parsePos(wb){
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const R = rowsOf(ws);
+  const S = v => v!=null ? String(v).trim() : "";
+  const cust = /^\d{2,4}-\d{5}$/;
+  // แบบ B = รายลูกค้ามีรายละเอียดบิล (หัวตาราง 'วันที่ขาย')
+  const isB = R.some(r => r && r.some(c => S(c)==="วันที่ขาย"));
+  if(isB){
+    let gross=0, cnTotal=0; const cns=[]; const codes={}; const custTotal={}; const custBill={}; let last=null, lastBill=null, curCode=null;
+    R.forEach(r=>{ if(!r) return;
+      const c0=S(r[0]),c1=S(r[1]),c2=S(r[2]),c3=S(r[3]),c5=S(r[5]);
+      if(cust.test(c1) && !c0){ last=c2; curCode=c1; codes[c1]=c2; }
+      else if(/^KM/i.test(c0)){ lastBill=c0; if(curCode){ custTotal[curCode]=(custTotal[curCode]||0)+num(r[4]); if(!custBill[curCode]) custBill[curCode]=c0; } }
+      else if(c0==="ใบลดหนี้"){ cns.push({customer:last||"(ไม่ระบุ)", cn:num(r[2]), cn_no:c1, bill_no:lastBill}); }
+      else if(c3==="รวมทั้งหมด" && num(r[6])>0){ gross=num(r[6]); }
+      else if(c5==="หัก ใบลดหนี้"){ cnTotal=num(r[6]); }
+    });
+    if(gross===0) throw new Error("อ่านยอดรวมไม่ได้ — เช็กรูปแบบไฟล์เครื่อง (แบบรายลูกค้ามีรายละเอียด)");
+    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
+  }
+  // แบบ A = รายลูกค้าแบบสรุป (รหัสลูกค้าคอลัมน์แรก)
+  const custA = /^\s*\d{2,4}-\d{5}\s*$/;
+  let gross=0, last=null; const cns=[]; const codes={}; const custTotal={}; const custBill={};
+  R.forEach(r=>{ if(!r) return; const c0 = r[0]!=null ? String(r[0]).trim() : "";
+    if(custA.test(c0)){ last = (r[1]!=null)? String(r[1]).trim() : c0; gross += num(r[5]); codes[c0]=last; custTotal[c0]=(custTotal[c0]||0)+num(r[5]); }
+    else if(c0==="ใบลดหนี้"){ cns.push({ customer:last||"(ไม่ระบุ)", cn:num(r[1]) }); }
+  });
+  if(gross===0) throw new Error("อ่านยอดบิลไม่ได้ — ไฟล์เครื่องอาจไม่ใช่แบบ 'รายลูกค้า'");
+  const cnTotal = cns.reduce((s,x)=>s+x.cn,0);
+  return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
+}
+function render(){
+  const err = document.getElementById("err");
+  const msgs = [DATA._e_form&&("ไฟล์รายรับ: "+DATA._e_form), DATA._e_pos&&("ไฟล์เครื่อง: "+DATA._e_pos), DATA._e_kplus&&("รายงาน K+: "+DATA._e_kplus), DATA._e_bank&&("สเตทเมนต์: "+DATA._e_bank)].filter(Boolean);
+  if(msgs.length){ err.classList.remove("hide"); err.innerHTML="⚠ "+msgs.join("<br>"); } else err.classList.add("hide");
+  const out = document.getElementById("out"); out.innerHTML="";
+  const f=DATA.form, p=DATA.pos;
+  if(!f || !p){ out.innerHTML = '<div class="muted">อัปโหลดทั้ง <b>ไฟล์รายรับ</b> และ <b>ไฟล์เครื่อง</b> เพื่อเริ่มตรวจ</div>'; return; }
+
+  DATA._refund = f.refund;
+  const sumForm = f.main + f.upk;
+  const diffRaw = p.net - sumForm;
+  const diffAdj = p.net - (sumForm - f.refund);
+  const okRaw = Math.abs(diffRaw) <= 1;
+  const okAdj = Math.abs(diffAdj) <= 1;
+  const ok1 = okRaw || okAdj;
+  const ok2 = p.cns.length === 0;
+  const allOk = ok1 && ok2;
+  const kPending = !DATA.kplus || !DATA.bank;
+  out.innerHTML += `<div class="verdict ${allOk?'v-ok':'v-warn'}">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
+  out.innerHTML += `<div style="text-align:center;margin:-4px 0 16px"><button class="btn" type="button" onclick="saveAudit()">✓ ยืนยัน & บันทึกผลตรวจวันนี้ (${f.date?beDate(f.date):'-'})</button> <span id="audit_msg" class="muted" style="margin-left:8px"></span></div>`;
+
+  const scenario = okRaw ? '✓ ยอดขายตรง — “คืนเงิน” เป็นรายการแยก (เช่น มัดจำฝากไว้/รอออกบิล) ไม่หักจากยอดขาย'
+                 : okAdj ? '✓ ยอดขายตรง — “คืนเงิน” ถูกรวมอยู่ในยอดขายของฟอร์มแล้ว'
+                 : '🚩 ยังไม่ลงตัวทั้งสองแบบ — ตรวจรายการประกอบด้านล่าง / ตาราง ②';
+  const matchDep = (f.refund>0) ? (DATA._open||[]).find(d=>Math.abs((parseFloat(d.amount)||0)-f.refund)<=1) : null;
+  out.innerHTML += `
+  <div class="card">
+    <h2>① ยอดขายตรง <span class="badge ${ok1?'ok':'warn'}">${ok1?'ตรง ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩'}</span></h2>
+    <div class="kv"><span>ยอดสุทธิจากเครื่อง (ยอดบิล ${TH0(p.gross)} − ใบลดหนี้ ${TH0(p.cnTotal)})</span><b>${TH(p.net)}</b></div>
+    <div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด ${TH0(f.main)} + UPK ${TH0(f.upk)}</span><b>${TH(sumForm)}</b></div>
+    <div class="kv"><span>ส่วนต่าง (ไม่หักคืนเงิน)</span><b style="color:${okRaw?'#15803d':'#b91c1c'}">${TH(diffRaw)}</b></div>
+    <div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน ${TH0(f.refund)})</span><b style="color:${okAdj?'#15803d':'#b91c1c'}">${TH(diffAdj)}</b></div>
+    <div class="muted" style="margin-top:8px">📌 ${scenario}</div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e5e4">
+      <div class="muted" style="margin-bottom:8px"><b>อธิบายยอด “คืนเงิน” ในฟอร์ม = ${TH(f.refund)}</b><br>ใบลดหนี้ที่คืนสด → กรอกช่อง “คืนสดจริง” ในข้อ ② (นับให้อัตโนมัติ) · ส่วนที่เหลือ (มัดจำ/อื่นๆ) เพิ่มรายการที่นี่</div>
+      <div id="exrows"></div>
+      <button class="btn sec r-fin" type="button" onclick="addEx()" style="margin-top:2px">+ เพิ่มรายการ (มัดจำ/อื่นๆ)</button>
+      <button class="btn sec r-fin" type="button" onclick="saveExDeposits()" style="margin-top:2px">💾 บันทึกใบมัดจำเข้าทะเบียน</button>
+      <div class="kv" style="margin-top:10px"><span>คืนเงิน ${TH(f.refund)} − CN คืนสด② <b id="excn">${TH(0)}</b> − มัดจำจากทะเบียน(auto) <b id="exdep">${TH(0)}</b> − มัดจำ/อื่นๆ① <b id="exdone">${TH(0)}</b></span><b id="exsum" style="font-size:15px">เหลือ ${TH(f.refund)}</b></div>
+      <div class="muted" id="exnote" style="margin-top:4px"></div>
+      <div class="kv" style="margin-top:8px"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>${TH(f.old)}</b></div>
+    </div>
+  </div>`;
+
+  let rowsHtml = p.cns.map((x,i)=>`<tr data-i="${i}"><td>${x.customer}</td><td>${x.cn_no||'—'}</td><td>${x.bill_no||'—'}</td><td class="num">${TH(x.cn)}</td><td><input class="cell cash" type="number" placeholder="0" oninput="recalc(${i})"></td><td class="num left rem" id="rem${i}">${TH(x.cn)}</td><td><input class="rsn rsninp" placeholder="พนง.กรอกเหตุผล"></td><td><input class="rsn appinp" placeholder="ผู้ขาย"></td></tr>`).join("");
+  out.innerHTML += `
+  <div class="card">
+    <h2>② คุมใบลดหนี้ (CN) <span class="badge ${p.cns.length?'warn':'ok'}">${p.cns.length? p.cns.length+' ใบ — ต้องมีเหตุผลกำกับ 🚩':'ไม่มีใบลดหนี้ ✓'}</span></h2>
+    <div class="muted" style="margin-bottom:10px">ใบลดหนี้ตัดยอดขายจริง — ดึงจากเครื่อง · พนักงานกรอกคืนสดจริง/เหตุผล/ผู้ขายทุกใบ · ช่อง “เหลือเป็นมูลค่าบิล” = ส่วนของ CN ที่เป็นมูลค่าซื้อสินค้าใหม่ (ควรตรงกับบิลที่ผูก)</div>
+    <table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead>
+      <tbody>${rowsHtml||'<tr><td colspan="8" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>'}</tbody>
+      ${p.cns.length?`<tfoot><tr class="tot"><td colspan="3">รวม</td><td class="num">${TH(p.cnTotal)}</td><td></td><td></td><td></td><td></td></tr></tfoot>`:''}
+    </table>
+    ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
+  </div>`;
+
+  const kp = DATA.kplus;
+  let a3="";
+  if(kp){
+    const fd=f.date; const kday=(fd && kp.map[fd]!=null) ? kp.map[fd] : null;
+    if(kday==null){ a3=`<div class="kv"><span>รายงาน K+ (รวมทั้งไฟล์ ${kp.count} รายการ)</span><b>${TH(kp.total)}</b></div><div class="muted">ไม่พบรายการ K+ ของวันที่ฟอร์ม (${fd?beDate(fd):'ไม่ทราบวันที่'}) — เช็กว่าอัปรายงาน K+ ตรงช่วงไหม</div>`; }
+    else { const diff=f.knv-kday;
+      a3=`<div class="kv"><span>K+ ใหม่ (จากรายงาน) วันที่ ${beDate(fd)}</span><b>${TH(kday)}</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม (รวม 2 QR)</span><b>${TH(f.knv)}</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>${TH(diff)}</b></div><div class="muted">ℹ️ ส่วนต่างรายวันปกติ มาจาก <b>เวลาตัดรอบ 15:30 / บิลข้ามวัน</b> และ <b>QR เก่า</b> (ไม่อยู่ในรายงานนี้) — รายวันใช้ดูคร่าวๆ ยอดจริงตรงเมื่อดูทั้งเดือน${diff<-1?'<br><b style="color:#b91c1c">⚠ รายงาน K+ มากกว่าฟอร์ม — เผื่อเช็กว่าลงขาด</b>':''}</div>`;
+    }
+  } else { a3=`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — รอไฟล์รายงาน K+ จากคุณหลิง · พนักงานอัปส่วนอื่นได้เลย ตรวจ K+ ทีหลังได้</div>`; }
+
+  const bank = DATA.bank;
+  let b3;
+  if(bank){
+    const bd = (f.date && bank.map[f.date]) ? bank.map[f.date] : null;
+    if(bd){ const direct = bd.dep - bd.kplus; const diff = direct - f.ksk;
+      b3 = `<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์ ${beDate(f.date)})</span><b>${TH(bd.dep)}</b></div><div class="kv"><span>— เป็น K+ QR settlement (เข้าก้อนเดียวปลายวัน)</span><b>${TH(bd.kplus)}</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>${TH(direct)}</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>${TH(f.ksk)}</b></div><div class="kv"><span>ส่วนต่าง (โอนตรง − ฟอร์ม)</span><b style="color:#c2410c">${TH(diff)}${diff<-1?' ⓘ ฟอร์มมากกว่า':''}</b></div><div class="muted">ℹ️ K+ QR เข้าบัญชีก้อนเดียวปลายวัน (นับใน ③a) · ส่วนต่างโอนตรง vs ฟอร์ม <b>ปกติมาจากเวลาตัดรอบ 15:30 / บิลข้ามวัน</b> เหมือน K+ (ฟอร์มนับตามบิล แบงค์นับตามวันเงินเข้า) — รายวันใช้ดูคร่าวๆ ยอดตรงเมื่อดูทั้งเดือน</div>`;
+    } else { b3 = `<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันที่ฟอร์ม (${f.date?beDate(f.date):'ไม่ทราบวันที่'}) — เช็กว่าตรงรอบไหม</div>`; }
+  } else { b3 = `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — อัปสเตทเมนต์กสิกร (resultFile…csv) ในช่อง 4 เพื่อตรวจอัตโนมัติ</div>`; }
+
+  DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_refund:f.refund, cn_total:p.cnTotal,
+    kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
+    bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
+  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
+  out.innerHTML += `
+  <div class="card">
+    <h2>③ ตรงธนาคาร${(kp&&bank)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>'}</h2>
+    <div style="margin-bottom:8px"><b>③a K+ (QR ผ่าน K+shop)</b></div>${a3}
+    <div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px;margin-bottom:6px"><b>③b โอนเข้าบัญชีกสิกร</b></div>${b3}
+  </div>`;
+
+  const odSet=new Set();
+  if(kp) Object.keys(kp.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
+  if(bank) Object.keys(bank.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
+  const otherDays=[...odSet].sort();
+  if(otherDays.length){
+    out.innerHTML += `<div class="card" style="border-color:#c4b5fd;background:#faf5ff"><h2>📅 ข้อมูลวันอื่นในไฟล์ <span class="badge" style="background:#ede9fe;color:#5b21b6">${otherDays.length} วัน</span></h2><div class="muted" style="margin-bottom:10px">วันที่ไม่ใช่วันของฟอร์มนี้ — เก็บเข้าระบบ (rev_daily) แล้ว รอตรวจเป็นวันๆ เมื่อมีฟอร์มของวันนั้น</div><table><thead><tr><th>วันที่</th><th>ยอด K+ (QR)</th><th>ฝากเข้าบัญชี</th></tr></thead><tbody>${otherDays.map(d=>'<tr><td>'+beDate(d)+'</td><td class="num">'+((kp&&kp.map[d]!=null)?TH(kp.map[d]):'—')+'</td><td class="num">'+((bank&&bank.map[d])?TH(bank.map[d].dep):'—')+'</td></tr>').join('')}</tbody></table></div>`;
+  }
+  if(document.getElementById("exsum")) recalcEx();
+}
+function recalc(i){
+  const tr=document.querySelector(`tr[data-i="${i}"]`); const cn=DATA.pos.cns[i].cn;
+  const cash=parseFloat(tr.querySelector(".cash").value)||0; const rem=cn-cash;
+  document.getElementById("rem"+i).textContent = rem.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+  tr.classList.toggle("flag", rem>0 && !tr.querySelector(".rsninp").value);
+  recalcEx();
+}
+function addEx(){
+  const wrap=document.getElementById("exrows"); if(!wrap) return;
+  const div=document.createElement("div"); div.className="rowflex"; div.style.marginBottom="6px"; div.dataset.ex="1";
+  div.innerHTML=`<select class="rsn ex-cat" style="max-width:200px" onchange="onCat(this)"><option value="ใบมัดจำ">ใบมัดจำ (ใส่เลขที่)</option><option value="อื่นๆ">อื่นๆ (ระบุ)</option></select><input class="rsn ex-ref" style="max-width:180px" placeholder="เลขที่ใบมัดจำ"><input class="cell ex-amt" type="number" placeholder="ยอด" oninput="recalcEx()"><button class="btn sec" type="button" style="padding:4px 11px;margin:0" onclick="this.parentNode.remove();recalcEx()">✕</button>`;
+  wrap.appendChild(div); recalcEx();
+}
+function onCat(sel){ const ref=sel.parentNode.querySelector(".ex-ref"); ref.placeholder = sel.value==="ใบมัดจำ" ? "เลขที่ใบมัดจำ" : "ระบุรายละเอียด"; }
+function recalcEx(){
+  const refund=DATA._refund||0;
+  let depR=0;
+  if(DATA.form && DATA.pos){ const fd=DATA.form.date; (DATA._open||[]).forEach(d=>{ const code=String(d.customer_code||"").trim(); const bill=(DATA.pos.custTotal&&DATA.pos.custTotal[code])||0; const full=parseFloat(d.amount)||0; if(bill<=0){ if(String(d.received_date).slice(0,10)===fd) depR+=full; } else if(bill<full){ depR+=full-bill; } }); }
+  DATA._depRefund=depR;
+  let cnCash=0; document.querySelectorAll("input.cash").forEach(i=>cnCash+=parseFloat(i.value)||0);
+  let other=0; document.querySelectorAll(".ex-amt").forEach(i=>other+=parseFloat(i.value)||0);
+  const rem=refund-cnCash-depR-other; const fmt=v=>v.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dep=document.getElementById("exdep"); if(dep) dep.textContent=fmt(depR);
+  const cn=document.getElementById("excn"); if(cn) cn.textContent=fmt(cnCash);
+  const done=document.getElementById("exdone"); if(done) done.textContent=fmt(other);
+  const el=document.getElementById("exsum"); const note=document.getElementById("exnote");
+  if(Math.abs(rem)<=1){ if(el){ el.textContent="✓ อธิบายครบ"; el.style.color="#15803d"; } if(note) note.innerHTML=""; }
+  else if(rem<0){ if(el){ el.textContent="เกิน "+fmt(-rem); el.style.color="#b91c1c"; } if(note){ note.innerHTML="⚠ อธิบายเกินยอดคืนเงินไป "+fmt(-rem); note.style.color="#b91c1c"; } }
+  else { if(el){ el.textContent="เหลือ "+fmt(rem); el.style.color="#c2410c"; } if(note){ note.innerHTML="ยังไม่ครบ — เหลืออีก "+fmt(rem); note.style.color="#c2410c"; } }
+}
+function exportCN(){
+  const rows=[["ลูกค้า","เลขที่ CN","บิลที่ผูก","ยอด CN","คืนสดจริง","เหลือเป็นมูลค่าบิล","เหตุผล","ผู้ขาย"]];
+  document.querySelectorAll("tr[data-i]").forEach((tr,i)=>{ const x=DATA.pos.cns[i]; const cn=x.cn; const cash=parseFloat(tr.querySelector(".cash").value)||0; rows.push([x.customer, x.cn_no||"", x.bill_no||"", cn, cash, cn-cash, tr.querySelector(".rsninp").value, tr.querySelector(".appinp").value]); });
+  const csv="﻿"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="สมุดคุม-CN.csv"; a.click();
+}
+
+function parseDepositReport(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const R=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const ra=/^RA/i; const recs=[];
+  R.forEach(r=>{ if(!r) return; const c0=r[0]!=null?String(r[0]).trim():""; if(!ra.test(c0)) return;
+    const iso = isoFromExcel(r[1]);
+    recs.push({ deposit_no:c0, received_date:iso, customer_code:r[2]!=null?String(r[2]).trim():null, customer:r[3]!=null?String(r[3]).trim():null, amount:num(r[7])||num(r[5]) });
+  });
+  return recs;
+}
+const fdep=document.getElementById("f_dep");
+if(fdep) fdep.addEventListener("change", e=>{
+  const file=e.target.files[0]; if(!file) return; const msg=document.getElementById("dep_msg"); const r=new FileReader();
+  r.onload=async ev=>{ let recs;
+    try{ const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"}); recs=parseDepositReport(wb); }
+    catch(err){ msg.textContent="อ่านไฟล์ไม่ได้: "+err.message; msg.style.color="#b91c1c"; return; }
+    if(!recs.length){ msg.textContent="ไม่พบรายการ RA ในไฟล์ — ใช่รายงานรับมัดจำไหม?"; msg.style.color="#b91c1c"; return; }
+    if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }
+    const {error}=await sb.from("rev_deposits").upsert(recs,{onConflict:"deposit_no",ignoreDuplicates:true});
+    if(error){ msg.textContent="ดูดเข้าไม่ได้: "+error.message; msg.style.color="#b91c1c"; return; }
+    msg.textContent="✓ ดูดรายงานรับมัดจำเข้าทะเบียน "+recs.length+" ใบ (ใบที่มีอยู่แล้วข้าม ไม่ทับ)"; msg.style.color="#15803d"; loadDeposits();
+  };
+  r.readAsArrayBuffer(file);
+});
+function matchReminder(){
+  const box=document.getElementById("matchbox"); if(!box) return;
+  const open=DATA._open||[], pos=DATA.pos;
+  if(!pos || !open.length || !pos.codes){ box.innerHTML=""; return; }
+  const codes=new Set(pos.codes.map(c=>String(c).trim()));
+  const hits=open.filter(d=>d.customer_code && codes.has(String(d.customer_code).trim()));
+  if(!hits.length){ box.innerHTML=""; return; }
+  box.innerHTML='<div class="card" style="border-color:#f59e0b;background:#fffbeb"><h2>⚠ เตือนมัดจำ — ลูกค้าที่ซื้อวันนี้มีมัดจำค้าง</h2><div class="muted" style="margin-bottom:8px">ลูกค้าเหล่านี้มีบิลในไฟล์วันนี้ และยังมีมัดจำค้างในทะเบียน — เช็กว่าหักมัดจำให้แล้ว (โดยเฉพาะถ้าก๊อปบิลจากใบเสนอราคา) ถ้าหักแล้วกดปิดใบ</div><table><thead><tr><th>ลูกค้า</th><th>ใบมัดจำ</th><th>มัดจำเหลือ</th><th>บิลวันนี้</th><th>หักแล้วเป็นยังไง</th><th></th></tr></thead><tbody>'+
+    hits.map(d=>{ const rem=(parseFloat(d.amount)||0)-(parseFloat(d.used_amount)||0); const code=String(d.customer_code||"").trim(); const bill=(pos.custTotal&&pos.custTotal[code])||0; const billNo=(pos.custBill&&pos.custBill[code])||""; const full=parseFloat(d.amount)||0; const deduct=Math.min(rem, Math.max(0, bill-(full-rem))); let rel; if(bill<=0) rel="ไม่พบบิลวันนี้"; else if(bill>=full) rel="บิล "+TH0(bill)+" = มัดจำ "+TH0(full)+" + ลงบัญชี "+TH0(bill-full); else rel="มัดจำ "+TH0(full)+" = บิล "+TH0(bill)+" + เหลือมัดจำ "+TH0(full-bill); return '<tr class="flag"><td>'+(d.customer||'—')+'</td><td>'+(d.deposit_no||'—')+'</td><td class="num">'+TH(rem)+'</td><td class="num">'+(bill?TH(bill):'—')+'</td><td class="muted" style="text-align:left">'+rel+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+d.id+'\','+rem+',\''+billNo+'\','+deduct+')">หักมัดจำ</button></td></tr>'; }).join("")+'</tbody></table></div>';
+}
+
+function parseCSV(text){
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[]; let row=[], cur="", q=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else { if(c==='"') q=true; else if(c===','){ row.push(cur); cur=""; } else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; } else if(c==='\r'){} else cur+=c; } }
+  if(cur!==""||row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+function parseKPlus(text){
+  const R=parseCSV(text); let h=-1;
+  for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="Date Time")){ h=i; break; } }
+  if(h<0) throw new Error("ไม่พบหัวตาราง (Date Time) — ใช่รายงาน K+ ไหม?");
+  const hdr=R[h].map(c=>String(c||"").trim()); const iDt=hdr.indexOf("Date Time"), iAmt=hdr.indexOf("Amount");
+  if(iDt<0||iAmt<0) throw new Error("ไม่พบคอลัมน์ Date Time / Amount");
+  const map={}; let total=0, count=0;
+  for(let i=h+1;i<R.length;i++){ const row=R[i]; if(!row||!row[iDt]) continue;
+    const m=String(row[iDt]).match(/(\d{2})-(\d{2})-(\d{4})/); if(!m) continue;
+    const iso=m[3]+"-"+m[2]+"-"+m[1]; const amt=num(row[iAmt]); if(!amt) continue;
+    map[iso]=(map[iso]||0)+amt; total+=amt; count++; }
+  return {map, total, count};
+}
+const fkp=document.getElementById("f_kplus");
+if(fkp) fkp.addEventListener("change", e=>{
+  const file=e.target.files[0]; if(!file) return; setFn("fn_kplus",file.name,"kplus"); document.getElementById("d_kplus").classList.add("on");
+  const r=new FileReader();
+  r.onload=ev=>{ try{ DATA.kplus=parseKPlus(ev.target.result); DATA._e_kplus=null; saveKplusDaily(DATA.kplus); }catch(err){ DATA._e_kplus=err.message; DATA.kplus=null; } render(); matchReminder(); };
+  r.readAsText(file,"utf-8");
+});
+function parseBank(text){
+  const R=parseCSV(text); let h=-1;
+  for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="ฝากเงิน")){ h=i; break; } }
+  if(h<0) throw new Error("ไม่พบหัวตาราง (ฝากเงิน) — ใช่สเตทเมนต์กสิกรไหม?");
+  const map={};
+  for(let i=h+1;i<R.length;i++){ const r=R[i]; if(!r||!r[1]) continue;
+    const m=String(r[1]).match(/(\d{2})-(\d{2})-(\d{2})/); if(!m) continue;
+    const iso="20"+m[3]+"-"+m[2]+"-"+m[1]; const dep=num(r[6]), wd=num(r[4]);
+    const ch=String(r[10]||""), detail=String(r[12]||"");
+    const isKplus = ch.indexOf("K SHOP")>=0 || ch.indexOf("MYQR")>=0 || ch.indexOf("EDC")>=0 || detail.indexOf("KB000001825670")>=0;
+    if(!map[iso]) map[iso]={dep:0,wd:0,kplus:0}; map[iso].dep+=dep; map[iso].wd+=wd; if(isKplus) map[iso].kplus+=dep; }
+  return {map};
+}
+const fbk=document.getElementById("f_bank");
+if(fbk) fbk.addEventListener("change", e=>{
+  const file=e.target.files[0]; if(!file) return; setFn("fn_bank",file.name,"bank"); document.getElementById("d_bank").classList.add("on");
+  const r=new FileReader();
+  r.onload=ev=>{ try{ DATA.bank=parseBank(ev.target.result); DATA._e_bank=null; saveBankDaily(DATA.bank); }catch(err){ DATA._e_bank=err.message; DATA.bank=null; } render(); matchReminder(); };
+  r.readAsText(file,"utf-8");
+});
+async function loadDeposits(){
+  const list=document.getElementById("deplist"), cnt=document.getElementById("depcount");
+  if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
+  list.textContent="กำลังโหลด…";
+  const {data,error}=await sb.from("rev_deposits").select("*").eq("status","open").order("received_date",{ascending:true});
+  if(error){ list.innerHTML='<span style="color:#b91c1c">โหลดไม่ได้: '+error.message+'</span>'; return; }
+  DATA._open=data; matchReminder(); if(typeof recalcEx==="function") recalcEx();
+  cnt.textContent=data.length+" ใบค้าง";
+  if(!data.length){ list.innerHTML='<div class="muted">ไม่มีมัดจำค้าง 👍</div>'; return; }
+  const today=new Date();
+  list.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>เลขที่</th><th>ลูกค้า</th><th>ยอดมัดจำ</th><th>ใช้ไป</th><th>เหลือ</th><th>ค้าง(วัน)</th><th></th></tr></thead><tbody>'+
+    data.map(d=>{ const amt=parseFloat(d.amount)||0, used=parseFloat(d.used_amount)||0, rem=amt-used;
+      const days=Math.floor((today-new Date(d.received_date))/86400000); const warn=days>30;
+      const matched = DATA.form && DATA.form.refund>0 && Math.abs(amt-DATA.form.refund)<=1;
+      const cust=(d.customer||'—')+(matched?' <span style="color:#15803d;font-size:11.5px;font-weight:700">✓ ประกบฟอร์มวันนี้</span>':'');
+      return '<tr class="'+(warn?'flag':'')+'" style="'+(matched?'background:#f0fdf4':'')+'"><td>'+beDate(d.received_date)+'</td><td>'+(d.deposit_no||'—')+'</td><td>'+cust+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+(used?TH(used):'—')+'</td><td class="num"><b>'+TH(rem)+'</b></td><td class="num">'+days+(warn?' ⚠':'')+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+d.id+'\','+rem+')">หักมัดจำ</button></td></tr>';
+    }).join("")+'</tbody></table>';
+}
+async function addDeposit(){
+  const msg=document.getElementById("dep_msg"); if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }
+  const no=document.getElementById("nd_no").value.trim(), cust=document.getElementById("nd_cust").value.trim();
+  const amt=parseFloat(document.getElementById("nd_amt").value)||0; const date=document.getElementById("nd_date").value||new Date().toISOString().slice(0,10);
+  if(amt<=0){ msg.textContent="ใส่ยอดมัดจำก่อน"; msg.style.color="#b91c1c"; return; }
+  const {error}=await sb.from("rev_deposits").insert({deposit_no:no,customer:cust,amount:amt,received_date:date});
+  if(error){ msg.textContent="บันทึกไม่ได้: "+error.message; msg.style.color="#b91c1c"; return; }
+  msg.textContent="✓ บันทึกแล้ว"; msg.style.color="#15803d";
+  document.getElementById("nd_no").value=""; document.getElementById("nd_cust").value=""; document.getElementById("nd_amt").value=""; loadDeposits();
+}
+async function useDeposit(id, remaining, billDefault, amtDefault){
+  if(!sb) return;
+  const bill=prompt("หักมัดจำกับบิลขายเลขที่ (เช่น KM6906-xxxx):", billDefault||""); if(bill===null) return;
+  const amtStr=prompt("ยอดที่หักครั้งนี้ (เหลือ "+TH(remaining)+"):", String(amtDefault!=null?amtDefault:remaining)); if(amtStr===null) return;
+  const amt=parseFloat(amtStr)||0; if(amt<=0){ alert("ใส่ยอดที่หักให้ถูกต้อง"); return; }
+  const by=prompt("ผู้ยืนยัน:"); if(by===null) return;
+  const {error:e1}=await sb.from("rev_deposit_uses").insert({deposit_id:id,bill_no:bill.trim(),amount:amt,confirmed_by:(by||"").trim()});
+  if(e1){ alert("บันทึกการหักไม่ได้: "+e1.message); return; }
+  const {data:dep,error:e2}=await sb.from("rev_deposits").select("amount,used_amount").eq("id",id).single();
+  if(e2){ alert("อ่านยอดไม่ได้: "+e2.message); return; }
+  const newUsed=(parseFloat(dep.used_amount)||0)+amt; const closed=newUsed >= (parseFloat(dep.amount)||0)-0.01;
+  const {error:e3}=await sb.from("rev_deposits").update({used_amount:newUsed, status:closed?"matched":"open", matched_bill_no:bill.trim(), matched_date:new Date().toISOString().slice(0,10), confirmed_by:(by||"").trim()}).eq("id",id);
+  if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; } loadDeposits();
+}
+async function saveExDeposits(){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  const rows=[...document.querySelectorAll('#exrows [data-ex]')].filter(r=>r.querySelector(".ex-cat").value==="ใบมัดจำ");
+  if(!rows.length){ alert("ไม่มีรายการประเภท 'ใบมัดจำ' ในข้อ ①"); return; }
+  const today=new Date().toISOString().slice(0,10);
+  const recs=rows.map(r=>({deposit_no:r.querySelector(".ex-ref").value.trim(), amount:parseFloat(r.querySelector(".ex-amt").value)||0, received_date:today, note:"จากหน้าตรวจรายรับ"})).filter(r=>r.amount>0);
+  if(!recs.length){ alert("ใส่ยอดในรายการใบมัดจำก่อน"); return; }
+  const {error}=await sb.from("rev_deposits").insert(recs);
+  if(error){ alert("บันทึกไม่ได้: "+error.message); return; } alert("✓ บันทึกมัดจำ "+recs.length+" รายการเข้าทะเบียนแล้ว"); loadDeposits();
+}
+async function saveAudit(){
+  const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
+  if(!s||!s.date){ if(msg){msg.textContent="ยังไม่มีข้อมูลให้บันทึก";msg.style.color="#b91c1c";} return; }
+  if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; }
+  const {error}=await sb.from("rev_audit").upsert([{...s, status:"ตรวจแล้ว", confirmed_at:new Date().toISOString()}],{onConflict:"date"});
+  if(error){ if(msg){msg.textContent="ผิดพลาด: "+error.message;msg.style.color="#b91c1c";} return; }
+  const need=[!DATA.kplus?"รายงาน K+":null, !DATA.bank?"สเตทเมนต์ธนาคาร":null].filter(Boolean);
+  if(msg){ msg.innerHTML = need.length ? "✓ บันทึกส่วนที่มีแล้ว ("+beDate(s.date)+") — ยังรอ "+need.join(" + ")+" · คุณหลิงอัปเติมทีหลังแล้วกดยืนยันอีกครั้ง (ทับของเดิม)" : "✓ บันทึกครบแล้ว "+beDate(s.date)+" · ข้อมูลวันอื่นเก็บไว้รอตรวจในวันของมัน"; msg.style.color="#15803d"; }
+  loadMonthStatus();
+  sendAuditAlert();
+}
+async function sendAuditAlert(){
+  const m=DATA._auditMsg; if(!sb||!m||!m.date) return;
+  const head = m.allOk ? "✅ ผ่านเบื้องต้น" : "🚩 มีจุดต้องดู";
+  const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
+  const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
+  const l3 = m.kPending ? "⏳ รอตรวจ K+/สเตทเมนต์" : "ตรวจแล้ว ✓";
+  const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+"\n\n"
+    +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" · ฟอร์ม "+TH(m.sumForm)+"\n"
+    +"② ใบลดหนี้: "+l2+"\n"
+    +"③ ธนาคาร: "+l3+"\n\n"
+    +"<i>พนักงานยืนยันแล้ว</i>";
+  const msg=document.getElementById("audit_msg");
+  try{
+    const {data,error}=await sb.functions.invoke("rev-alert",{body:{text:text}});
+    if(msg){ if(error||(data&&data.ok===false)) msg.innerHTML+=' · <span style="color:#b45309">⚠ แจ้งเตือน Telegram ไม่สำเร็จ</span>'; else msg.innerHTML+=' · <span style="color:#15803d">📣 แจ้งกลุ่มแล้ว</span>'; }
+  }catch(e){ if(msg) msg.innerHTML+=' · <span style="color:#b45309">⚠ แจ้งเตือนไม่สำเร็จ</span>'; }
+}
+async function markHoliday(date){ if(!sb) return; await sb.from("rev_audit").upsert([{date, status:"วันหยุด"}],{onConflict:"date"}); loadMonthStatus(); showDayDetail(date); }
+async function unmarkHoliday(date){ if(!sb) return; await sb.from("rev_audit").delete().eq("date",date); loadMonthStatus(); showDayDetail(date); }
+async function showDayDetail(date){
+  const box=document.getElementById("dayDetail"); if(!box||!sb) return;
+  box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
+  const [a,d]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle() ]);
+  const au=a.data, da=d.data;
+  let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>';
+  if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้ — ไม่นับว่าข้อมูลขาด</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; return; }
+  if(au){ const miss=[]; if(au.kplus_today==null && !(da&&da.kplus_total!=null)) miss.push("รายงาน K+"); if(au.bank_dep_today==null && !(da&&da.bank_dep_total!=null)) miss.push("สเตทเมนต์ธนาคาร");
+    html+='<div class="kv"><span>ยอดขายเครื่อง (สุทธิ)</span><b>'+TH(au.machine_net)+'</b></div><div class="kv"><span>ยอดฟอร์ม</span><b>'+TH(au.form_main)+'</b></div><div class="kv"><span>ใบลดหนี้</span><b>'+TH(au.cn_total)+'</b></div><div class="kv"><span>K+ (วันนี้)</span><b>'+(au.kplus_today!=null?TH(au.kplus_today):(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":"— ยังไม่ตรวจ"))+'</b></div><div class="kv"><span>ฝากเข้าบัญชี (วันนี้)</span><b>'+(au.bank_dep_today!=null?TH(au.bank_dep_today):(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":"— ยังไม่ตรวจ"))+'</b></div>';
+    if(miss.length) html+='<div style="color:#b45309;margin-top:8px">⚠ ข้อมูลไม่ครบ: ขาด '+miss.join(", ")+'</div>';
+    else html+='<div style="color:#15803d;margin-top:8px">✓ ครบแล้ว</div>';
+  } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ (ยังไม่อัปฟอร์ม+เครื่อง หรือยังไม่กดยืนยัน)</div><div class="kv"><span>ยอด K+</span><b>'+TH(da.kplus_total)+'</b></div>';
+  } else html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div>';
+  html+='<div class="muted" style="margin-top:10px;border-top:1px dashed #e7e5e4;padding-top:8px">✏️ <b>วิธีแก้ไข:</b> กด "เริ่มตรวจวันถัดไป (ล้างไฟล์)" → อัปไฟล์ของ '+beDate(date)+' ให้ครบ → กด "✓ ยืนยัน & บันทึก" ระบบจะทับข้อมูลเดิมของวันนั้นให้</div><div style="text-align:right;margin-top:6px"><button class="btn sec r-fin" style="padding:3px 10px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ ทำเครื่องหมายวันหยุด</button><button class="btn sec" style="padding:3px 10px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>';
+  box.innerHTML=html;
+}
+async function loadMonthStatus(){
+  const el=document.getElementById("monthStatus"), bd=document.getElementById("statusBadge"); if(!el) return;
+  if(!sb){ el.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; return; }
+  const [a,d]=await Promise.all([ sb.from("rev_audit").select("date,status,kplus_today,bank_dep_today"), sb.from("rev_daily").select("date,kplus_total,bank_dep_total") ]);
+  const audit=a.data||[], daily=d.data||[];
+  const months=[...new Set([...audit,...daily].map(x=>String(x.date).slice(0,7)))].sort();
+  const month=months.length?months[months.length-1]:new Date().toISOString().slice(0,7);
+  const inM=s=>String(s).slice(0,7)===month;
+  const aMap={}; audit.forEach(x=>{ if(inM(x.date)) aMap[x.date]=x; });
+  const dMap={}; daily.forEach(x=>{ dMap[x.date]=x; });
+  const days=[...new Set([...audit,...daily].filter(x=>inM(x.date)).map(x=>x.date))].sort();
+  let done=0, holiday=0;
+  const chips=days.map(dt=>{ const a=aMap[dt]; const dl=dMap[dt]||{}; let bg,col,ic;
+    if(a && a.status==="วันหยุด"){ bg="#dbeafe";col="#1d4ed8";ic="🏖️";holiday++; }
+    else if(a){ const full=(a.kplus_today!=null||dl.kplus_total!=null) && (a.bank_dep_today!=null||dl.bank_dep_total!=null); if(full){ bg="#dcfce7";col="#15803d";ic="✓";done++; } else { bg="#fef3c7";col="#b45309";ic="⚠"; } }
+    else { bg="#f1f5f9";col="#64748b";ic="⏳"; }
+    return '<span style="display:inline-block;margin:3px 5px 0 0;padding:3px 9px;border-radius:6px;font-size:12.5px;cursor:pointer;background:'+bg+';color:'+col+'" onclick="showDayDetail(\''+dt+'\')">'+ic+' '+beDate(dt)+'</span>';
+  }).join("");
+  bd.textContent = month.split("-")[1]+"/"+(parseInt(month.split("-")[0])+543)+" · ยืนยันแล้ว "+done+"/"+(days.length-holiday)+(holiday?" · วันหยุด "+holiday:"");
+  el.innerHTML = days.length ? chips : '<div class="muted">ยังไม่มีข้อมูลเดือนนี้</div>';
+}
+async function loadPending(){
+  const list=document.getElementById("pendlist"), cnt=document.getElementById("pendcount"); if(!list) return;
+  if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
+  const {data,error}=await sb.from("rev_pending").select("*").eq("status","open").order("date",{ascending:true});
+  if(error){ list.innerHTML='<span style="color:#b91c1c">โหลดไม่ได้: '+error.message+'</span>'; return; }
+  const sum=data.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  cnt.textContent=data.length+" รายการ · "+TH(sum)+" บาท";
+  if(!data.length){ list.innerHTML='<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>'; return; }
+  list.innerHTML='<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th>ยอด</th><th></th></tr></thead><tbody>'+
+    data.map(d=>'<tr><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button></td></tr>').join("")+
+    '<tr class="tot"><td colspan="5">รวม</td><td class="num">'+TH(sum)+'</td><td></td></tr></tbody></table>';
+}
+async function addPending(){
+  const msg=document.getElementById("pend_msg"); if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }
+  const amt=parseFloat(document.getElementById("np_amt").value)||0; if(amt<=0){ msg.textContent="ใส่ยอดก่อน"; msg.style.color="#b91c1c"; return; }
+  const fileEl=document.getElementById("np_slip"); const file=fileEl&&fileEl.files&&fileEl.files[0]; let slip_path=null;
+  if(file){ msg.textContent="กำลังอัปสลิป…"; msg.style.color="#92400e"; const ext=((file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,""))||"jpg"; const d0=(document.getElementById("np_date").value||new Date().toISOString().slice(0,10)); slip_path=d0+"/"+Date.now()+"-"+Math.random().toString(36).slice(2,7)+"."+ext; const up=await sb.storage.from("revenue-slips").upload(slip_path,file,{contentType:file.type||undefined,upsert:false}); if(up.error){ msg.textContent="อัปสลิปไม่ได้: "+up.error.message; msg.style.color="#b91c1c"; return; } }
+  const rec={ date:document.getElementById("np_date").value||new Date().toISOString().slice(0,10), amount:amt, source:document.getElementById("np_src").value, from_name:document.getElementById("np_from").value.trim(), ref:document.getElementById("np_ref").value.trim(), slip_path:slip_path };
+  const {error}=await sb.from("rev_pending").insert(rec);
+  if(error){ msg.textContent="บันทึกไม่ได้: "+error.message; msg.style.color="#b91c1c"; return; }
+  msg.textContent="✓ บันทึกแล้ว"+(slip_path?" (แนบสลิปแล้ว)":""); msg.style.color="#15803d";
+  document.getElementById("np_amt").value=""; document.getElementById("np_from").value=""; document.getElementById("np_ref").value=""; if(fileEl)fileEl.value=""; loadPending();
+}
+async function openSlip(path){ if(!sb||!path) return; const r=await sb.storage.from("revenue-slips").createSignedUrl(path,3600); if(r.error||!r.data){ alert("เปิดสลิปไม่ได้: "+((r.error&&r.error.message)||"")); return; } window.open(r.data.signedUrl,"_blank"); }
+async function matchPending(id){
+  if(!sb) return; const bill=prompt("ออกบิลแล้ว — เลขที่บิล:"); if(bill===null) return; const by=prompt("ผู้ยืนยัน:"); if(by===null) return;
+  const {error}=await sb.from("rev_pending").update({status:"matched",matched_bill_no:bill.trim(),matched_date:new Date().toISOString().slice(0,10),confirmed_by:(by||"").trim()}).eq("id",id);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; } loadPending();
+}
+
+readFile(document.getElementById("f_form"),"form",n=>{setFn("fn_form",n,"form");document.getElementById("d_form").classList.add("on");});
+readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");document.getElementById("d_pos").classList.add("on");});
+render();
+const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISOString().slice(0,10);
+const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);
+loadDeposits(); loadPending(); loadMonthStatus();
+</script>
+</body>
+</html>

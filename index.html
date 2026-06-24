@@ -226,28 +226,28 @@ function parsePos(wb){
   // แบบ B = รายลูกค้ามีรายละเอียดบิล (หัวตาราง 'วันที่ขาย')
   const isB = R.some(r => r && r.some(c => S(c)==="วันที่ขาย"));
   if(isB){
-    let gross=0, cnTotal=0; const cns=[]; const codes={}; const custTotal={}; const custBill={}; let last=null, lastBill=null, curCode=null;
+    let gross=0, cnTotal=0; const cns=[]; const codes={}; const custTotal={}; const custBill={}; const billTotal={}; let last=null, lastBill=null, curCode=null;
     R.forEach(r=>{ if(!r) return;
       const c0=S(r[0]),c1=S(r[1]),c2=S(r[2]),c3=S(r[3]),c5=S(r[5]);
       if(cust.test(c1) && !c0){ last=c2; curCode=c1; codes[c1]=c2; }
-      else if(/^KM/i.test(c0)){ lastBill=c0; if(curCode){ custTotal[curCode]=(custTotal[curCode]||0)+num(r[4]); if(!custBill[curCode]) custBill[curCode]=c0; } }
+      else if(/^KM/i.test(c0)){ lastBill=c0; billTotal[c0]=(billTotal[c0]||0)+num(r[4]); if(curCode){ custTotal[curCode]=(custTotal[curCode]||0)+num(r[4]); if(!custBill[curCode]) custBill[curCode]=c0; } }
       else if(c0==="ใบลดหนี้"){ cns.push({customer:last||"(ไม่ระบุ)", cn:num(r[2]), cn_no:c1, bill_no:lastBill}); }
       else if(c3==="รวมทั้งหมด" && num(r[6])>0){ gross=num(r[6]); }
       else if(c5==="หัก ใบลดหนี้"){ cnTotal=num(r[6]); }
     });
     if(gross===0) throw new Error("อ่านยอดรวมไม่ได้ — เช็กรูปแบบไฟล์เครื่อง (แบบรายลูกค้ามีรายละเอียด)");
-    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
+    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billTotal };
   }
   // แบบ A = รายลูกค้าแบบสรุป (รหัสลูกค้าคอลัมน์แรก)
   const custA = /^\s*\d{2,4}-\d{5}\s*$/;
-  let gross=0, last=null; const cns=[]; const codes={}; const custTotal={}; const custBill={};
+  let gross=0, last=null; const cns=[]; const codes={}; const custTotal={}; const custBill={}; const billTotal={};
   R.forEach(r=>{ if(!r) return; const c0 = r[0]!=null ? String(r[0]).trim() : "";
     if(custA.test(c0)){ last = (r[1]!=null)? String(r[1]).trim() : c0; gross += num(r[5]); codes[c0]=last; custTotal[c0]=(custTotal[c0]||0)+num(r[5]); }
     else if(c0==="ใบลดหนี้"){ cns.push({ customer:last||"(ไม่ระบุ)", cn:num(r[1]) }); }
   });
   if(gross===0) throw new Error("อ่านยอดบิลไม่ได้ — ไฟล์เครื่องอาจไม่ใช่แบบ 'รายลูกค้า'");
   const cnTotal = cns.reduce((s,x)=>s+x.cn,0);
-  return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
+  return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billTotal };
 }
 function render(){
   const err = document.getElementById("err");
@@ -293,14 +293,14 @@ function render(){
     </div>
   </div>`;
 
-  let rowsHtml = p.cns.map((x,i)=>`<tr data-i="${i}"><td>${x.customer}</td><td>${x.cn_no||'—'}</td><td>${x.bill_no||'—'}</td><td class="num">${TH(x.cn)}</td><td><input class="cell cash" type="number" placeholder="0" oninput="recalc(${i})"></td><td class="num left rem" id="rem${i}">${TH(x.cn)}</td><td><input class="rsn rsninp" placeholder="พนง.กรอกเหตุผล"></td><td><input class="rsn appinp" placeholder="ผู้ขาย"></td></tr>`).join("");
+  let rowsHtml = p.cns.map((x,i)=>`<tr data-i="${i}"><td>${x.customer}</td><td>${x.cn_no||'—'}</td><td>${x.bill_no||'—'}</td><td class="num">${(p.billTotal&&p.billTotal[x.bill_no]!=null)?TH(p.billTotal[x.bill_no]):'—'}</td><td class="num">${TH(x.cn)}</td><td><input class="cell cash" type="number" placeholder="0" oninput="recalc(${i})"></td><td class="num left rem" id="rem${i}">${TH(x.cn)}</td><td><input class="rsn rsninp" placeholder="พนง.กรอกเหตุผล"></td><td><input class="rsn appinp" placeholder="ผู้ขาย"></td></tr>`).join("");
   out.innerHTML += `
   <div class="card">
     <h2>② คุมใบลดหนี้ (CN) <span class="badge ${p.cns.length?'warn':'ok'}">${p.cns.length? p.cns.length+' ใบ — ต้องมีเหตุผลกำกับ 🚩':'ไม่มีใบลดหนี้ ✓'}</span></h2>
-    <div class="muted" style="margin-bottom:10px">ใบลดหนี้ตัดยอดขายจริง — ดึงจากเครื่อง · พนักงานกรอกคืนสดจริง/เหตุผล/ผู้ขายทุกใบ · ช่อง “เหลือเป็นมูลค่าบิล” = ส่วนของ CN ที่เป็นมูลค่าซื้อสินค้าใหม่ (ควรตรงกับบิลที่ผูก)</div>
-    <table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead>
-      <tbody>${rowsHtml||'<tr><td colspan="8" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>'}</tbody>
-      ${p.cns.length?`<tfoot><tr class="tot"><td colspan="3">รวม</td><td class="num">${TH(p.cnTotal)}</td><td></td><td></td><td></td><td></td></tr></tfoot>`:''}
+    <div class="muted" style="margin-bottom:10px">ใบลดหนี้ตัดยอดขายจริง — ดึงจากเครื่อง · พนักงานกรอกคืนสดจริง/เหตุผล/ผู้ขายทุกใบ · “ยอดบิลจริง” = ยอดรวมของบิลใหม่ที่ผูก (ดึงจากเครื่อง) · “เหลือเป็นมูลค่าบิล” = ส่วนของ CN ที่เป็นเครดิตเข้าบิลใหม่</div>
+    <table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead>
+      <tbody>${rowsHtml||'<tr><td colspan="9" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>'}</tbody>
+      ${p.cns.length?`<tfoot><tr class="tot"><td colspan="3">รวม</td><td></td><td class="num">${TH(p.cnTotal)}</td><td></td><td></td><td></td><td></td></tr></tfoot>`:''}
     </table>
     ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
   </div>`;
@@ -378,7 +378,7 @@ function recalcEx(){
   else { if(el){ el.textContent="เหลือ "+fmt(rem); el.style.color="#c2410c"; } if(note){ note.innerHTML="ยังไม่ครบ — เหลืออีก "+fmt(rem); note.style.color="#c2410c"; } }
 }
 function collectDetail(){
-  const cns=[]; document.querySelectorAll("tr[data-i]").forEach(function(tr,i){ const x=(DATA.pos&&DATA.pos.cns[i])||{}; const cEl=tr.querySelector(".cash"); const cash=cEl?(parseFloat(cEl.value)||0):0; const cn=x.cn||0; const rEl=tr.querySelector(".rsninp"), aEl=tr.querySelector(".appinp"); cns.push({cust:x.customer||"",cn_no:x.cn_no||"",bill:x.bill_no||"",amt:cn,cash:cash,rem:cn-cash,reason:rEl?rEl.value:"",seller:aEl?aEl.value:""}); });
+  const cns=[]; document.querySelectorAll("tr[data-i]").forEach(function(tr,i){ const x=(DATA.pos&&DATA.pos.cns[i])||{}; const cEl=tr.querySelector(".cash"); const cash=cEl?(parseFloat(cEl.value)||0):0; const cn=x.cn||0; const rEl=tr.querySelector(".rsninp"), aEl=tr.querySelector(".appinp"); cns.push({cust:x.customer||"",cn_no:x.cn_no||"",bill:x.bill_no||"",bill_total:((DATA.pos&&DATA.pos.billTotal&&DATA.pos.billTotal[x.bill_no]!=null)?DATA.pos.billTotal[x.bill_no]:null),amt:cn,cash:cash,rem:cn-cash,reason:rEl?rEl.value:"",seller:aEl?aEl.value:""}); });
   const ex=[]; document.querySelectorAll("#exrows [data-ex]").forEach(function(r){ const cEl=r.querySelector(".ex-cat"),fEl=r.querySelector(".ex-ref"),aEl=r.querySelector(".ex-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; const ref=fEl?fEl.value:""; if(amt||ref) ex.push({cat:cEl?cEl.value:"",ref:ref,amt:amt}); });
   const f=DATA._files||{};
   return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, view:(DATA._auditView||null), deposits:(DATA._depHits||[]), saved_at:new Date().toISOString() };
@@ -396,8 +396,8 @@ function renderDetail(d){
   h+="</div>"; return h;
 }
 function exportCN(){
-  const rows=[["ลูกค้า","เลขที่ CN","บิลที่ผูก","ยอด CN","คืนสดจริง","เหลือเป็นมูลค่าบิล","เหตุผล","ผู้ขาย"]];
-  document.querySelectorAll("tr[data-i]").forEach((tr,i)=>{ const x=DATA.pos.cns[i]; const cn=x.cn; const cash=parseFloat(tr.querySelector(".cash").value)||0; rows.push([x.customer, x.cn_no||"", x.bill_no||"", cn, cash, cn-cash, tr.querySelector(".rsninp").value, tr.querySelector(".appinp").value]); });
+  const rows=[["ลูกค้า","เลขที่ CN","บิลที่ผูก","ยอดบิลจริง","ยอด CN","คืนสดจริง","เหลือเป็นมูลค่าบิล","เหตุผล","ผู้ขาย"]];
+  document.querySelectorAll("tr[data-i]").forEach((tr,i)=>{ const x=DATA.pos.cns[i]; const cn=x.cn; const cash=parseFloat(tr.querySelector(".cash").value)||0; rows.push([x.customer, x.cn_no||"", x.bill_no||"", ((DATA.pos.billTotal&&DATA.pos.billTotal[x.bill_no]!=null)?DATA.pos.billTotal[x.bill_no]:""), cn, cash, cn-cash, tr.querySelector(".rsninp").value, tr.querySelector(".appinp").value]); });
   const csv="﻿"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="สมุดคุม-CN.csv"; a.click();
 }
@@ -584,8 +584,8 @@ async function unmarkHoliday(date){ if(!sb) return; await sb.from("rev_audit").d
 function escAttr(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function recalcRem(inp){ const tr=inp.closest("tr"); if(!tr) return; const aEl=tr.querySelector(".k-amt"), cEl=tr.querySelector(".k-cash"); const amt=aEl?(parseFloat(aEl.value)||0):0; const cash=cEl?(parseFloat(cEl.value)||0):0; const rem=tr.querySelector(".k-rem"); if(rem) rem.textContent=TH(amt-cash); }
 function cnRowHtml(c,edit){ c=c||{}; const amt=parseFloat(c.amt)||0, cash=parseFloat(c.cash)||0, rem=amt-cash;
-  if(edit) return '<tr data-cn><td><input class="rsn k-cust" value="'+escAttr(c.cust)+'" style="max-width:120px"></td><td><input class="rsn k-cn" value="'+escAttr(c.cn_no)+'" style="max-width:110px"></td><td><input class="rsn k-bill" value="'+escAttr(c.bill)+'" style="max-width:110px"></td><td><input class="cell k-amt" type="number" value="'+(c.amt==null?"":c.amt)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td><input class="cell k-cash" type="number" value="'+(c.cash==null?"":c.cash)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td class="num left k-rem">'+TH(rem)+'</td><td><input class="rsn k-reason" value="'+escAttr(c.reason)+'" style="max-width:130px"></td><td><input class="rsn k-seller" value="'+escAttr(c.seller)+'" style="max-width:90px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
-  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="num">'+TH(rem)+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
+  if(edit) return '<tr data-cn><td><input class="rsn k-cust" value="'+escAttr(c.cust)+'" style="max-width:120px"></td><td><input class="rsn k-cn" value="'+escAttr(c.cn_no)+'" style="max-width:110px"></td><td><input class="rsn k-bill" value="'+escAttr(c.bill)+'" style="max-width:110px"></td><td class="num left k-billtot" data-bt="'+(c.bill_total==null?"":c.bill_total)+'">'+(c.bill_total!=null?TH(c.bill_total):"—")+'</td><td><input class="cell k-amt" type="number" value="'+(c.amt==null?"":c.amt)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td><input class="cell k-cash" type="number" value="'+(c.cash==null?"":c.cash)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td class="num left k-rem">'+TH(rem)+'</td><td><input class="rsn k-reason" value="'+escAttr(c.reason)+'" style="max-width:130px"></td><td><input class="rsn k-seller" value="'+escAttr(c.seller)+'" style="max-width:90px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
+  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+(c.bill_total!=null?TH(c.bill_total):"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="num">'+TH(rem)+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
 }
 function exRowHtml(e,edit){ e=e||{};
   if(edit) return '<tr data-ex2><td><input class="rsn x-cat" value="'+escAttr(e.cat)+'" placeholder="ประเภท" style="max-width:150px"></td><td><input class="rsn x-ref" value="'+escAttr(e.ref)+'" placeholder="อ้างอิง" style="max-width:170px"></td><td><input class="cell x-amt" type="number" value="'+(e.amt==null?"":e.amt)+'" style="max-width:100px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
@@ -607,7 +607,7 @@ function renderFrozen(det){
   h+='<div class="kv" style="margin-top:8px"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>'+TH(v.old)+'</b></div></div>';
   const cns=det.cns||[];
   h+='<div class="card"><h2>② คุมใบลดหนี้ (CN) <span class="badge '+(cns.length?'warn':'ok')+'">'+(cns.length?cns.length+' ใบ':'ไม่มีใบลดหนี้ ✓')+'</span></h2>';
-  h+='<table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,false);}).join(""):'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>')+'</tbody></table></div>';
+  h+='<table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,false);}).join(""):'<tr><td colspan="9" class="muted">ไม่มีใบลดหนี้</td></tr>')+'</tbody></table></div>';
   const kp=v.kplus||{present:false}, bk=v.bank||{present:false};
   h+='<div class="card"><h2>③ ตรงธนาคาร'+((kp.present&&bk.present)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>')+'</h2>';
   h+='<div style="margin-bottom:8px"><b>③a K+ (QR ผ่าน K+shop)</b></div>';
@@ -631,7 +631,7 @@ function renderItems(det, edit){ det=det||{};
   if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
   const cns=det.cns||[];
   h+='<div style="font-weight:700;margin:6px 0 4px">📋 ใบลดหนี้ (CN)'+(edit?' — แก้ไขได้':'')+'</div>';
-  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
+  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="9" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';
@@ -671,7 +671,7 @@ async function renderDay(date, edit){
 }
 async function saveDay(date){
   if(!sb) return; const box=document.getElementById("dayDetail"); if(!box) return;
-  const cns=[...box.querySelectorAll("tr[data-cn]")].map(tr=>{ const g=c=>{const el=tr.querySelector(c);return el?el.value:"";}; const gn=c=>{const el=tr.querySelector(c);return el?(parseFloat(el.value)||0):0;}; const amt=gn(".k-amt"), cash=gn(".k-cash"); return {cust:g(".k-cust"),cn_no:g(".k-cn"),bill:g(".k-bill"),amt:amt,cash:cash,rem:amt-cash,reason:g(".k-reason"),seller:g(".k-seller")}; }).filter(c=>c.cust||c.cn_no||c.amt||c.cash);
+  const cns=[...box.querySelectorAll("tr[data-cn]")].map(tr=>{ const g=c=>{const el=tr.querySelector(c);return el?el.value:"";}; const gn=c=>{const el=tr.querySelector(c);return el?(parseFloat(el.value)||0):0;}; const amt=gn(".k-amt"), cash=gn(".k-cash"); const btEl=tr.querySelector(".k-billtot"); const btv=(btEl&&btEl.dataset.bt!=null&&btEl.dataset.bt!=="")?parseFloat(btEl.dataset.bt):null; return {cust:g(".k-cust"),cn_no:g(".k-cn"),bill:g(".k-bill"),bill_total:((btv==null||isNaN(btv))?null:btv),amt:amt,cash:cash,rem:amt-cash,reason:g(".k-reason"),seller:g(".k-seller")}; }).filter(c=>c.cust||c.cn_no||c.amt||c.cash);
   const ex=[...box.querySelectorAll("tr[data-ex2]")].map(tr=>{ const g=c=>{const el=tr.querySelector(c);return el?el.value:"";}; const aEl=tr.querySelector(".x-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; return {cat:g(".x-cat"),ref:g(".x-ref"),amt:amt}; }).filter(e=>e.cat||e.ref||e.amt);
   const a=await sb.from("rev_audit").select("detail").eq("date",date).maybeSingle();
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};

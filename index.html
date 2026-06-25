@@ -679,7 +679,7 @@ async function sendAuditAlert(){
     : ((m.cashDiff==null) ? "—" : (m.cashOk ? "ตรง ✓" : ((m.cashDiff>0?"นับเกิน ":"นับขาด ")+TH0(Math.abs(m.cashDiff))+" 🚩"))));
   const l5 = (m.retailDiff==null) ? null : (m.retailOk ? "ตรง ✓" : ((m.retailDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.retailDiff))+" 🚩"));
   const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+"\n\n"
-    +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" · ฟอร์ม "+TH(m.sumForm)+"\n"
+    +"① ยอดขาย: "+l1+"\n   รายงานขาย (แยกตามลูกค้า) "+TH(m.net)+" · แคชเชียร์สรุปรายรับ "+TH(m.sumForm)+"\n"
     +"② ใบลดหนี้: "+l2+"\n"
     +"③ ธนาคาร: "+l3+"\n"
     +"④ เงินสดนำส่ง: "+l4+"\n"

@@ -162,7 +162,8 @@ function isoFromExcel(v){
 }
 const FMAP={form:["d_form","fn_form"],pos:["d_pos","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
 function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
-  el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
+  el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();confirmClearFile(\''+kind+'\')">✕</span>'; }
+function confirmClearFile(kind){ if(confirm("💡 หากต้องการแก้ไข ไม่ต้องลบไฟล์นี้ก่อน — อัพไฟล์ใหม่ทับลงไปได้เลย ระบบจะใช้ไฟล์ล่าสุดให้อัตโนมัติ\n\nยืนยันลบไฟล์นี้ออกใช่ไหม?")) clearFile(kind); }
 function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="form") DATA._carry=null;
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }

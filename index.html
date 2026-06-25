@@ -412,7 +412,17 @@ function render(){
   if(bank) Object.keys(bank.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
   const otherDays=[...odSet].sort();
   if(otherDays.length){
-    out.innerHTML += `<div class="card" style="border-color:#c4b5fd;background:#faf5ff"><h2>📅 ข้อมูลวันอื่นในไฟล์ <span class="badge" style="background:#ede9fe;color:#5b21b6">${otherDays.length} วัน</span></h2><div class="muted" style="margin-bottom:10px">วันที่ไม่ใช่วันของฟอร์มนี้ — เก็บเข้าระบบ (rev_daily) แล้ว รอตรวจเป็นวันๆ เมื่อมีฟอร์มของวันนั้น</div><table><thead><tr><th>วันที่</th><th>ยอด K+ (QR)</th><th>ฝากเข้าบัญชี</th></tr></thead><tbody>${otherDays.map(d=>'<tr><td>'+beDate(d)+'</td><td class="num">'+((kp&&kp.map[d]!=null)?TH(kp.map[d]):'—')+'</td><td class="num">'+((bank&&bank.map[d])?TH(bank.map[d].dep):'—')+'</td></tr>').join('')}</tbody></table></div>`;
+    const odRows=otherDays.map(d=>{
+      const _kq=(kp&&kp.map[d]!=null)?kp.map[d]:null;
+      const _bm=(bank&&bank.map[d])?bank.map[d]:null;
+      const _set=_bm?(_bm.kplus||0):null;
+      const _dep=_bm?_bm.dep:null;
+      const _net=(_dep!=null)?(_dep-(_set||0)):null;
+      const _match=(_kq!=null&&_set!=null)?(Math.abs(_kq-_set)<=1):null;
+      const _mtxt=(_match==null)?'—':(_match?'<span style="color:#15803d">ตรง ✓</span>':'<span style="color:#b91c1c">ต่าง '+TH0((_kq||0)-(_set||0))+'</span>');
+      return '<tr><td>'+beDate(d)+'</td><td class="num">'+(_kq!=null?TH(_kq):'—')+'</td><td class="num" style="color:#6d28d9">'+(_set!=null?TH(_set):'—')+'</td><td class="num">'+_mtxt+'</td><td class="num">'+(_dep!=null?TH(_dep):'—')+'</td><td class="num"><b>'+(_net!=null?TH(_net):'—')+'</b></td></tr>';
+    }).join('');
+    out.innerHTML += `<div class="card" style="border-color:#c4b5fd;background:#faf5ff"><h2>📅 ข้อมูลวันอื่นในไฟล์ <span class="badge" style="background:#ede9fe;color:#5b21b6">${otherDays.length} วัน</span></h2><div class="muted" style="margin-bottom:10px">วันที่ไม่ใช่วันของฟอร์มนี้ — เก็บเข้าระบบ (rev_daily) แล้ว รอตรวจเป็นวันๆ เมื่อมีฟอร์มของวันนั้น<br>💡 <b>K+ เข้าบัญชี</b> = ยอดขาย QR ที่นับเป็นรายได้ไปแล้ว (ช่อง “โอน K+NV”) — <b>ไม่นับเป็นรายได้ซ้ำ</b> · <b>ฝากสุทธิ</b> = เงินเข้าบัญชีที่หัก K+ ออกแล้ว (เงินโอนเข้าตรง/อื่นๆ)</div><table><thead><tr><th>วันที่</th><th>ยอด K+ (QR รายงาน)</th><th>K+ เข้าบัญชี</th><th>ตรงกัน?</th><th>ฝากเข้าบัญชีรวม</th><th>ฝากสุทธิ (ไม่รวม K+)</th></tr></thead><tbody>${odRows}</tbody></table></div>`;
   }
   if(document.getElementById("exsum")) recalcEx();
 }

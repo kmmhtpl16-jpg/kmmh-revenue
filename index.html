@@ -652,6 +652,8 @@ async function saveAudit(){
   const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
   if(!s||!s.date){ if(msg){msg.textContent="ยังไม่มีข้อมูลให้บันทึก";msg.style.color="#b91c1c";} return; }
   if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; }
+  let _stage={role:ROLE,first:true,changed:[]};
+  try{ const _pv=await sb.from("rev_audit").select("machine_net,form_main,form_refund,cn_total,kplus_today,bank_dep_today,detail").eq("date",s.date).maybeSingle(); if(_pv&&_pv.data) _stage=auditChanges(s,_pv.data); }catch(e){}
   const {error}=await sb.from("rev_audit").upsert([{...s, status:"ตรวจแล้ว", confirmed_at:new Date().toISOString(), detail: collectDetail()}],{onConflict:"date"});
   if(error){ if(msg){msg.textContent="ผิดพลาด: "+error.message;msg.style.color="#b91c1c";} return; }
   if(DATA._carry && DATA._carryMatched){
@@ -666,10 +668,24 @@ async function saveAudit(){
   const need=[!DATA.kplus?"รายงาน K+":null, !DATA.bank?"สเตทเมนต์ธนาคาร":null].filter(Boolean);
   if(msg){ msg.innerHTML = need.length ? "✓ บันทึกส่วนที่มีแล้ว ("+beDate(s.date)+") — ยังรอ "+need.join(" + ")+" · คุณหลิงอัปเติมทีหลังแล้วกดยืนยันอีกครั้ง (ทับของเดิม)" : "✓ บันทึกครบแล้ว "+beDate(s.date)+" · ข้อมูลวันอื่นเก็บไว้รอตรวจในวันของมัน"; msg.style.color="#15803d"; }
   loadMonthStatus();
-  sendAuditAlert();
+  sendAuditAlert(_stage);
 }
-async function sendAuditAlert(){
+function auditChanges(s,prev){
+  const ch=[]; const df=(a,b)=>Math.abs((a==null?0:+a)-(b==null?0:+b))>0.5;
+  if(df(s.machine_net,prev.machine_net)||df(s.form_main,prev.form_main)||df(s.form_refund,prev.form_refund)) ch.push("①");
+  if(df(s.cn_total,prev.cn_total)) ch.push("②");
+  if(df(s.kplus_today,prev.kplus_today)||df(s.bank_dep_today,prev.bank_dep_today)) ch.push("③");
+  const oc=(prev.detail&&prev.detail.view&&prev.detail.view.cash_diff!=null)?prev.detail.view.cash_diff:null;
+  const nc=(DATA._auditMsg&&DATA._auditMsg.cashDiff!=null)?DATA._auditMsg.cashDiff:null;
+  if(df(oc,nc)) ch.push("④");
+  return {role:ROLE,first:false,changed:ch};
+}
+function roleName(r){ return r==="cashier"?"แคชเชียร์":r==="finance"?"การเงิน":r==="owner"?"เจ้าของ":"พนักงาน"; }
+async function sendAuditAlert(stage){
   const m=DATA._auditMsg; if(!sb||!m||!m.date) return;
+  stage=stage||{role:ROLE,first:true,changed:[]};
+  const roleNm=roleName(stage.role);
+  const stageLine=stage.first?("🧾 "+roleNm+"บันทึกข้อมูล (ครั้งแรก)"):(stage.changed.length?("✏️ "+roleNm+"แก้ไขข้อมูล · แก้ไข: "+stage.changed.join(" ")):("🔁 "+roleNm+"บันทึกซ้ำ · ไม่มีการแก้ไข"));
   const head = m.allOk ? "✅ ผ่านเบื้องต้น" : "🚩 มีจุดต้องดู";
   const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
   const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
@@ -678,13 +694,13 @@ async function sendAuditAlert(){
     : (m.carryActive ? ("🚩 ยกมาจากเมื่อวาน "+(m.carryDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.carryDiff))+" · วันนี้ "+((m.cashDiff==null)?"ยังไม่นับ":(m.cashOk?"ตรง":((m.cashDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.cashDiff)))))+" · ยังไม่พอดี")
     : ((m.cashDiff==null) ? "—" : (m.cashOk ? "ตรง ✓" : ((m.cashDiff>0?"นับเกิน ":"นับขาด ")+TH0(Math.abs(m.cashDiff))+" 🚩"))));
   const l5 = (m.retailDiff==null) ? null : (m.retailOk ? "ตรง ✓" : ((m.retailDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.retailDiff))+" 🚩"));
-  const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+"\n\n"
-    +"① ยอดขาย: "+l1+"\n   รายงานขาย (แยกตามลูกค้า) "+TH(m.net)+" · แคชเชียร์สรุปรายรับ "+TH(m.sumForm)+"\n"
+  const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+stageLine+"\n"+head+"\n\n"
+    +"① ยอดขาย: "+l1+"\n   • รายงานขาย (แยกตามลูกค้า): "+TH(m.net)+"\n   • แคชเชียร์สรุปรายรับ: "+TH(m.sumForm)+"\n"
     +"② ใบลดหนี้: "+l2+"\n"
     +"③ ธนาคาร: "+l3+"\n"
     +"④ เงินสดนำส่ง: "+l4+"\n"
     +(l5?("⑤ เงินสดปลีกรายตัว: "+l5+"\n"):"")+"\n"
-    +"<i>พนักงานยืนยันแล้ว</i>";
+    +"<i>"+roleNm+"บันทึกแล้ว</i>";
   const msg=document.getElementById("audit_msg");
   try{
     const {data,error}=await sb.functions.invoke("rev-alert",{body:{text:text}});
@@ -814,6 +830,13 @@ async function saveDay(date){
   const detail={ files:files, cns:cns, ex:ex, saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
+  try{
+    const _oc=(a.data&&a.data.detail&&a.data.detail.cns)||[]; const _oe=(a.data&&a.data.detail&&a.data.detail.ex)||[];
+    const _ch=[]; if(JSON.stringify(_oc)!==JSON.stringify(cns)) _ch.push("② ใบลดหนี้"); if(JSON.stringify(_oe)!==JSON.stringify(ex)) _ch.push("คืนเงิน/มัดจำ");
+    const _rn=roleName(ROLE);
+    const _tx="📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(date)+"\n✏️ "+_rn+"แก้ไขข้อมูลย้อนหลัง"+(_ch.length?(" · แก้ไข: "+_ch.join(", ")):" · ไม่มีการเปลี่ยนแปลง")+"\n\n<i>"+_rn+"แก้ไขแล้ว</i>";
+    sb.functions.invoke("rev-alert",{body:{text:_tx}});
+  }catch(e){}
   loadMonthStatus(); showDayDetail(date);
 }
 async function loadMonthStatus(){

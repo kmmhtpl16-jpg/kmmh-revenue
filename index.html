@@ -679,6 +679,8 @@ function auditChanges(s,prev){
   const oc=(prev.detail&&prev.detail.view&&prev.detail.view.cash_diff!=null)?prev.detail.view.cash_diff:null;
   const nc=(DATA._auditMsg&&DATA._auditMsg.cashDiff!=null)?DATA._auditMsg.cashDiff:null;
   if(df(oc,nc)) ch.push("④");
+  const _norm=a=>JSON.stringify((a||[]).map(x=>[x.deposit_no,x.rem,x.bill,x.status]).sort());
+  if(_norm((prev.detail&&prev.detail.deposits)||[])!==_norm(DATA._depHits||[])) ch.push("⑥");
   return {role:ROLE,first:false,changed:ch};
 }
 function roleName(r){ return r==="cashier"?"แคชเชียร์":r==="finance"?"การเงิน":r==="owner"?"เจ้าของ":"พนักงาน"; }
@@ -695,12 +697,15 @@ async function sendAuditAlert(stage){
     : (m.carryActive ? ("🚩 ยกมาจากเมื่อวาน "+(m.carryDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.carryDiff))+" · วันนี้ "+((m.cashDiff==null)?"ยังไม่นับ":(m.cashOk?"ตรง":((m.cashDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.cashDiff)))))+" · ยังไม่พอดี")
     : ((m.cashDiff==null) ? "—" : (m.cashOk ? "ตรง ✓" : ((m.cashDiff>0?"นับเกิน ":"นับขาด ")+TH0(Math.abs(m.cashDiff))+" 🚩"))));
   const l5 = (m.retailDiff==null) ? null : (m.retailOk ? "ตรง ✓" : ((m.retailDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.retailDiff))+" 🚩"));
+  const _dh=DATA._depHits||[]; const _dny=_dh.filter(x=>String(x.status||"").indexOf("🚩")>=0).length; const _dpt=_dh.filter(x=>String(x.status||"").indexOf("🟡")>=0).length;
+  const l6 = _dh.length===0 ? "ไม่มีลูกค้าค้างมัดจำซื้อวันนี้ ✓" : ("ลูกค้าซื้อวันนี้มีมัดจำค้าง "+_dh.length+" ราย"+(_dny?(" · ยังไม่หัก "+_dny+" 🚩"):"")+(_dpt?(" · หักบางส่วน "+_dpt+" 🟡"):""));
   const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+stageLine+"\n"+head+"\n\n"
     +"① ยอดขาย: "+l1+"\n   • รายงานขาย (แยกตามลูกค้า): "+TH(m.net)+"\n   • แคชเชียร์สรุปรายรับ: "+TH(m.sumForm)+"\n"
     +"② ใบลดหนี้: "+l2+"\n"
     +"③ ธนาคาร: "+l3+"\n"
     +"④ เงินสดนำส่ง: "+l4+"\n"
-    +(l5?("⑤ เงินสดปลีกรายตัว: "+l5+"\n"):"")+"\n"
+    +(l5?("⑤ เงินสดปลีกรายตัว: "+l5+"\n"):"")
+    +"⑥ มัดจำ: "+l6+"\n\n"
     +"<i>"+roleNm+"บันทึกแล้ว</i>";
   const msg=document.getElementById("audit_msg");
   try{

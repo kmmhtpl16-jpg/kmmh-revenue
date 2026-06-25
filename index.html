@@ -163,7 +163,7 @@ function isoFromExcel(v){
 const FMAP={form:["d_form","fn_form"],pos:["d_pos","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
 function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
   el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
-function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null;
+function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="form") DATA._carry=null;
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
@@ -190,7 +190,7 @@ function readFile(input, kind, onName){
       try{ const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
         DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null;
       }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null; }
-      render(); matchReminder(); if(kind==="form") loadDeposits();
+      render(); matchReminder(); if(kind==="form"){ loadDeposits(); loadCarry(DATA.form&&DATA.form.date); }
     };
     r.readAsArrayBuffer(file);
   });
@@ -278,10 +278,17 @@ function render(){
   const cashSubmit = f.cashSubmit; const cashCounted = f.cashCounted;
   const cashDiff = (cashCounted!=null && cashSubmit!=null) ? (cashCounted - cashSubmit) : null;
   const cashOk = (cashDiff==null) ? true : Math.abs(cashDiff)<=1;
+  const carry = DATA._carry||null;
+  const carryActive = !!(carry && carry.diff!=null && Math.abs(carry.diff)>1);
+  const carryNet = carryActive ? (carry.diff + (cashDiff||0)) : null;
+  const carryMatched = carryActive && cashDiff!=null && Math.abs(carryNet)<=1;
+  const cashOkEff = carryMatched ? true : (carryActive ? false : cashOk);
+  const carryOut = carryMatched ? 0 : (carryActive ? carryNet : (cashDiff!=null?cashDiff:null));
+  DATA._carryMatched = carryMatched;
   const retailExpected = f.cashRetail; const retailTxn = f.retailTxn;
   const retailDiff = (retailTxn!=null && retailExpected!=null) ? (retailTxn - retailExpected) : null;
   const retailOk = (retailDiff==null) ? true : Math.abs(retailDiff)<=1;
-  const allOk = ok1 && ok2 && cashOk && retailOk;
+  const allOk = ok1 && ok2 && cashOkEff && retailOk;
   const kPending = !DATA.kplus || !DATA.bank;
   out.innerHTML += `<div class="verdict ${allOk?'v-ok':'v-warn'}">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
   out.innerHTML += `<div style="text-align:center;margin:-4px 0 16px"><button class="btn" type="button" onclick="saveAudit()">✓ ยืนยัน & บันทึกผลตรวจวันนี้ (${f.date?beDate(f.date):'-'})</button> <span id="audit_msg" class="muted" style="margin-left:8px"></span></div>`;
@@ -351,8 +358,8 @@ function render(){
   DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_refund:f.refund, cn_total:p.cnTotal,
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
-  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending, cashDiff:cashDiff, cashOk:cashOk, retailDiff:retailDiff, retailOk:retailOk };
-  DATA._auditView = { cash_submit:cashSubmit, cash_counted:cashCounted, cash_diff:cashDiff, cash_ok:cashOk, denoms:(f.denoms||[]), retail_expected:retailExpected, retail_txn:retailTxn, retail_diff:retailDiff, retail_ok:retailOk, retail_tabs:(f.retailTabs||[]), gross:p.gross, cnTotal:p.cnTotal, net:p.net, main:f.main, upk:f.upk, sumForm:sumForm, refund:f.refund, cash:f.cash, knv:f.knv, ksk:f.ksk, acc:f.acc, old:f.old, diffRaw:diffRaw, diffAdj:diffAdj, okRaw:okRaw, okAdj:okAdj, ok1:ok1, scenario:scenario,
+  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending, cashDiff:cashDiff, cashOk:cashOk, cashOkEff:cashOkEff, carryActive:carryActive, carryMatched:carryMatched, carryDiff:(carryActive?carry.diff:null), carryNet:carryNet, carryDate:(carryActive?carry.date:null), retailDiff:retailDiff, retailOk:retailOk };
+  DATA._auditView = { cash_submit:cashSubmit, cash_counted:cashCounted, cash_diff:cashDiff, cash_ok:cashOk, carry_in:(carryActive?{date:carry.date, diff:carry.diff}:null), carry_matched:carryMatched, carry_net:carryNet, carry_out:carryOut, denoms:(f.denoms||[]), retail_expected:retailExpected, retail_txn:retailTxn, retail_diff:retailDiff, retail_ok:retailOk, retail_tabs:(f.retailTabs||[]), gross:p.gross, cnTotal:p.cnTotal, net:p.net, main:f.main, upk:f.upk, sumForm:sumForm, refund:f.refund, cash:f.cash, knv:f.knv, ksk:f.ksk, acc:f.acc, old:f.old, diffRaw:diffRaw, diffAdj:diffAdj, okRaw:okRaw, okAdj:okAdj, ok1:ok1, scenario:scenario,
     kplus: kp ? {present:true, day:(f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null, knv:f.knv, total:kp.total, count:kp.count} : {present:false},
     bank: bank ? ((f.date&&bank.map[f.date]) ? {present:true, dep:bank.map[f.date].dep, kplus:bank.map[f.date].kplus, direct:bank.map[f.date].dep-bank.map[f.date].kplus, ksk:f.ksk} : {present:true, nodata:true, ksk:f.ksk}) : {present:false} };
   out.innerHTML += `
@@ -363,16 +370,29 @@ function render(){
   </div>`;
 
 
-  if(f.cashSubmit!=null || f.cashCounted!=null){
+  if(f.cashSubmit!=null || f.cashCounted!=null || carryActive){
     const denRows=(f.denoms||[]).map(x=>`<tr><td>${TH0(x.d)}</td><td class="num">${x.count}</td><td class="num">${TH(x.d*x.count)}</td></tr>`).join("");
+    let carryBanner="";
+    if(carryActive){
+      const cDir = carry.diff>0 ? "เกิน" : "ขาด";
+      const cAmt = TH0(Math.abs(carry.diff));
+      if(carryMatched){
+        carryBanner = `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:10px 12px;margin-bottom:10px"><b style="color:#15803d">✓ อธิบายได้: ยกมาจากเมื่อวาน</b><br><span class="muted">เมื่อวาน (${beDate(carry.date)}) ${cDir} ${cAmt} → วันนี้${cashDiff>0?'เกิน':'ขาด'} ${TH0(Math.abs(cashDiff))} — หักล้างกันพอดี (สุทธิ ${TH(carryNet)}) · จะมาร์คเคลียร์ให้เมื่อกดยืนยัน</span></div>`;
+      } else {
+        const tToday = (cashDiff==null)?"ยังไม่ได้นับ":(Math.abs(cashDiff)<=1?"ตรง":((cashDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(cashDiff))));
+        carryBanner = `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:10px"><b style="color:#b45309">⚠ ยกมาจากเมื่อวาน: ${cDir} ${cAmt}</b><br><span class="muted">เมื่อวาน (${beDate(carry.date)}) ${cDir} ${cAmt} · วันนี้ ${tToday} · รวมสุทธิ ${cashDiff!=null?TH(carryNet):'—'}<br>ยังหักล้างกันไม่พอดี — คงธงไว้ คนตรวจยืนยันเอง (ไม่หักรายรับอัตโนมัติ)</span></div>`;
+      }
+    }
+    const badge4 = carryMatched ? 'อธิบายได้ ✓' : (carryActive ? 'ยกค้างจากเมื่อวาน 🚩' : (cashDiff==null?'รอนับ':(cashOk?'ตรง ✓':(cashDiff>0?'นับเกิน '+TH0(cashDiff)+' 🚩':'นับขาด '+TH0(-cashDiff)+' 🚩'))));
     out.innerHTML += `
   <div class="card">
-    <h2>④ ตรวจเงินสดนำส่ง (นับเงิน) <span class="badge ${cashOk?'ok':'warn'}">${cashDiff==null?'รอนับ':(cashOk?'ตรง ✓':(cashDiff>0?'นับเกิน '+TH0(cashDiff)+' 🚩':'นับขาด '+TH0(-cashDiff)+' 🚩'))}</span></h2>
+    <h2>④ ตรวจเงินสดนำส่ง (นับเงิน) <span class="badge ${cashOkEff?'ok':'warn'}">${badge4}</span></h2>
+    ${carryBanner}
     <div class="kv"><span>เงินสดนำส่ง (คำนวณ: เงินสดรับ ${TH0(f.cash)} − คืนเงินสด ${TH0(f.refund)})</span><b>${cashSubmit!=null?TH(cashSubmit):'—'}</b></div>
     <div class="kv"><span>นับจริง (รวมแบงค์/เหรียญในฟอร์ม)</span><b>${cashCounted!=null?TH(cashCounted):'—'}</b></div>
     <div class="kv"><span>ส่วนต่าง (นับจริง − คำนวณ)</span><b style="color:${cashOk?'#15803d':'#b91c1c'}">${cashDiff!=null?TH(cashDiff):'—'}</b></div>
     ${denRows?`<div class="muted" style="margin:8px 0 4px">รายละเอียดการนับ:</div><table><thead><tr><th>แบงค์/เหรียญ</th><th>จำนวน</th><th>เป็นเงิน</th></tr></thead><tbody>${denRows}</tbody><tfoot><tr class="tot"><td colspan="2">รวมนับจริง</td><td class="num">${TH(cashCounted)}</td></tr></tfoot></table>`:''}
-    <div class="muted" style="margin-top:6px">${cashOk?'✓ เงินสดในมือตรงกับที่ควรนำส่ง':'🚩 เงินสดนับได้ไม่ตรงกับที่ควรนำส่ง — เช็กการนับ / เงินทอน / การบันทึก'}</div>
+    <div class="muted" style="margin-top:6px">${carryMatched?'✓ ส่วนต่างวันนี้อธิบายได้ด้วยยอดยกมาจากเมื่อวาน':(cashOkEff?'✓ เงินสดในมือตรงกับที่ควรนำส่ง':'🚩 เงินสดนับได้ไม่ตรงกับที่ควรนำส่ง — เช็กการนับ / เงินทอน / การบันทึก')}</div>
   </div>`;
   }
 
@@ -550,6 +570,21 @@ if(fbk) fbk.addEventListener("change", e=>{
   r.onload=ev=>{ try{ DATA.bank=parseBank(ev.target.result); DATA._e_bank=null; saveBankDaily(DATA.bank); }catch(err){ DATA._e_bank=err.message; DATA.bank=null; } render(); matchReminder(); };
   r.readAsText(file,"utf-8");
 });
+async function loadCarry(formDate){
+  DATA._carry=null;
+  if(!sb || !formDate){ return; }
+  try{
+    const {data,error}=await sb.from("rev_audit").select("date,detail").eq("status","ตรวจแล้ว").lt("date",formDate).order("date",{ascending:false}).limit(1);
+    if(!error && data && data[0] && data[0].detail && data[0].detail.view){
+      const v=data[0].detail.view;
+      let out = (v.carry_out!=null) ? v.carry_out : (v.carry_matched ? 0 : v.cash_diff);
+      if(out!=null && Math.abs(out)>1 && !v.carry_resolved && !v.carry_matched){
+        DATA._carry={date:data[0].date, diff:out};
+      }
+    }
+  }catch(e){}
+  render();
+}
 async function loadDeposits(){
   const list=document.getElementById("deplist"), cnt=document.getElementById("depcount");
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
@@ -609,6 +644,15 @@ async function saveAudit(){
   if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; }
   const {error}=await sb.from("rev_audit").upsert([{...s, status:"ตรวจแล้ว", confirmed_at:new Date().toISOString(), detail: collectDetail()}],{onConflict:"date"});
   if(error){ if(msg){msg.textContent="ผิดพลาด: "+error.message;msg.style.color="#b91c1c";} return; }
+  if(DATA._carry && DATA._carryMatched){
+    try{
+      const pd=await sb.from("rev_audit").select("detail").eq("date",DATA._carry.date).maybeSingle();
+      if(pd.data && pd.data.detail && pd.data.detail.view){
+        const pdet=pd.data.detail; pdet.view.carry_resolved=true; pdet.view.carry_resolved_by=s.date;
+        await sb.from("rev_audit").update({detail:pdet}).eq("date",DATA._carry.date);
+      }
+    }catch(e){}
+  }
   const need=[!DATA.kplus?"รายงาน K+":null, !DATA.bank?"สเตทเมนต์ธนาคาร":null].filter(Boolean);
   if(msg){ msg.innerHTML = need.length ? "✓ บันทึกส่วนที่มีแล้ว ("+beDate(s.date)+") — ยังรอ "+need.join(" + ")+" · คุณหลิงอัปเติมทีหลังแล้วกดยืนยันอีกครั้ง (ทับของเดิม)" : "✓ บันทึกครบแล้ว "+beDate(s.date)+" · ข้อมูลวันอื่นเก็บไว้รอตรวจในวันของมัน"; msg.style.color="#15803d"; }
   loadMonthStatus();
@@ -620,7 +664,9 @@ async function sendAuditAlert(){
   const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
   const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
   const l3 = m.kPending ? "⏳ รอตรวจ K+/สเตทเมนต์" : "ตรวจแล้ว ✓";
-  const l4 = (m.cashDiff==null) ? "—" : (m.cashOk ? "ตรง ✓" : ((m.cashDiff>0?"นับเกิน ":"นับขาด ")+TH0(Math.abs(m.cashDiff))+" 🚩"));
+  const l4 = m.carryMatched ? ("อธิบายได้ ✓ — ยกมาจากเมื่อวาน "+(m.carryDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.carryDiff))+" หักล้างพอดี")
+    : (m.carryActive ? ("🚩 ยกมาจากเมื่อวาน "+(m.carryDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.carryDiff))+" · วันนี้ "+((m.cashDiff==null)?"ยังไม่นับ":(m.cashOk?"ตรง":((m.cashDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.cashDiff)))))+" · ยังไม่พอดี")
+    : ((m.cashDiff==null) ? "—" : (m.cashOk ? "ตรง ✓" : ((m.cashDiff>0?"นับเกิน ":"นับขาด ")+TH0(Math.abs(m.cashDiff))+" 🚩"))));
   const l5 = (m.retailDiff==null) ? null : (m.retailOk ? "ตรง ✓" : ((m.retailDiff>0?"เกิน ":"ขาด ")+TH0(Math.abs(m.retailDiff))+" 🚩"));
   const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+"\n\n"
     +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" · ฟอร์ม "+TH(m.sumForm)+"\n"
@@ -675,8 +721,15 @@ function renderFrozen(det){
   else h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — ยังไม่ได้อัปสเตทเมนต์กสิกร</div>';
   h+='</div>';
   const _cs=v.cash_submit, _cc=v.cash_counted, _cd=v.cash_diff, _cok=v.cash_ok;
-  if(_cs!=null || _cc!=null){
-    h+='<div class="card"><h2>④ ตรวจเงินสดนำส่ง (นับเงิน) <span class="badge '+(_cok?'ok':'warn')+'">'+(_cd==null?'รอนับ':(_cok?'ตรง ✓':(_cd>0?'นับเกิน '+TH0(_cd)+' 🚩':'นับขาด '+TH0(-_cd)+' 🚩')))+'</span></h2>';
+  const _cin=v.carry_in||null, _cm=!!v.carry_matched, _cnet=v.carry_net, _cres=!!v.carry_resolved;
+  const _cokEff = _cm ? true : (_cin ? false : _cok);
+  if(_cs!=null || _cc!=null || _cin){
+    h+='<div class="card"><h2>④ ตรวจเงินสดนำส่ง (นับเงิน) <span class="badge '+(_cokEff?'ok':'warn')+'">'+(_cm?'อธิบายได้ ✓':((_cin&&!_cm)?'ยกค้างจากเมื่อวาน 🚩':(_cd==null?'รอนับ':(_cok?'ตรง ✓':(_cd>0?'นับเกิน '+TH0(_cd)+' 🚩':'นับขาด '+TH0(-_cd)+' 🚩')))))+'</span></h2>';
+    if(_cin){ const _cd2=_cin.diff; const _dir=_cd2>0?'เกิน':'ขาด';
+      if(_cm) h+='<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 11px;margin-bottom:8px;font-size:13px"><b style="color:#15803d">✓ อธิบายได้: ยกมาจากเมื่อวาน</b> ('+beDate(_cin.date)+' '+_dir+' '+TH0(Math.abs(_cd2))+' หักล้างพอดี)</div>';
+      else h+='<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 11px;margin-bottom:8px;font-size:13px"><b style="color:#b45309">⚠ ยกมาจากเมื่อวาน:</b> '+beDate(_cin.date)+' '+_dir+' '+TH0(Math.abs(_cd2))+' · รวมสุทธิ '+(_cnet!=null?TH(_cnet):'—')+' (ยังไม่พอดี — คงธง)</div>';
+    }
+    if(_cres) h+='<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 11px;margin-bottom:8px;font-size:13px"><b style="color:#15803d">✓ เคลียร์แล้ว</b> — ส่วนต่างวันนี้ถูกหักล้างในวัน '+beDate(v.carry_resolved_by||'')+'</div>';
     h+='<div class="kv"><span>เงินสดนำส่ง (คำนวณ)</span><b>'+(_cs!=null?TH(_cs):'—')+'</b></div>';
     h+='<div class="kv"><span>นับจริง (รวมแบงค์/เหรียญ)</span><b>'+(_cc!=null?TH(_cc):'—')+'</b></div>';
     h+='<div class="kv"><span>ส่วนต่าง</span><b style="color:'+(_cok?'#15803d':'#b91c1c')+'">'+(_cd!=null?TH(_cd):'—')+'</b></div>';

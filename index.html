@@ -342,7 +342,7 @@ function render(){
     const fd=f.date; const kday=(fd && kp.map[fd]!=null) ? kp.map[fd] : null;
     if(kday==null){ a3=`<div class="kv"><span>รายงาน K+ (รวมทั้งไฟล์ ${kp.count} รายการ)</span><b>${TH(kp.total)}</b></div><div class="muted">ไม่พบรายการ K+ ของวันที่ฟอร์ม (${fd?beDate(fd):'ไม่ทราบวันที่'}) — เช็กว่าอัปรายงาน K+ ตรงช่วงไหม</div>`; }
     else { const diff=f.knv-kday;
-      a3=`<div class="kv"><span>K+ ใหม่ (จากรายงาน) วันที่ ${beDate(fd)}</span><b>${TH(kday)}</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม (รวม 2 QR)</span><b>${TH(f.knv)}</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>${TH(diff)}</b></div><div class="muted">ℹ️ ส่วนต่างรายวันปกติ มาจาก <b>เวลาตัดรอบ 15:30 / บิลข้ามวัน</b> และ <b>QR เก่า</b> (ไม่อยู่ในรายงานนี้) — รายวันใช้ดูคร่าวๆ ยอดจริงตรงเมื่อดูทั้งเดือน${diff<-1?'<br><b style="color:#b91c1c">⚠ รายงาน K+ มากกว่าฟอร์ม — เผื่อเช็กว่าลงขาด</b>':''}</div>`;
+      a3=`<div class="kv"><span>K+ ใหม่ (จากรายงาน) วันที่ ${beDate(fd)}</span><b>${TH(kday)}</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม (รวม 2 QR)</span><b>${TH(f.knv)}</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>${TH(diff)}</b></div><div class="muted">ℹ️ ส่วนต่างรายวันปกติ มาจาก <b>เวลาตัดรอบ 15:30 / บิลข้ามวัน</b> และ <b>QR เก่า</b> (ไม่อยู่ในรายงานนี้) — รายวันใช้ดูคร่าวๆ ยอดจริงตรงเมื่อดูทั้งเดือน${diff<-1?'<br><b style="color:#b91c1c">⚠ รายงาน K+ มากกว่าฟอร์ม — เผื่อเช็กว่าลงขาด</b>':''}</div>${diff<-1?`<button class="btn sec" type="button" style="margin-top:8px;padding:5px 12px" onclick="pushToPending(${kday-f.knv},'K+','ส่วนต่าง K+ (รายงาน−ฟอร์ม) ${beDate(fd)} — เช็กตัดรอบ15:30/ฟอร์มลงขาด','${fd}')">➕ ดันส่วนต่าง K+ ${TH0(kday-f.knv)} เข้ารอจับคู่</button>`:''}`;
     }
   } else { a3=`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — รอไฟล์รายงาน K+ จากคุณหลิง · พนักงานอัปส่วนอื่นได้เลย ตรวจ K+ ทีหลังได้</div>`; }
 
@@ -351,7 +351,7 @@ function render(){
   if(bank){
     const bd = (f.date && bank.map[f.date]) ? bank.map[f.date] : null;
     if(bd){ const direct = bd.dep - bd.kplus; const diff = direct - f.ksk;
-      b3 = `<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์ ${beDate(f.date)})</span><b>${TH(bd.dep)}</b></div><div class="kv"><span>— เป็น K+ QR settlement (เข้าก้อนเดียวปลายวัน)</span><b>${TH(bd.kplus)}</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>${TH(direct)}</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>${TH(f.ksk)}</b></div><div class="kv"><span>ส่วนต่าง (โอนตรง − ฟอร์ม)</span><b style="color:#c2410c">${TH(diff)}${diff<-1?' ⓘ ฟอร์มมากกว่า':''}</b></div><div class="muted">ℹ️ K+ QR เข้าบัญชีก้อนเดียวปลายวัน (นับใน ③a) · ส่วนต่างโอนตรง vs ฟอร์ม <b>ปกติมาจากเวลาตัดรอบ 15:30 / บิลข้ามวัน</b> เหมือน K+ (ฟอร์มนับตามบิล แบงค์นับตามวันเงินเข้า) — รายวันใช้ดูคร่าวๆ ยอดตรงเมื่อดูทั้งเดือน</div>`;
+      b3 = `<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์ ${beDate(f.date)})</span><b>${TH(bd.dep)}</b></div><div class="kv"><span>— เป็น K+ QR settlement (เข้าก้อนเดียวปลายวัน)</span><b>${TH(bd.kplus)}</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>${TH(direct)}</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>${TH(f.ksk)}</b></div><div class="kv"><span>ส่วนต่าง (โอนตรง − ฟอร์ม)</span><b style="color:#c2410c">${TH(diff)}${diff<-1?' ⓘ ฟอร์มมากกว่า':''}</b></div><div class="muted">ℹ️ K+ QR เข้าบัญชีก้อนเดียวปลายวัน (นับใน ③a) · ส่วนต่างโอนตรง vs ฟอร์ม <b>ปกติมาจากเวลาตัดรอบ 15:30 / บิลข้ามวัน</b> เหมือน K+ (ฟอร์มนับตามบิล แบงค์นับตามวันเงินเข้า) — รายวันใช้ดูคร่าวๆ ยอดตรงเมื่อดูทั้งเดือน</div>${diff>1?`<button class="btn sec" type="button" style="margin-top:8px;padding:5px 12px" onclick="pushToPending(${diff},'โอนกสิกร','โอนตรงเกินฟอร์ม ${beDate(f.date)} — เข้าหลังตัดรอบ น่าจะบิลวันถัดไป','${f.date}')">➕ ดันส่วนต่างโอนตรง ${TH0(diff)} เข้ารอจับคู่</button>`:''}`;
     } else { b3 = `<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันที่ฟอร์ม (${f.date?beDate(f.date):'ไม่ทราบวันที่'}) — เช็กว่าตรงรอบไหม</div>`; }
   } else { b3 = `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — อัปสเตทเมนต์กสิกร (resultFile…csv) ในช่อง 4 เพื่อตรวจอัตโนมัติ</div>`; }
 
@@ -848,6 +848,17 @@ async function loadPending(){
   list.innerHTML='<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th>ยอด</th><th></th></tr></thead><tbody>'+
     data.map(d=>'<tr><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button></td></tr>').join("")+
     '<tr class="tot"><td colspan="5">รวม</td><td class="num">'+TH(sum)+'</td><td></td></tr></tbody></table>';
+}
+async function pushToPending(amount, source, ref, date){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  amount=Math.abs(parseFloat(amount)||0);
+  if(amount<=0){ alert("ไม่มียอดส่วนต่างให้ดัน"); return; }
+  if(!confirm("ดันยอด "+TH(amount)+" เข้ารายการรอจับคู่?\n"+ref)) return;
+  const rec={ date:date||new Date().toISOString().slice(0,10), amount:amount, source:source, from_name:"", ref:ref, slip_path:null };
+  const {error}=await sb.from("rev_pending").insert(rec);
+  if(error){ alert("บันทึกไม่ได้: "+error.message); return; }
+  alert("✓ ดันเข้ารอจับคู่แล้ว "+TH(amount)+" — ไปจับคู่บิลทีหลังที่ส่วน 💸 เงินรอจับคู่");
+  loadPending();
 }
 async function addPending(){
   const msg=document.getElementById("pend_msg"); if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }

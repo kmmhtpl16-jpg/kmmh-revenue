@@ -685,7 +685,7 @@ async function sendAuditAlert(stage){
   const m=DATA._auditMsg; if(!sb||!m||!m.date) return;
   stage=stage||{role:ROLE,first:true,changed:[]};
   const roleNm=roleName(stage.role);
-  const stageLine=stage.first?("🧾 "+roleNm+"บันทึกข้อมูล (ครั้งแรก)"):(stage.changed.length?("✏️ "+roleNm+"แก้ไขข้อมูล · แก้ไข: "+stage.changed.join(" ")):("✅ "+roleNm+"ตรวจสอบแล้ว ยืนยันความถูกต้อง"));
+  const stageLine=stage.first?("🧾 "+roleNm+"บันทึกข้อมูล (ครั้งแรก)"):(stage.changed.length?("✏️ "+roleNm+"แก้ไขข้อมูล · แก้ไข: "+stage.changed.join(" ")):(stage.role==="cashier"?("🔁 แคชเชียร์บันทึกซ้ำ · ไม่มีการแก้ไข"):("✅ "+roleNm+"ตรวจสอบแล้ว ยืนยันความถูกต้อง")));
   const head = m.allOk ? "✅ ผ่านเบื้องต้น" : "🚩 มีจุดต้องดู";
   const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
   const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";

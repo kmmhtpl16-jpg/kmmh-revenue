@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สารบัญ ค้นยอดรายได้ — กิจมั่งมีโฮม</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{ color-scheme:light; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:#f4f4f5; color:#1c1917; font-family:"Sarabun","Segoe UI",system-ui,sans-serif; padding:24px 16px 60px; }
+  .wrap{ max-width:1000px; margin:0 auto; }
+  h1{ font-size:23px; } .lead{ color:#57534e; font-size:14px; margin:6px 0 16px; }
+  .nav a{ display:inline-block; border-radius:8px; padding:8px 14px; text-decoration:none; font-weight:700; margin:0 6px 6px 0; }
+  .bar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:14px 16px; }
+  input[type=date]{ border:1.5px solid #d6d3d1; border-radius:8px; padding:7px 10px; font:inherit; }
+  .btn{ background:#16a34a; color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; font-weight:700; cursor:pointer; }
+  .btn.q{ background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:6px 11px; font-size:13px; }
+  .cards{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .kpi{ flex:1; min-width:170px; background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:14px 16px; }
+  .kpi .l{ color:#78716c; font-size:13px; } .kpi .v{ font-size:24px; font-weight:800; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .kpi .s{ font-size:12px; color:#a8a29e; margin-top:2px; }
+  .card{ background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:18px; margin-bottom:14px; }
+  .card h2{ font-size:17px; margin-bottom:12px; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td{ text-align:right; padding:8px 9px; border-bottom:1px solid #f0efed; }
+  th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){ text-align:left; }
+  th{ color:#57534e; font-weight:700; font-size:12.5px; background:#fafaf9; }
+  .num{ font-variant-numeric:tabular-nums; }
+  tr.row{ cursor:pointer; } tr.row:hover{ background:#f0fdf4; }
+  tr.tot td{ border-top:2px solid #e7e5e4; font-weight:800; background:#fafaf9; }
+  .warn{ color:#b91c1c; } .ok{ color:#15803d; }
+  .muted{ color:#78716c; font-size:13px; }
+  .badge{ font-size:12px; font-weight:800; padding:2px 9px; border-radius:20px; background:#dcfce7; color:#15803d; white-space:nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔎 สารบัญ ค้นยอดรายได้ — กิจมั่งมีโฮม</h1>
+  <div class="lead">เลือกวันเดียวหรือช่วงวันที่ → ดูยอดรายวัน + ยอดรวม · ดึงสดจาก Supabase · แสดงเป็น พ.ศ. (ช่องเลือกวันเป็น ค.ศ.)</div>
+  <div class="nav">
+    <a href="index.html" style="background:#f0fdf4;color:#15803d;border:1.5px solid #16a34a">🧮 ไปหน้าตรวจรายได้รายวัน →</a>
+    <a href="Dashboard-สรุปรายได้.html" style="background:#eff6ff;color:#1d4ed8;border:1.5px solid #2563eb">📊 ไปหน้า Dashboard สรุป →</a>
+  </div>
+
+  <div class="bar">
+    <label>ตั้งแต่ <input type="date" id="from"></label>
+    <label>ถึง <input type="date" id="to"></label>
+    <button class="btn" onclick="load()">ดูยอด</button>
+    <span style="width:1px;height:22px;background:#e7e5e4;margin:0 2px"></span>
+    <button class="btn q" onclick="quick('today')">วันนี้</button>
+    <button class="btn q" onclick="quick('7')">7 วันล่าสุด</button>
+    <button class="btn q" onclick="quick('month')">เดือนนี้</button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div class="cards" id="kpis"></div>
+  <div class="card"><h2>📋 ยอดรายวัน <span class="muted" id="rangeLbl"></span></h2><div id="tbl" class="muted">เลือกช่วงวันแล้วกด “ดูยอด”</div></div>
+</div>
+
+<script>
+const PIN="0402";
+(function gate(){
+  if(sessionStorage.getItem("rev_index_ok")==="1") return;
+  const p=prompt("🔒 ใส่รหัสผ่านเพื่อดูสารบัญรายได้:");
+  if(p===PIN){ sessionStorage.setItem("rev_index_ok","1"); return; }
+  document.documentElement.innerHTML='<body style="font-family:Sarabun,system-ui,sans-serif;text-align:center;padding:80px 20px;color:#1c1917"><div style="font-size:40px">🔒</div><div style="font-size:18px;margin-top:10px">รหัสไม่ถูกต้อง — เฉพาะผู้มีสิทธิ์เท่านั้น</div><button onclick="location.reload()" style="margin-top:18px;padding:9px 18px;border:0;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">ลองใหม่</button></body>';
+  throw new Error("locked");
+})();
+
+const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+const sb = window.supabase.createClient(SB_URL, SB_KEY);
+const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
+const beDate = s => { if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); };
+const isoLocal = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+
+function quick(kind){
+  const t=new Date(); let from, to=isoLocal(t);
+  if(kind==="today"){ from=to; }
+  else if(kind==="7"){ const d=new Date(); d.setDate(d.getDate()-6); from=isoLocal(d); }
+  else if(kind==="month"){ from=isoLocal(new Date(t.getFullYear(), t.getMonth(), 1)); }
+  document.getElementById("from").value=from;
+  document.getElementById("to").value=to;
+  load();
+}
+
+function chip(a, hasDaily){
+  if(a && a.status==="วันหยุด") return '<span class="badge" style="background:#dbeafe;color:#1d4ed8">🏖️ วันหยุด</span>';
+  if(a){ const full=(a.kplus_today!=null)&&(a.bank_dep_today!=null); return full ? '<span class="badge">✓ ตรวจครบ</span>' : '<span class="badge" style="background:#fef3c7;color:#b45309">⚠ ยืนยันแต่ข้อมูลไม่ครบ</span>'; }
+  if(hasDaily) return '<span class="badge" style="background:#f1f5f9;color:#64748b">⏳ มีข้อมูลยังไม่ยืนยัน</span>';
+  return '<span class="muted">—</span>';
+}
+
+async function load(){
+  const st=document.getElementById("status");
+  const from=document.getElementById("from").value, to=document.getElementById("to").value;
+  if(!from||!to){ st.textContent="เลือกช่วงวันก่อน"; return; }
+  const lo=from<=to?from:to, hi=from<=to?to:from;
+  st.textContent="กำลังโหลด…";
+  const [a,d]=await Promise.all([
+    sb.from("rev_audit").select("*").gte("date",lo).lte("date",hi).order("date"),
+    sb.from("rev_daily").select("*").gte("date",lo).lte("date",hi).order("date"),
+  ]);
+  if(a.error||d.error){ st.textContent="โหลดไม่ได้: "+((a.error||d.error).message); return; }
+  st.textContent="";
+  document.getElementById("rangeLbl").textContent="("+beDate(lo)+(lo!==hi?" – "+beDate(hi):"")+")";
+  const audit=a.data||[], daily=d.data||[];
+  const aMap={}; audit.forEach(x=>aMap[x.date]=x);
+  const dMap={}; daily.forEach(x=>dMap[x.date]=x);
+  const days=[...new Set([...audit.map(x=>x.date),...daily.map(x=>x.date)])].sort();
+
+  const confirmed=audit.filter(x=>x.status==="ตรวจแล้ว");
+  const revSum=confirmed.reduce((s,x)=>s+(parseFloat(x.machine_net)||0),0);
+  const kplusSum=daily.reduce((s,x)=>s+(parseFloat(x.kplus_total)||0),0);
+  const holiday=audit.filter(x=>x.status==="วันหยุด").length;
+  document.getElementById("kpis").innerHTML=
+    kpi("รายได้รวม (ยอดเครื่องสุทธิ)", TH(revSum), confirmed.length+" วันที่ตรวจแล้ว")+
+    kpi("จำนวนวันในช่วง", TH0(days.length)+" วัน", "ตรวจแล้ว "+confirmed.length+" · วันหยุด "+holiday)+
+    kpi("ยอด K+ รวม (ช่วงนี้)", TH(kplusSum), daily.length+" วันมีข้อมูล");
+
+  if(!days.length){ document.getElementById("tbl").innerHTML='<div class="muted">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
+  let totMachine=0, totForm=0;
+  const rows=days.map(dt=>{
+    const x=aMap[dt], hasDaily=!!dMap[dt];
+    const mn=x?parseFloat(x.machine_net):null, fm=x?parseFloat(x.form_main):null;
+    const diff=(mn!=null&&fm!=null)?(mn-fm):null;
+    if(x&&x.status==="ตรวจแล้ว"){ totMachine+=(mn||0); totForm+=(fm||0); }
+    const diffHtml=(diff==null)?"—":(Math.abs(diff)<=1?'<span class="ok">'+TH(diff)+'</span>':'<span class="warn">'+TH(diff)+' 🚩</span>');
+    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily)+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+diffHtml+'</td></tr>';
+  }).join("");
+  document.getElementById("tbl").innerHTML=
+    '<table><thead><tr><th>วันที่</th><th>สถานะ</th><th>ยอดขายเครื่อง</th><th>ยอดฟอร์ม</th><th>ส่วนต่าง</th></tr></thead><tbody>'+
+    rows+
+    '<tr class="tot"><td>รวม (เฉพาะวันตรวจแล้ว)</td><td></td><td class="num">'+TH(totMachine)+'</td><td class="num">'+TH(totForm)+'</td><td class="num">'+TH(totMachine-totForm)+'</td></tr>'+
+    '</tbody></table><div class="muted" style="margin-top:8px">💡 คลิกที่แถววันที่ เพื่อกระโดดไปดู/แก้รายละเอียดวันนั้นในหน้าตรวจรายได้</div>';
+}
+function goDay(dt){ location.href="index.html?d="+dt; }
+function kpi(l,v,s){ return '<div class="kpi"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>'; }
+
+quick("month");
+</script>
+</body>
+</html>

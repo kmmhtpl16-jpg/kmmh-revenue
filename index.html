@@ -69,7 +69,7 @@
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
   <div class="lead">อัปโหลดไฟล์ → โปรแกรมตรวจให้อัตโนมัติ · วันที่แสดงเป็น พ.ศ. · <b>v0.1</b></div>
-  <div class="r-owner" style="margin-bottom:14px"><a href="Dashboard-สรุปรายได้.html" style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1.5px solid #2563eb;border-radius:8px;padding:8px 14px;text-decoration:none;font-weight:700">📊 ไปหน้า Dashboard สรุป →</a></div>
+  <div class="r-owner" style="margin-bottom:14px"><a href="Dashboard-สรุปรายได้.html" style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1.5px solid #2563eb;border-radius:8px;padding:8px 14px;text-decoration:none;font-weight:700">📊 ไปหน้า Dashboard สรุป →</a> <a href="สารบัญ-รายได้.html" style="display:inline-block;background:#fefce8;color:#a16207;border:1.5px solid #ca8a04;border-radius:8px;padding:8px 14px;text-decoration:none;font-weight:700;margin-left:6px">🔎 ค้นยอดตามวัน/ช่วง →</a></div>
 
   <div class="drops">
     <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">1. ไฟล์รายรับ (ฟอร์มพนักงาน)</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
@@ -913,6 +913,7 @@ render();
 const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISOString().slice(0,10);
 const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);
 loadDeposits(); loadPending(); loadMonthStatus();
+(function(){ try{ var _d=new URLSearchParams(location.search).get("d"); if(_d){ setTimeout(function(){ if(typeof showDayDetail==="function"){ showDayDetail(_d); var el=document.getElementById("dayDetail"); if(el) el.scrollIntoView({behavior:"smooth",block:"center"}); } }, 800); } }catch(e){} })();
 </script>
 </body>
 </html>

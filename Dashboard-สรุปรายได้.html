@@ -71,6 +71,18 @@ const PIN="0402";
 const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
+// บัตรผ่านจริง: ใช้ session ที่ล็อกอินจากหน้าหลักไว้ (เก็บใน localStorage โดเมนเดียวกัน) หรือมินต์ใหม่จาก PIN
+const LOGIN_FN_URL = SB_URL + "/functions/v1/login";
+async function ensureRevSession(pin){
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session) return true;
+    const resp = await fetch(LOGIN_FN_URL, { method:"POST", headers:{ "apikey":SB_KEY, "Content-Type":"application/json" }, body: JSON.stringify({ pin }) });
+    const j = await resp.json();
+    if(resp.ok && j.access_token){ await sb.auth.setSession({ access_token:j.access_token, refresh_token:j.refresh_token }); return true; }
+  }catch(e){ console.error("ensureRevSession failed", e); }
+  return false;
+}
 const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
 const beDate = s => { if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); };
@@ -132,6 +144,7 @@ function kpi(l,v,s){ return '<div class="kpi"><div class="l">'+l+'</div><div cla
 
 // default month = ล่าสุดที่มีข้อมูล
 (async ()=>{
+  if(!(await ensureRevSession(PIN))){ document.getElementById("status").textContent="เข้าสู่ระบบไม่สำเร็จ — รีเฟรชหน้าใหม่หรือเข้าผ่านหน้าโปรแกรมตรวจรายได้"; return; }
   const {data}=await sb.from("rev_daily").select("date").order("date",{ascending:false}).limit(1);
   const m=(data&&data[0])? String(data[0].date).slice(0,7) : new Date().toISOString().slice(0,7);
   document.getElementById("month").value=m;

@@ -728,7 +728,18 @@ function exRowHtml(e,edit){ e=e||{};
 function addCnRow(){ const tb=document.querySelector("#edcn tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=cnRowHtml({},true); tb.appendChild(t.firstChild); }
 function addExRow(){ const tb=document.querySelector("#edex tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=exRowHtml({},true); tb.appendChild(t.firstChild); }
 function figRow(label,val,fb){ return '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):(fb||"—"))+'</b></div>'; }
-function renderFrozen(det){
+function pendBadge(pend, src, amt){
+  amt=Math.abs(parseFloat(amt)||0);
+  var rec=(pend||[]).find(function(p){ return p.source===src && Math.abs((parseFloat(p.amount)||0)-amt)<1; });
+  if(!rec) return null;
+  return '<div style="margin-top:8px;background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:7px 11px;font-size:13px;color:#15803d;font-weight:700">✓ ยอด '+TH(amt)+' บาท บันทึกเป็นยอดรอจับคู่แล้ว'+(rec.status==="matched"?' · จับคู่บิลแล้ว'+(rec.matched_bill_no?' ('+esc(rec.matched_bill_no)+')':''):' · รอจับคู่บิล')+'</div>';
+}
+function pushBtnFrozen(amt, src, ref, date){
+  amt=Math.abs(parseFloat(amt)||0);
+  return '<button class="btn sec" type="button" style="margin-top:8px;padding:5px 12px" onclick="pushToPending('+amt+',\''+src+'\',\''+escAttr(ref)+'\',\''+date+'\')">➕ ดันส่วนต่าง '+src+' '+TH0(amt)+' เข้ารอจับคู่</button>';
+}
+function renderFrozen(det, edit, pend, date){
+  edit=!!edit; pend=pend||[]; date=date||"";
   const v=det.view||{}; let h="";
   const f=det.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
   if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
@@ -740,15 +751,17 @@ function renderFrozen(det){
   if(v.scenario) h+='<div class="muted" style="margin-top:8px">📌 '+esc(v.scenario)+'</div>';
   h+='<div class="kv" style="margin-top:8px"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>'+TH(v.old)+'</b></div></div>';
   const cns=det.cns||[];
-  h+='<div class="card"><h2>② คุมใบลดหนี้ (CN) <span class="badge '+(cns.length?'warn':'ok')+'">'+(cns.length?cns.length+' ใบ':'ไม่มีใบลดหนี้ ✓')+'</span></h2>';
-  h+='<table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>จ่ายเพิ่ม</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,false);}).join(""):'<tr><td colspan="10" class="muted">ไม่มีใบลดหนี้</td></tr>')+'</tbody></table></div>';
+  h+='<div class="card"><h2>② คุมใบลดหนี้ (CN) <span class="badge '+(cns.length?'warn':'ok')+'">'+(cns.length?cns.length+' ใบ':'ไม่มีใบลดหนี้ ✓')+'</span>'+(edit?' <span class="muted" style="font-weight:600;font-size:12px">— แก้ไขได้</span>':'')+'</h2>';
+  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอดบิลจริง</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>จ่ายเพิ่ม</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(function(c){return cnRowHtml(c,edit);}).join(""):(edit?"":'<tr><td colspan="10" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
+  if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
+  h+='</div>';
   const kp=v.kplus||{present:false}, bk=v.bank||{present:false};
   h+='<div class="card"><h2>③ ตรงธนาคาร'+((kp.present&&bk.present)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>')+'</h2>';
   h+='<div style="margin-bottom:8px"><b>③a K+ (QR ผ่าน K+shop)</b></div>';
-  if(kp.present){ if(kp.day!=null){ h+='<div class="kv"><span>K+ ใหม่ (จากรายงาน)</span><b>'+TH(kp.day)+'</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม</span><b>'+TH(kp.knv)+'</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>'+TH((kp.knv||0)-(kp.day||0))+'</b></div>'; } else h+='<div class="muted">ไม่พบรายการ K+ ของวันนี้ในรายงานที่อัป</div>'; }
+  if(kp.present){ if(kp.day!=null){ var _kdiff=(kp.knv||0)-(kp.day||0); h+='<div class="kv"><span>K+ ใหม่ (จากรายงาน)</span><b>'+TH(kp.day)+'</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม</span><b>'+TH(kp.knv)+'</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b style="color:'+(_kdiff<-1?'#c2410c':'#15803d')+'">'+TH(_kdiff)+(_kdiff<-1?' ⓘ รายงานมากกว่าฟอร์ม':'')+'</b></div>'; if(_kdiff<-1){ var _ka=(kp.day||0)-(kp.knv||0); h+=(pendBadge(pend,'K+',_ka)||pushBtnFrozen(_ka,'K+','K+ เข้าบัญชีแล้วแต่ยังหาลูกค้า/บิลไม่เจอ — รอจับคู่ '+beDate(date)+' (ส่วนต่างรายงาน−ฟอร์ม)',date)); } } else h+='<div class="muted">ไม่พบรายการ K+ ของวันนี้ในรายงานที่อัป</div>'; }
   else h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — ยังไม่ได้อัปรายงาน K+</div>';
   h+='<div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px;margin-bottom:6px"><b>③b โอนเข้าบัญชีกสิกร</b></div>';
-  if(bk.present && !bk.nodata){ h+='<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์)</span><b>'+TH(bk.dep)+'</b></div><div class="kv"><span>— เป็น K+ QR settlement</span><b>'+TH(bk.kplus)+'</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>'+TH(bk.direct)+'</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>'+TH(bk.ksk)+'</b></div>'; }
+  if(bk.present && !bk.nodata){ var _direct=(bk.direct!=null)?bk.direct:((bk.dep||0)-(bk.kplus||0)); var _bdiff=_direct-(bk.ksk||0); h+='<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์)</span><b>'+TH(bk.dep)+'</b></div><div class="kv"><span>— เป็น K+ QR settlement</span><b>'+TH(bk.kplus)+'</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>'+TH(_direct)+'</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>'+TH(bk.ksk)+'</b></div><div class="kv"><span>ส่วนต่าง (โอนตรง − ฟอร์ม)</span><b style="color:'+(Math.abs(_bdiff)>1?'#c2410c':'#15803d')+'">'+TH(_bdiff)+(_bdiff<-1?' ⓘ ฟอร์มมากกว่า':'')+'</b></div>'; if(_bdiff>1){ h+=(pendBadge(pend,'โอนกสิกร',_bdiff)||pushBtnFrozen(_bdiff,'โอนกสิกร','โอนตรงเกินฟอร์ม '+beDate(date)+' — เข้าหลังตัดรอบ น่าจะบิลวันถัดไป',date)); } }
   else if(bk.present && bk.nodata){ h+='<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันนี้</div>'; }
   else h+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — ยังไม่ได้อัปสเตทเมนต์กสิกร</div>';
   h+='</div>';
@@ -779,7 +792,8 @@ function renderFrozen(det){
   const dep=det.deposits||[];
   if(dep.length){ h+='<div class="card" style="border-color:#f59e0b;background:#fffbeb"><h2>⚠ เตือนมัดจำ — ลูกค้าที่ซื้อวันนี้มีมัดจำค้าง</h2><table><thead><tr><th>ลูกค้า</th><th>ใบมัดจำ</th><th>มัดจำเหลือ</th><th>บิลวันนี้</th><th>หักแล้วเป็นยังไง</th><th>สถานะ</th></tr></thead><tbody>'+dep.map(function(d){return '<tr class="flag"><td>'+esc(d.customer)+'</td><td>'+esc(d.deposit_no)+'</td><td class="num">'+TH(d.rem)+'</td><td class="num">'+(d.bill?TH(d.bill):'—')+'</td><td class="muted" style="text-align:left">'+esc(d.rel)+'</td><td style="text-align:left">'+esc(d.status)+'</td></tr>';}).join("")+'</tbody></table></div>'; }
   const ex=det.ex||[];
-  if(ex.length){ h+='<div class="card"><h2>💸 คืนเงิน/มัดจำที่ระบุ</h2><table><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th></tr></thead><tbody>'+ex.map(function(e){return exRowHtml(e,false);}).join("")+'</tbody></table></div>'; }
+  if(edit){ h+='<div class="card"><h2>💸 คืนเงิน/มัดจำ <span class="muted" style="font-weight:600;font-size:12px">— แก้ไขได้</span></h2><table id="edex"><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th><th></th></tr></thead><tbody>'+ex.map(function(e){return exRowHtml(e,true);}).join("")+'</tbody></table><button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addExRow()">+ เพิ่มรายการ</button></div>'; }
+  else if(ex.length){ h+='<div class="card"><h2>💸 คืนเงิน/มัดจำที่ระบุ</h2><table><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th></tr></thead><tbody>'+ex.map(function(e){return exRowHtml(e,false);}).join("")+'</tbody></table></div>'; }
   if(det.saved_at) h+='<div class="muted" style="font-size:11.5px;margin-top:4px">บันทึกเมื่อ '+new Date(det.saved_at).toLocaleString("th-TH")+(det.edited?" (แก้ไขแล้ว)":"")+'</div>';
   return h;
 }
@@ -805,12 +819,12 @@ function requestEdit(date){ if(ROLE==="finance"||ROLE==="owner"){ editDay(date);
 async function renderDay(date, edit){
   const box=document.getElementById("dayDetail"); if(!box||!sb) return;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
-  const [a,d]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle() ]);
-  const au=a.data, da=d.data;
+  const [a,d,pq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("*").eq("date",date) ]);
+  const au=a.data, da=d.data, _pend=(pq&&pq.data)||[];
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
   if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
   if(au){
-    if(!edit && au.detail && au.detail.view){ html+=renderFrozen(au.detail); }
+    if(au.detail && au.detail.view){ html+=renderFrozen(au.detail, edit, _pend, date); }
     else {
       html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
       html+=figRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,null);
@@ -832,8 +846,8 @@ async function saveDay(date){
   const cns=[...box.querySelectorAll("tr[data-cn]")].map(tr=>{ const g=c=>{const el=tr.querySelector(c);return el?el.value:"";}; const gn=c=>{const el=tr.querySelector(c);return el?(parseFloat(el.value)||0):0;}; const amt=gn(".k-amt"), cash=gn(".k-cash"); const btEl=tr.querySelector(".k-billtot"); const btv=(btEl&&btEl.dataset.bt!=null&&btEl.dataset.bt!=="")?parseFloat(btEl.dataset.bt):null; return {cust:g(".k-cust"),cn_no:g(".k-cn"),bill:g(".k-bill"),bill_total:((btv==null||isNaN(btv))?null:btv),amt:amt,cash:cash,rem:amt-cash,reason:g(".k-reason"),seller:g(".k-seller")}; }).filter(c=>c.cust||c.cn_no||c.amt||c.cash);
   const ex=[...box.querySelectorAll("tr[data-ex2]")].map(tr=>{ const g=c=>{const el=tr.querySelector(c);return el?el.value:"";}; const aEl=tr.querySelector(".x-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; return {cat:g(".x-cat"),ref:g(".x-ref"),amt:amt}; }).filter(e=>e.cat||e.ref||e.amt);
   const a=await sb.from("rev_audit").select("detail").eq("date",date).maybeSingle();
-  const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
-  const detail={ files:files, cns:cns, ex:ex, saved_at:new Date().toISOString(), edited:true };
+  const prev=(a.data&&a.data.detail)||{};
+  const detail=Object.assign({}, prev, { cns:cns, ex:ex, saved_at:new Date().toISOString(), edited:true });
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   try{

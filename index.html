@@ -403,7 +403,10 @@ function collectDetail(){
   const cns=[]; document.querySelectorAll("tr[data-i]").forEach(function(tr,i){ const x=(DATA.pos&&DATA.pos.cns[i])||{}; const cEl=tr.querySelector(".cash"); const cash=cEl?(parseFloat(cEl.value)||0):0; const cn=x.cn||0; const rEl=tr.querySelector(".rsninp"), aEl=tr.querySelector(".appinp"); cns.push({cust:x.customer||"",cn_no:x.cn_no||"",bill:x.bill_no||"",amt:cn,cash:cash,rem:cn-cash,reason:rEl?rEl.value:"",seller:aEl?aEl.value:""}); });
   const ex=[]; document.querySelectorAll("#exrows [data-ex]").forEach(function(r){ const cEl=r.querySelector(".ex-cat"),fEl=r.querySelector(".ex-ref"),aEl=r.querySelector(".ex-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; const ref=fEl?fEl.value:""; if(amt||ref) ex.push({cat:cEl?cEl.value:"",ref:ref,amt:amt}); });
   const f=DATA._files||{};
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, saved_at:new Date().toISOString() };
+  const _f=DATA.form||{}, _p=DATA.pos||{}, _kp=DATA.kplus, _bk=DATA.bank, _dt=_f.date;
+  const _bd=(_bk&&_dt&&_bk.map[_dt])?_bk.map[_dt]:null;
+  const recon={ form_main:_f.main, form_upk:_f.upk, form_refund:_f.refund, form_knv:_f.knv, form_ksk:_f.ksk, form_old:_f.old, machine_gross:_p.gross, machine_net:_p.net, cn_total:_p.cnTotal, cn_count:(_p.cns||[]).length, kplus_report:(_kp&&_dt&&_kp.map[_dt]!=null)?_kp.map[_dt]:null, kplus_file_total:_kp?_kp.total:null, kplus_file_count:_kp?_kp.count:null, has_kplus:!!_kp, has_bank:!!_bk, bank_dep:_bd?_bd.dep:null, bank_kplus_settle:_bd?_bd.kplus:null };
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, recon:recon, saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -633,6 +636,39 @@ function rawDailyHtml(da){
     h+='<table><thead><tr><th>วันที่</th><th>ฝาก</th><th>ถอน</th><th>ช่องทาง</th><th>รายละเอียด</th></tr></thead><tbody>'+br.map(x=>'<tr><td>'+esc(x.dt||"—")+'</td><td class="num">'+(x.dep?TH(x.dep):"—")+'</td><td class="num">'+(x.wd?TH(x.wd):"—")+'</td><td>'+esc(x.ch||"—")+(x.kp?' <span style="color:#15803d;font-size:11px">K+</span>':'')+'</td><td style="font-size:12px">'+esc(x.detail||"—")+'</td></tr>').join("")+'</tbody></table>'; }
   return h;
 }
+function savedAuditHtml(R, date){
+  if(!R) return "";
+  const main=+R.form_main||0, upk=+R.form_upk||0, refund=+R.form_refund||0, old=+R.form_old||0, knv=+R.form_knv||0, ksk=+R.form_ksk||0;
+  const gross=+R.machine_gross||0, net=+R.machine_net||0, cnTotal=+R.cn_total||0;
+  const sumForm=main+upk, diffRaw=net-sumForm, diffAdj=net-(sumForm-refund);
+  const okRaw=Math.abs(diffRaw)<=1, okAdj=Math.abs(diffAdj)<=1, ok1=okRaw||okAdj;
+  const allOk=ok1 && ((+R.cn_count||0)===0);
+  const scenario = okRaw ? '✓ ยอดขายตรง — “คืนเงิน” เป็นรายการแยก (มัดจำ/รอออกบิล) ไม่หักจากยอดขาย'
+                 : okAdj ? '✓ ยอดขายตรง — “คืนเงิน” รวมอยู่ในยอดขายของฟอร์มแล้ว'
+                 : '🚩 ยังไม่ลงตัวทั้งสองแบบ — ตรวจรายการประกอบ / ตาราง CN';
+  let h='';
+  h+=`<div class="verdict ${allOk?'v-ok':'v-warn'}" style="margin-top:6px">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}</div>`;
+  h+=`<div class="card"><h2>① ยอดขายตรง <span class="badge ${ok1?'ok':'warn'}">${ok1?'ตรง ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩'}</span></h2>`
+   +`<div class="kv"><span>ยอดสุทธิจากเครื่อง (ยอดบิล ${TH0(gross)} − ใบลดหนี้ ${TH0(cnTotal)})</span><b>${TH(net)}</b></div>`
+   +`<div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด ${TH0(main)} + UPK ${TH0(upk)}</span><b>${TH(sumForm)}</b></div>`
+   +`<div class="kv"><span>ส่วนต่าง (ไม่หักคืนเงิน)</span><b style="color:${okRaw?'#15803d':'#b91c1c'}">${TH(diffRaw)}</b></div>`
+   +`<div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน ${TH0(refund)})</span><b style="color:${okAdj?'#15803d':'#b91c1c'}">${TH(diffAdj)}</b></div>`
+   +`<div class="muted" style="margin-top:8px">📌 ${scenario}</div>`
+   +`<div class="kv" style="margin-top:10px"><span>คืนเงิน (ฟอร์ม)</span><b>${TH(refund)}</b></div>`
+   +`<div class="kv"><span>บิลเก่า (เก็บหนี้เก่า, ไม่ใช่ยอดขายวันนี้)</span><b>${TH(old)}</b></div></div>`;
+  let a3;
+  if(R.has_kplus){ const kday=R.kplus_report;
+    if(kday==null){ a3=`<div class="kv"><span>รายงาน K+ (รวมทั้งไฟล์ ${R.kplus_file_count||0} รายการ)</span><b>${TH(R.kplus_file_total||0)}</b></div><div class="muted">ไม่พบรายการ K+ ของวันนี้ (${beDate(date)})</div>`; }
+    else { const d=knv-kday; a3=`<div class="kv"><span>K+ ใหม่ (จากรายงาน) วันที่ ${beDate(date)}</span><b>${TH(kday)}</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม (รวม 2 QR)</span><b>${TH(knv)}</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>${TH(d)}</b></div><div class="muted">ℹ️ ส่วนต่างรายวันปกติมาจากตัดรอบ 15:30 / บิลข้ามวัน / QR เก่า — ยอดจริงตรงเมื่อดูทั้งเดือน${d<-1?'<br><b style="color:#b91c1c">⚠ รายงาน K+ มากกว่าฟอร์ม</b>':''}</div>`; }
+  } else { a3='<div class="muted">ยังไม่มีรายงาน K+ ของวันนี้</div>'; }
+  let b3;
+  if(R.has_bank && R.bank_dep!=null){ const dep=+R.bank_dep||0, kset=+R.bank_kplus_settle||0, direct=dep-kset, diff=direct-ksk;
+    b3=`<div class="kv"><span>ฝากเข้าบัญชีรวม (สเตทเมนต์ ${beDate(date)})</span><b>${TH(dep)}</b></div><div class="kv"><span>— เป็น K+ QR settlement</span><b>${TH(kset)}</b></div><div class="kv"><span>— เงินโอนเข้าตรง + อื่นๆ</span><b>${TH(direct)}</b></div><div class="kv"><span>โอนเข้าบัญชีกสิกร (ฟอร์ม)</span><b>${TH(ksk)}</b></div><div class="kv"><span>ส่วนต่าง (โอนตรง − ฟอร์ม)</span><b style="color:#c2410c">${TH(diff)}${diff<-1?' ⓘ ฟอร์มมากกว่า':''}</b></div>`;
+    if(diff>1){ b3+='<div style="margin-top:8px"><button class="btn" type="button" style="padding:4px 12px;font-size:12.5px" onclick="pushDiffToPending(\''+date+'\','+diff.toFixed(2)+')">➕ ดันส่วนต่าง '+TH(diff)+' เข้ารอจับคู่</button></div>'; }
+  } else { b3='<div class="muted">ไม่มีรายการสเตทเมนต์ของวันนี้</div>'; }
+  h+=`<div class="card"><h2>③ ตรงธนาคาร</h2><div style="margin-bottom:8px"><b>③a K+ (QR ผ่าน K+shop)</b></div>${a3}<div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px;margin-bottom:6px"><b>③b โอนเข้าบัญชีกสิกร</b></div>${b3}</div>`;
+  return h;
+}
 async function showDayDetail(date){ return renderDay(date,false); }
 async function editDay(date){ return renderDay(date,true); }
 async function renderDay(date, edit){
@@ -650,6 +686,7 @@ async function renderDay(date, edit){
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
     html+=rawDailyHtml(da);
+    html+=(au.detail&&au.detail.recon)?savedAuditHtml(au.detail.recon,date):'<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;margin:10px 0;font-size:12.5px;color:#92400e">⚠ รายละเอียดเต็ม (ผลตรวจ ① / ③ ธนาคาร) ของวันนี้ยังไม่ถูกเก็บ — ยืนยันก่อนมีระบบนี้ · อัปไฟล์ครบแล้วกดยืนยันซ้ำเพื่อเก็บรายละเอียดเต็ม</div>';
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';

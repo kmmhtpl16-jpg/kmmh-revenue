@@ -38,6 +38,7 @@
   .tot td{ font-weight:800; border-top:2px solid #d6d3d1; }
   input.cell{ width:96px; text-align:right; border:1px solid #d6d3d1; border-radius:6px; padding:4px 6px; font:inherit; }
   input.rsn,select.rsn{ width:100%; min-width:120px; text-align:left; border:1px solid #d6d3d1; border-radius:6px; padding:4px 6px; font:inherit; }
+  #edcn .rsn,#edcn .cell,#edcn select.rsn,#edex .rsn,#edex .cell,#edex select.rsn{ min-width:0; max-width:none; width:100%; box-sizing:border-box; }
   .flag{ background:#fef2f2; }
   .verdict{ font-size:16px; font-weight:800; padding:14px 18px; border-radius:12px; margin-bottom:16px; }
   .v-ok{ background:#dcfce7; color:#15803d; } .v-warn{ background:#fff7ed; color:#c2410c; border:1px solid #fdba74; }
@@ -608,11 +609,11 @@ function renderItems(det, edit){ det=det||{};
   if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
   const cns=det.cns||[];
   h+='<div style="font-weight:700;margin:6px 0 4px">📋 ใบลดหนี้ (CN)'+(edit?' — แก้ไขได้':'')+'</div>';
-  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
+  h+='<table id="edcn"'+(edit?' style="table-layout:fixed;width:100%"':'')+'>'+(edit?'<colgroup><col style="width:15%"><col style="width:12%"><col style="width:11%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:7%"></colgroup>':'')+'<thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';
-  h+='<table id="edex"><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(ex.length?ex.map(e=>exRowHtml(e,edit)).join(""):(edit?"":'<tr><td colspan="3" class="muted">ไม่มีรายการ</td></tr>'))+'</tbody></table>';
+  h+='<table id="edex"'+(edit?' style="table-layout:fixed;width:100%"':'')+'>'+(edit?'<colgroup><col style="width:34%"><col style="width:40%"><col style="width:18%"><col style="width:8%"></colgroup>':'')+'<thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(ex.length?ex.map(e=>exRowHtml(e,edit)).join(""):(edit?"":'<tr><td colspan="3" class="muted">ไม่มีรายการ</td></tr>'))+'</tbody></table>';
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addExRow()">+ เพิ่มรายการ</button>';
   if(det.saved_at && !edit) h+='<div class="muted" style="font-size:11.5px;margin-top:10px">บันทึกเมื่อ '+new Date(det.saved_at).toLocaleString("th-TH")+(det.edited?" (แก้ไขแล้ว)":"")+'</div>';
   if(!cns.length && !ex.length && !fl.length && !edit) h+='<div class="muted" style="margin-top:6px">— วันนี้ยังไม่มีรายการดิบที่บันทึกไว้ (ยืนยันก่อนมีฟีเจอร์ หรือยังไม่กรอก) · กด "✏️ แก้ไข" เพื่อเพิ่ม</div>';

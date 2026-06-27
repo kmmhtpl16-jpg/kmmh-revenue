@@ -585,8 +585,7 @@ async function sendAuditAlert(){
     +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" · ฟอร์ม "+TH(m.sumForm)+"\n"
     +"② ใบลดหนี้: "+l2+"\n"
     +"③ ธนาคาร: "+l3+"\n\n"
-    +((ROLE==="cashier")?"✍️ <i>แคชเชียร์บันทึกแล้ว</i>
-👉 รอการเงินตรวจ K+/สเตทเมนต์ แล้วกดยืนยันยอดนี้":"✅ <i>การเงินยืนยันแล้ว</i>");
+    +((ROLE==="cashier")?"✍️ <i>แคชเชียร์บันทึกแล้ว</i> 👉 รอการเงินตรวจ K+/สเตทเมนต์ แล้วกดยืนยันยอดนี้":"✅ <i>การเงินยืนยันแล้ว</i>");
   const msg=document.getElementById("audit_msg");
   try{
     const {data,error}=await sb.functions.invoke("rev-alert",{body:{text:text}});

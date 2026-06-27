@@ -685,13 +685,12 @@ async function renderDay(date, edit){
     html+=figRow("ใบลดหนี้",au.cn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
-    html+=rawDailyHtml(da);
     html+=(au.detail&&au.detail.recon)?savedAuditHtml(au.detail.recon,date):'<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;margin:10px 0;font-size:12.5px;color:#92400e">⚠ รายละเอียดเต็ม (ผลตรวจ ① / ③ ธนาคาร) ของวันนี้ยังไม่ถูกเก็บ — ยืนยันก่อนมีระบบนี้ · อัปไฟล์ครบแล้วกดยืนยันซ้ำเพื่อเก็บรายละเอียดเต็ม</div>';
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
     else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
-  } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว (อัปไฟล์ ③/④) แต่ยังไม่ได้ยืนยันผลตรวจรายรับ</div>'; html+=figRow("K+ (วันนี้)",da.kplus_total,null); html+=figRow("ฝากเข้าบัญชี (วันนี้)",da.bank_dep_total,null); html+=rawDailyHtml(da); html+='<div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
+  } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว (อัปไฟล์ ③/④) แต่ยังไม่ได้ยืนยันผลตรวจรายรับ</div>'; html+=figRow("K+ (วันนี้)",da.kplus_total,null); html+=figRow("ฝากเข้าบัญชี (วันนี้)",da.bank_dep_total,null);  html+='<div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else { html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>'; }
   html+='</div>'; box.innerHTML=html; if(window.applyGating)applyGating();
 }

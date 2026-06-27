@@ -188,14 +188,14 @@ function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
-async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entries(kp.map).map(([date,total])=>({date, kplus_total:Math.round(total*100)/100})); if(!rows.length) return;
+async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entries(kp.map).map(([date,total])=>({date, kplus_total:Math.round(total*100)/100, kplus_rows:(kp.rows&&kp.rows[date])||[]})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("kplus_today",null);
     const set=new Set((au||[]).map(x=>x.date));
     for(const [date,total] of Object.entries(kp.map)){ if(set.has(date)) await sb.from("rev_audit").update({kplus_today:Math.round(total*100)/100}).eq("date",date); }
     loadMonthStatus();
   }catch(e){} }
-async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100})); if(!rows.length) return;
+async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100, bank_rows:(bk.rows&&bk.rows[date])||[]})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("bank_dep_today",null);
     const set=new Set((au||[]).map(x=>x.date));
@@ -356,6 +356,8 @@ function render(){
     <div style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:10px;margin-bottom:6px"><b>③b โอนเข้าบัญชีกสิกร</b></div>${b3}
   </div>`;
 
+  { const _kr=(kp&&kp.rows&&kp.rows[f.date])||[], _br=(bank&&bank.rows&&bank.rows[f.date])||[];
+    if(_kr.length||_br.length) out.innerHTML += '<div class="card"><h2>🧾 รายการดิบของวันนี้ '+beDate(f.date)+'</h2>'+rawDailyHtml({kplus_rows:_kr,bank_rows:_br})+'</div>'; }
   const odSet=new Set();
   if(kp) Object.keys(kp.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
   if(bank) Object.keys(bank.map).forEach(d=>{ if(d!==f.date) odSet.add(d); });
@@ -470,12 +472,12 @@ function parseKPlus(text){
   if(h<0) throw new Error("ไม่พบหัวตาราง (Date Time) — ใช่รายงาน K+ ไหม?");
   const hdr=R[h].map(c=>String(c||"").trim()); const iDt=hdr.indexOf("Date Time"), iAmt=hdr.indexOf("Amount");
   if(iDt<0||iAmt<0) throw new Error("ไม่พบคอลัมน์ Date Time / Amount");
-  const map={}; let total=0, count=0;
+  const map={}, rows={}; let total=0, count=0;
   for(let i=h+1;i<R.length;i++){ const row=R[i]; if(!row||!row[iDt]) continue;
     const m=String(row[iDt]).match(/(\d{2})-(\d{2})-(\d{4})/); if(!m) continue;
     const iso=m[3]+"-"+m[2]+"-"+m[1]; const amt=num(row[iAmt]); if(!amt) continue;
-    map[iso]=(map[iso]||0)+amt; total+=amt; count++; }
-  return {map, total, count};
+    map[iso]=(map[iso]||0)+amt; (rows[iso]||(rows[iso]=[])).push({t:String(row[iDt]).trim(),amt:amt}); total+=amt; count++; }
+  return {map, rows, total, count};
 }
 const fkp=document.getElementById("f_kplus");
 if(fkp) fkp.addEventListener("change", e=>{
@@ -488,14 +490,15 @@ function parseBank(text){
   const R=parseCSV(text); let h=-1;
   for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="ฝากเงิน")){ h=i; break; } }
   if(h<0) throw new Error("ไม่พบหัวตาราง (ฝากเงิน) — ใช่สเตทเมนต์กสิกรไหม?");
-  const map={};
+  const map={}, rows={};
   for(let i=h+1;i<R.length;i++){ const r=R[i]; if(!r||!r[1]) continue;
     const m=String(r[1]).match(/(\d{2})-(\d{2})-(\d{2})/); if(!m) continue;
     const iso="20"+m[3]+"-"+m[2]+"-"+m[1]; const dep=num(r[6]), wd=num(r[4]);
     const ch=String(r[10]||""), detail=String(r[12]||"");
     const isKplus = ch.indexOf("K SHOP")>=0 || ch.indexOf("MYQR")>=0 || ch.indexOf("EDC")>=0 || detail.indexOf("KB000001825670")>=0;
-    if(!map[iso]) map[iso]={dep:0,wd:0,kplus:0}; map[iso].dep+=dep; map[iso].wd+=wd; if(isKplus) map[iso].kplus+=dep; }
-  return {map};
+    if(!map[iso]) map[iso]={dep:0,wd:0,kplus:0}; map[iso].dep+=dep; map[iso].wd+=wd; if(isKplus) map[iso].kplus+=dep;
+    (rows[iso]||(rows[iso]=[])).push({dt:String(r[1]).trim(),dep:dep,wd:wd,ch:ch,detail:detail,kp:isKplus}); }
+  return {map, rows};
 }
 const fbk=document.getElementById("f_bank");
 if(fbk) fbk.addEventListener("change", e=>{
@@ -615,6 +618,17 @@ function renderItems(det, edit){ det=det||{};
   if(!cns.length && !ex.length && !fl.length && !edit) h+='<div class="muted" style="margin-top:6px">— วันนี้ยังไม่มีรายการดิบที่บันทึกไว้ (ยืนยันก่อนมีฟีเจอร์ หรือยังไม่กรอก) · กด "✏️ แก้ไข" เพื่อเพิ่ม</div>';
   return h;
 }
+function rawDailyHtml(da){
+  if(!da) return "";
+  let h=""; const kr=da.kplus_rows||[]; const br=da.bank_rows||[];
+  if(kr.length){ const tot=kr.reduce((s,x)=>s+(x.amt||0),0);
+    h+='<div style="font-weight:700;margin:12px 0 4px">📱 รายการ K+ (QR) ดิบ <span class="muted" style="font-weight:400">('+kr.length+' รายการ · รวม '+TH(tot)+')</span></div>';
+    h+='<table><thead><tr><th>วันที่/เวลา</th><th>ยอด</th></tr></thead><tbody>'+kr.map(x=>'<tr><td>'+esc(x.t||"—")+'</td><td class="num">'+TH(x.amt)+'</td></tr>').join("")+'</tbody></table>'; }
+  if(br.length){ const dep=br.reduce((s,x)=>s+(x.dep||0),0), wdt=br.reduce((s,x)=>s+(x.wd||0),0);
+    h+='<div style="font-weight:700;margin:12px 0 4px">🏦 รายการเดินบัญชีดิบ (สเตทเมนต์) <span class="muted" style="font-weight:400">('+br.length+' รายการ · ฝากรวม '+TH(dep)+(wdt?' · ถอนรวม '+TH(wdt):'')+')</span></div>';
+    h+='<table><thead><tr><th>วันที่</th><th>ฝาก</th><th>ถอน</th><th>ช่องทาง</th><th>รายละเอียด</th></tr></thead><tbody>'+br.map(x=>'<tr><td>'+esc(x.dt||"—")+'</td><td class="num">'+(x.dep?TH(x.dep):"—")+'</td><td class="num">'+(x.wd?TH(x.wd):"—")+'</td><td>'+esc(x.ch||"—")+(x.kp?' <span style="color:#15803d;font-size:11px">K+</span>':'')+'</td><td style="font-size:12px">'+esc(x.detail||"—")+'</td></tr>').join("")+'</tbody></table>'; }
+  return h;
+}
 async function showDayDetail(date){ return renderDay(date,false); }
 async function editDay(date){ return renderDay(date,true); }
 async function renderDay(date, edit){
@@ -631,11 +645,12 @@ async function renderDay(date, edit){
     html+=figRow("ใบลดหนี้",au.cn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
+    html+=rawDailyHtml(da);
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
     else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
-  } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
+  } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว (อัปไฟล์ ③/④) แต่ยังไม่ได้ยืนยันผลตรวจรายรับ</div>'; html+=figRow("K+ (วันนี้)",da.kplus_total,null); html+=figRow("ฝากเข้าบัญชี (วันนี้)",da.bank_dep_total,null); html+=rawDailyHtml(da); html+='<div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else { html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>'; }
   html+='</div>'; box.innerHTML=html; if(window.applyGating)applyGating();
 }

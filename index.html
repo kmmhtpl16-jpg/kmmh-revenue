@@ -346,6 +346,7 @@ function render(){
     } else { b3 = `<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันที่ฟอร์ม (${f.date?beDate(f.date):'ไม่ทราบวันที่'}) — เช็กว่าตรงรอบไหม</div>`; }
   } else { b3 = `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — อัปสเตทเมนต์กสิกร (resultFile…csv) ในช่อง 4 เพื่อตรวจอัตโนมัติ</div>`; }
 
+  if(bank){ const _bd=(f.date&&bank.map[f.date])?bank.map[f.date]:null; if(_bd){ const _diff=(_bd.dep-_bd.kplus)-f.ksk; if(_diff>1){ b3 += '<div style="margin-top:8px"><button class="btn" type="button" style="padding:4px 12px;font-size:12.5px" onclick="pushDiffToPending(\''+f.date+'\','+_diff.toFixed(2)+')">➕ ดันส่วนต่าง '+TH(_diff)+' เข้ารอจับคู่</button></div>'; } } }
   DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_refund:f.refund, cn_total:p.cnTotal,
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
@@ -700,6 +701,19 @@ async function loadPending(){
   list.innerHTML='<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th>ยอด</th><th></th></tr></thead><tbody>'+
     data.map(d=>'<tr><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button></td></tr>').join("")+
     '<tr class="tot"><td colspan="5">รวม</td><td class="num">'+TH(sum)+'</td><td></td></tr></tbody></table>';
+}
+async function pushDiffToPending(date, amount){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  amount=Math.round((parseFloat(amount)||0)*100)/100;
+  if(amount<=0){ alert("ไม่มีส่วนต่างให้ดัน"); return; }
+  const {data:exist}=await sb.from("rev_pending").select("id").eq("date",date).eq("amount",amount).eq("status","open");
+  if(exist&&exist.length){ if(!confirm("มีรายการรอจับคู่ยอดนี้ของวันนี้อยู่แล้ว ("+exist.length+") — ดันซ้ำอีกไหม?")) return; }
+  else if(!confirm("ดันยอด "+TH(amount)+" (โอนเกินบัญชี "+beDate(date)+") เข้ารอจับคู่?")) return;
+  const rec={ date:date, amount:amount, source:"โอนกสิกร", from_name:"", ref:"โอนเกินบัญชี "+beDate(date)+" (ส่วนต่างโอนตรง−ฟอร์ม)", status:"open" };
+  const {error}=await sb.from("rev_pending").insert(rec);
+  if(error){ alert("บันทึกไม่ได้: "+error.message); return; }
+  alert("✓ ดันเข้ารอจับคู่แล้ว "+TH(amount));
+  if(typeof loadPending==="function") loadPending();
 }
 async function addPending(){
   const msg=document.getElementById("pend_msg"); if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }

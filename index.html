@@ -628,7 +628,13 @@ async function renderDay(date, edit){
     (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; const _rk=(au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:((da&&da.kplus_total!=null)?da.kplus_total:null); const _lk=(au.detail&&au.detail.kplus_late!=null)?au.detail.kplus_late:0; if(_fk!=null&&_rk!=null){ const _imp=Math.round(((_fk-_rk)+_lk)*100)/100; if(_imp>1){ const Q4=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px"><b style="color:#1d4ed8">🔎 ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' — น่าจะลูกค้าโอนเข้าบัญชีอื่น</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fk)+' − รายงาน '+TH(_rk)+')'+(_lk>0?' + K+หลัง15:30 '+TH(_lk):'')+' = '+TH(_imp)+'</div><button class="btn sec" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_imp+','+Q4+date+Q4+','+Q4+'K+ ฟอร์มเกินรายงาน-โอนบัญชีอื่น ('+beDate(date)+')'+Q4+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } } })();
     (function(){ const _li=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}).map(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return {hhmm:m?m[1]+':'+m[2]:'',amt:r.amt,name:''};}):[]); if(_li.length){ const _nd=nextISO(date); const Q5=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_li.length+' รายการ รวม '+TH(_li.reduce((s,x)=>s+(x.amt||0),0))+') — ตัดรอบ (นับใน K+ วันนี้แล้ว) จับคู่เลขบิลที่ออก '+beDate(_nd)+'</b>'+_li.map(function(x){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), x.amt, 'knv'); var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="matchKLateBill('+(x.amt||0)+','+Q5+(x.hhmm||'')+Q5+','+Q5+date+Q5+',this)">จับคู่บิล</button>'); return '<div class="kv"><span>'+(x.hhmm||'')+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' '+act+'</b></div>'; }).join('')+'</div>'; } })();
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
-    (function(){ const _br=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(_br.length){ const Q6=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px"><b style="color:#4338ca">💳 เงินโอนเข้าตรง (ไม่ใช่ K+) '+_br.length+' รายการ รวม '+TH(_br.reduce(function(s,r){return s+(+r.dep||0);},0))+' — เช็กว่าตรงบิลไหน ถ้ายังไม่ตรงดันเข้ารอจับคู่</b>'+_br.map(function(r){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +r.dep, 'ksk'); var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q6+String(r.detail||'').split(String.fromCharCode(39)).join('').slice(0,40)+Q6+','+Q6+date+Q6+')">ดันเข้ารอจับคู่</button>'); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; } })();
+    (function(){ var _all=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(!_all.length) return; var Q6=String.fromCharCode(39);
+      function _norm(s){ return String(s||'').replace(/['"]/g,'').slice(0,60); }
+      var _rf=(au.detail&&Array.isArray(au.detail.refunds))?au.detail.refunds.slice():[]; var _used=_rf.map(function(){return false;});
+      var _br=[], _refRows=[];
+      _all.forEach(function(r){ var nd=_norm(r.detail); var hit=-1; for(var i=0;i<_rf.length;i++){ if(!_used[i] && Math.abs((+_rf[i].amt||0)-(+r.dep||0))<0.01 && (_rf[i].detail||'')===nd){ hit=i; break; } } if(hit>=0){ _used[hit]=true; _refRows.push(r); } else { _br.push(r); } });
+      if(_br.length){ html+='<div style="margin:4px 0 0;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px"><b style="color:#4338ca">💳 เงินโอนเข้าตรง (ไม่ใช่ K+) '+_br.length+' รายการ รวม '+TH(_br.reduce(function(s,r){return s+(+r.dep||0);},0))+' — เช็กว่าตรงบิลไหน ถ้ายังไม่ตรงดันเข้ารอจับคู่</b>'+_br.map(function(r){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +r.dep, 'ksk'); var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q6+_norm(r.detail).slice(0,40)+Q6+','+Q6+date+Q6+')">ดันเข้ารอจับคู่</button><button class="btn sec" style="padding:2px 8px;margin-left:4px;border-color:#fca5a5;color:#b91c1c" onclick="markRefund('+(+r.dep||0)+','+Q6+_norm(r.detail)+Q6+','+Q6+date+Q6+')">🔁 เงินคืน</button>'); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; }
+      if(_refRows.length){ html+='<div style="margin:4px 0 0;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:8px"><b style="color:#475569">🔁 เงินคืน (ไม่ใช่รายได้ของร้าน) '+_refRows.length+' รายการ รวม '+TH(_refRows.reduce(function(s,r){return s+(+r.dep||0);},0))+' — แยกออกแล้ว ไม่นับเป็นยอดขาย</b>'+_refRows.map(function(r){ return '<div class="kv"><span style="text-decoration:line-through;color:#94a3b8">'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b style="color:#64748b">'+TH(r.dep)+' <button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="unmarkRefund('+(+r.dep||0)+','+Q6+_norm(r.detail)+Q6+','+Q6+date+Q6+')">เอากลับ</button></b></div>';}).join('')+'</div>'; } })();
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
@@ -645,7 +651,7 @@ async function saveDay(date){
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
   const oldCns=(a.data&&a.data.detail&&a.data.detail.cns)||[]; cns.forEach((c,i)=>{ const m=oldCns.find(o=>o.cn_no&&o.cn_no===c.cn_no)||oldCns[i]; if(m){ if(m.bill_amt!=null&&c.bill_amt==null) c.bill_amt=m.bill_amt; if(m.bill_total!=null&&c.bill_total==null) c.bill_total=m.bill_total; } });
   const _od=(a.data&&a.data.detail)||{};
-  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), saved_at:new Date().toISOString(), edited:true };
+  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), refunds:(_od.refunds!=null?_od.refunds:null), saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   loadMonthStatus(); showDayDetail(date);
@@ -696,6 +702,26 @@ async function pushTransferPending(amt, name, dateIso){
   const {error}=await sb.from("rev_pending").insert(rec);
   if(error){ alert("ดันไม่สำเร็จ: "+error.message); return; }
   alert("✓ ดันเข้ารอจับคู่วัน "+beDate(dateIso)+" แล้ว ("+TH(amt)+" บาท)"); if(window.loadPending) loadPending();
+}
+async function markRefund(amt, detail, dateIso){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  if(!confirm("ทำเครื่องหมายยอด "+TH(amt)+" บาท เป็น 'เงินคืน' (ไม่นับเป็นรายได้ของร้าน) ?")) return;
+  const a=await sb.from("rev_audit").select("detail").eq("date",dateIso).maybeSingle();
+  const det=(a.data&&a.data.detail)||{}; const rf=Array.isArray(det.refunds)?det.refunds.slice():[];
+  rf.push({ amt:(+amt||0), detail:(detail||""), marked_at:new Date().toISOString() }); det.refunds=rf;
+  const {error}=await sb.from("rev_audit").update({detail:det}).eq("date",dateIso);
+  if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
+  showDayDetail(dateIso);
+}
+async function unmarkRefund(amt, detail, dateIso){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  const a=await sb.from("rev_audit").select("detail").eq("date",dateIso).maybeSingle();
+  const det=(a.data&&a.data.detail)||{}; const rf=Array.isArray(det.refunds)?det.refunds.slice():[];
+  const i=rf.findIndex(function(x){ return Math.abs((+x.amt||0)-(+amt||0))<0.01 && (x.detail||"")===(detail||""); });
+  if(i>=0) rf.splice(i,1); det.refunds=rf;
+  const {error}=await sb.from("rev_audit").update({detail:det}).eq("date",dateIso);
+  if(error){ alert("เอากลับไม่สำเร็จ: "+error.message); return; }
+  showDayDetail(dateIso);
 }
 async function matchKLateBill(amt, hhmm, dateIso, btn){
   if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }

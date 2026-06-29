@@ -386,7 +386,8 @@ function collectDetail(){
   const ex=[]; document.querySelectorAll("#exrows [data-ex]").forEach(function(r){ const cEl=r.querySelector(".ex-cat"),fEl=r.querySelector(".ex-ref"),aEl=r.querySelector(".ex-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; const ref=fEl?fEl.value:""; if(amt||ref) ex.push({cat:cEl?cEl.value:"",ref:ref,amt:amt}); });
   const f=DATA._files||{};
   const _fk=(DATA.form&&DATA.form.knv!=null)?DATA.form.knv:null; const _rk=(DATA.kplus&&DATA.form&&DATA.kplus.map&&DATA.kplus.map[DATA.form.date]!=null)?DATA.kplus.map[DATA.form.date]:null;
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, saved_at:new Date().toISOString() };
+  const _lk=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date].reduce((s,x)=>s+(x.amt||0),0):0;
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -621,6 +622,7 @@ async function renderDay(date, edit){
     html+=figRow("ใบลดหนี้",au.cn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     html+=kCmp((au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null,(au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:((da&&da.kplus_total!=null)?da.kplus_total:(au.kplus_today!=null?au.kplus_today:null)));
+    (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; const _rk=(au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:((da&&da.kplus_total!=null)?da.kplus_total:null); const _lk=(au.detail&&au.detail.kplus_late!=null)?au.detail.kplus_late:0; if(_fk!=null&&_rk!=null){ const _imp=Math.round(((_fk-_rk)+_lk)*100)/100; if(_imp>1){ const Q4=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px"><b style="color:#1d4ed8">🔎 ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' — น่าจะลูกค้าโอนเข้าบัญชีอื่น</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fk)+' − รายงาน '+TH(_rk)+')'+(_lk>0?' + K+หลัง15:30 '+TH(_lk):'')+' = '+TH(_imp)+'</div><button class="btn sec r-fin" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_imp+','+Q4+date+Q4+','+Q4+'K+ ฟอร์มเกินรายงาน-โอนบัญชีอื่น ('+beDate(date)+')'+Q4+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } } })();
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit);
@@ -638,7 +640,7 @@ async function saveDay(date){
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
   const oldCns=(a.data&&a.data.detail&&a.data.detail.cns)||[]; cns.forEach((c,i)=>{ const m=oldCns.find(o=>o.cn_no&&o.cn_no===c.cn_no)||oldCns[i]; if(m&&m.bill_amt!=null&&c.bill_amt==null) c.bill_amt=m.bill_amt; });
   const _od=(a.data&&a.data.detail)||{};
-  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), saved_at:new Date().toISOString(), edited:true };
+  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   loadMonthStatus(); showDayDetail(date);

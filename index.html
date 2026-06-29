@@ -112,7 +112,7 @@
     <div class="rowflex" style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px">
       <input class="rsn" id="np_date" type="date" style="max-width:140px">
       <input class="cell" id="np_amt" type="number" placeholder="ยอด">
-      <select class="rsn" id="np_src" style="max-width:130px"><option>เงินสด</option><option>โอนกสิกร</option><option>K+</option><option>อื่นๆ</option></select>
+      <select class="rsn" id="np_src" style="max-width:150px"><option>เงินสด</option><option>โอนกสิกร</option><option>K+</option><option>รับเข้าบัญชีอื่น</option><option>อื่นๆ</option></select>
       <input class="rsn" id="np_from" placeholder="ใครโอน" style="max-width:150px">
       <input class="rsn" id="np_ref" placeholder="อ้างอิง/สลิป" style="max-width:140px">
       <input class="rsn" id="np_slip" type="file" accept="image/*,application/pdf" style="max-width:170px" title="แนบสลิป (ถ้ามี)">
@@ -312,6 +312,8 @@ function render(){
     if(kday==null){ a3=`<div class="kv"><span>รายงาน K+ (รวมทั้งไฟล์ ${kp.count} รายการ)</span><b>${TH(kp.total)}</b></div><div class="muted">ไม่พบรายการ K+ ของวันที่ฟอร์ม (${fd?beDate(fd):'ไม่ทราบวันที่'}) — เช็กว่าอัปรายงาน K+ ตรงช่วงไหม</div>`; }
     else { const diff=f.knv-kday;
       a3=`<div class="kv"><span>K+ ใหม่ (จากรายงาน) วันที่ ${beDate(fd)}</span><b>${TH(kday)}</b></div><div class="kv"><span>โอน K+NV ในฟอร์ม (รวม 2 QR)</span><b>${TH(f.knv)}</b></div><div class="kv"><span>ส่วนต่าง (ฟอร์ม − รายงาน)</span><b>${TH(diff)}</b></div><div class="muted">ℹ️ ส่วนต่างรายวันปกติ มาจาก <b>เวลาตัดรอบ 15:30 / บิลข้ามวัน</b> และ <b>QR เก่า</b> (ไม่อยู่ในรายงานนี้) — รายวันใช้ดูคร่าวๆ ยอดจริงตรงเมื่อดูทั้งเดือน<br>${kCmp(f.knv,kday,true)}</div>`;
+      const _lt=(kp.late&&kp.late[fd])?kp.late[fd]:[];
+      if(_lt.length){ const _nd=nextISO(fd); const Q=String.fromCharCode(39); a3+='<div style="margin-top:8px;border-top:1px dashed #e7e5e4;padding-top:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_lt.length+' รายการ รวม '+TH(_lt.reduce((s,x)=>s+x.amt,0))+') — ตัดรอบไปเข้าวัน '+beDate(_nd)+'</b>'+_lt.map((x,_i)=>'<div class="kv"><span>'+x.hhmm+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' <button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushKLate('+Q+fd+Q+','+_i+','+Q+_nd+Q+')">ดันเข้ารอจับคู่</button></b></div>').join('')+'<div class="muted">อยู่ในยอดรายงานวันนี้ แต่จริงๆ เข้าบัญชีวันถัดไป — กดดันเข้ารอจับคู่เพื่อไปแมตช์บิลวัน '+beDate(_nd)+'</div></div>'; }
     }
   } else { a3=`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — รอไฟล์รายงาน K+ จากคุณหลิง · พนักงานอัปส่วนอื่นได้เลย ตรวจ K+ ทีหลังได้</div>`; }
 
@@ -450,14 +452,16 @@ function parseKPlus(text){
   const R=parseCSV(text); let h=-1;
   for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="Date Time")){ h=i; break; } }
   if(h<0) throw new Error("ไม่พบหัวตาราง (Date Time) — ใช่รายงาน K+ ไหม?");
-  const hdr=R[h].map(c=>String(c||"").trim()); const iDt=hdr.indexOf("Date Time"), iAmt=hdr.indexOf("Amount");
+  const hdr=R[h].map(c=>String(c||"").trim()); const iDt=hdr.indexOf("Date Time"), iAmt=hdr.indexOf("Amount"), iNm=hdr.indexOf("From Account");
   if(iDt<0||iAmt<0) throw new Error("ไม่พบคอลัมน์ Date Time / Amount");
-  const map={}; let total=0, count=0;
+  const map={}; const late={}; let total=0, count=0;
   for(let i=h+1;i<R.length;i++){ const row=R[i]; if(!row||!row[iDt]) continue;
-    const m=String(row[iDt]).match(/(\d{2})-(\d{2})-(\d{4})/); if(!m) continue;
-    const iso=m[3]+"-"+m[2]+"-"+m[1]; const amt=num(row[iAmt]); if(!amt) continue;
-    map[iso]=(map[iso]||0)+amt; total+=amt; count++; }
-  return {map, total, count};
+    const md=String(row[iDt]).match(/(\d{2})-(\d{2})-(\d{4})/); if(!md) continue;
+    const tm=String(row[iDt]).match(/(\d{2}):(\d{2})/);
+    const iso=md[3]+"-"+md[2]+"-"+md[1]; const amt=num(row[iAmt]); if(!amt) continue;
+    map[iso]=(map[iso]||0)+amt; total+=amt; count++;
+    if(tm){ const hh=+tm[1], mm=+tm[2]; if(hh>15||(hh===15&&mm>=30)){ (late[iso]=late[iso]||[]).push({hhmm:tm[1]+":"+tm[2], amt:amt, name:(iNm>=0?String(row[iNm]||"").trim():"")}); } } }
+  return {map, late, total, count};
 }
 const fkp=document.getElementById("f_kplus");
 if(fkp) fkp.addEventListener("change", e=>{
@@ -662,12 +666,21 @@ async function loadPending(){
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
   const {data,error}=await sb.from("rev_pending").select("*").eq("status","open").order("date",{ascending:true});
   if(error){ list.innerHTML='<span style="color:#b91c1c">โหลดไม่ได้: '+error.message+'</span>'; return; }
-  const sum=data.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  const sum=data.reduce((s,x)=>s+(parseFloat(x.amount)||0),0); const _oth=data.filter(d=>(d.source||"")==="รับเข้าบัญชีอื่น"); const _othSum=_oth.reduce((s,x)=>s+(parseFloat(x.amount)||0),0); const _mainSum=sum-_othSum;
   cnt.textContent=data.length+" รายการ · "+TH(sum)+" บาท";
   if(!data.length){ list.innerHTML='<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>'; return; }
   list.innerHTML='<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th>ยอด</th><th></th></tr></thead><tbody>'+
-    data.map(d=>'<tr><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button></td></tr>').join("")+
-    '<tr class="tot"><td colspan="5">รวม</td><td class="num">'+TH(sum)+'</td><td></td></tr></tbody></table>';
+    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button></td></tr>').join("")+
+    '<tr class="tot"><td colspan="5">รวมรอจับคู่ (ไม่รวมบัญชีอื่น)</td><td class="num">'+TH(_mainSum)+'</td><td></td></tr>'+(_othSum>0?'<tr class="tot" style="background:#eff6ff"><td colspan="5">🏷️ แยกหมวด: รับเข้าบัญชีอื่น</td><td class="num">'+TH(_othSum)+'</td><td></td></tr>':'')+'</tbody></table>';
+}
+function nextISO(iso){ const p=String(iso).slice(0,10).split("-"); const d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()+1); return d.toISOString().slice(0,10); }
+async function pushKLate(fd, idx, nd){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  const arr=(DATA.kplus&&DATA.kplus.late&&DATA.kplus.late[fd])?DATA.kplus.late[fd]:null; const x=arr?arr[idx]:null; if(!x){ alert("ไม่พบรายการ K+"); return; }
+  const rec={ date:nd, amount:x.amt, source:"K+", from_name:(x.name||""), ref:"K+ หลัง 15:30 (จาก "+beDate(fd)+")", note:"ยกตัดรอบ K+ จาก "+fd, status:"open" };
+  const {error}=await sb.from("rev_pending").insert(rec);
+  if(error){ alert("ดันไม่สำเร็จ: "+error.message); return; }
+  alert("✓ ดันเข้ารอจับคู่วัน "+beDate(nd)+" แล้ว ("+TH(x.amt)+" บาท)"); if(window.loadPending) loadPending();
 }
 async function addPending(){
   const msg=document.getElementById("pend_msg"); if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }

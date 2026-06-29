@@ -1,3 +1,7 @@
+https://raw.githubusercontent.com/kmmhtpl16-jpg/kmmh-revenue/57a338a/index.html
+→ https://raw.githubusercontent.com/kmmhtpl16-jpg/kmmh-revenue/57a338a/index.html
+Content-Type: text/plain; charset=utf-8
+
 https://raw.githubusercontent.com/kmmhtpl16-jpg/kmmh-revenue/main/index.html
 → https://raw.githubusercontent.com/kmmhtpl16-jpg/kmmh-revenue/main/index.html
 Content-Type: text/plain; charset=utf-8
@@ -574,7 +578,8 @@ function escAttr(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/
 function recalcRem(inp){ const tr=inp.closest("tr"); if(!tr) return; const aEl=tr.querySelector(".k-amt"), cEl=tr.querySelector(".k-cash"); const amt=aEl?(parseFloat(aEl.value)||0):0; const cash=cEl?(parseFloat(cEl.value)||0):0; const rem=tr.querySelector(".k-rem"); if(rem) rem.textContent=TH(amt-cash); }
 function cnRowHtml(c,edit){ c=c||{}; const amt=parseFloat(c.amt)||0, cash=parseFloat(c.cash)||0, rem=amt-cash;
   if(edit) return '<tr data-cn><td><input class="rsn k-cust" value="'+escAttr(c.cust)+'" style="max-width:120px"></td><td><input class="rsn k-cn" value="'+escAttr(c.cn_no)+'" style="max-width:110px"></td><td><input class="rsn k-bill" value="'+escAttr(c.bill)+'" style="max-width:110px"></td><td><input class="cell k-amt" type="number" value="'+(c.amt==null?"":c.amt)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td><input class="cell k-cash" type="number" value="'+(c.cash==null?"":c.cash)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td class="num left k-rem">'+TH(rem)+'</td><td><input class="rsn k-reason" value="'+escAttr(c.reason)+'" style="max-width:130px"></td><td><input class="rsn k-seller" value="'+escAttr(c.seller)+'" style="max-width:90px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
-  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="num left">'+cnRemHtml(amt,cash,parseFloat(c.bill_amt)||0)+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
+  const _ba=parseFloat(c.bill_amt)||0; const _rc=(_ba>0 && Math.abs(_ba-rem)>1)?"num left":"num";
+  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="'+_rc+'">'+cnRemHtml(amt,cash,_ba)+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
 }
 function exRowHtml(e,edit){ e=e||{};
   if(edit) return '<tr data-ex2><td><input class="rsn x-cat" value="'+escAttr(e.cat)+'" placeholder="ประเภท" style="max-width:150px"></td><td><input class="rsn x-ref" value="'+escAttr(e.ref)+'" placeholder="อ้างอิง" style="max-width:170px"></td><td><input class="cell x-amt" type="number" value="'+(e.amt==null?"":e.amt)+'" style="max-width:100px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
@@ -629,6 +634,7 @@ async function saveDay(date){
   const ex=[...box.querySelectorAll("tr[data-ex2]")].map(tr=>{ const g=c=>{const el=tr.querySelector(c);return el?el.value:"";}; const aEl=tr.querySelector(".x-amt"); const amt=aEl?(parseFloat(aEl.value)||0):0; return {cat:g(".x-cat"),ref:g(".x-ref"),amt:amt}; }).filter(e=>e.cat||e.ref||e.amt);
   const a=await sb.from("rev_audit").select("detail").eq("date",date).maybeSingle();
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
+  const oldCns=(a.data&&a.data.detail&&a.data.detail.cns)||[]; cns.forEach((c,i)=>{ const m=oldCns.find(o=>o.cn_no&&o.cn_no===c.cn_no)||oldCns[i]; if(m&&m.bill_amt!=null&&c.bill_amt==null) c.bill_amt=m.bill_amt; });
   const detail={ files:files, cns:cns, ex:ex, saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }

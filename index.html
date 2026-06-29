@@ -227,17 +227,17 @@ function parsePos(wb){
   // แบบ B = รายลูกค้ามีรายละเอียดบิล (หัวตาราง 'วันที่ขาย')
   const isB = R.some(r => r && r.some(c => S(c)==="วันที่ขาย"));
   if(isB){
-    let gross=0, cnTotal=0; const cns=[]; const codes={}; const custTotal={}; const custBill={}; const billTotal={}; let last=null, lastBill=null, curCode=null;
+    let gross=0, cnTotal=0; const cns=[]; const codes={}; const custTotal={}; const custBill={}; const billTotal={}; const billCust={}; let last=null, lastBill=null, curCode=null;
     R.forEach(r=>{ if(!r) return;
       const c0=S(r[0]),c1=S(r[1]),c2=S(r[2]),c3=S(r[3]),c5=S(r[5]);
       if(cust.test(c1) && !c0){ last=c2; curCode=c1; codes[c1]=c2; }
-      else if(/^KM/i.test(c0)){ lastBill=c0; billTotal[c0]=(billTotal[c0]||0)+num(r[4]); if(curCode){ custTotal[curCode]=(custTotal[curCode]||0)+num(r[4]); if(!custBill[curCode]) custBill[curCode]=c0; } }
+      else if(/^KM/i.test(c0)){ lastBill=c0; billTotal[c0]=(billTotal[c0]||0)+num(r[4]); billCust[c0]=last||""; if(curCode){ custTotal[curCode]=(custTotal[curCode]||0)+num(r[4]); if(!custBill[curCode]) custBill[curCode]=c0; } }
       else if(c0==="ใบลดหนี้"){ cns.push({customer:last||"(ไม่ระบุ)", cn:num(r[2]), cn_no:c1, bill_no:lastBill, bill_amt:(billTotal[lastBill]||0)}); }
       else if(c3==="รวมทั้งหมด" && num(r[6])>0){ gross=num(r[6]); }
       else if(c5==="หัก ใบลดหนี้"){ cnTotal=num(r[6]); }
     });
     if(gross===0) throw new Error("อ่านยอดรวมไม่ได้ — เช็กรูปแบบไฟล์เครื่อง (แบบรายลูกค้ามีรายละเอียด)");
-    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
+    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billCust };
   }
   // แบบ A = รายลูกค้าแบบสรุป (รหัสลูกค้าคอลัมน์แรก)
   const custA = /^\s*\d{2,4}-\d{5}\s*$/;
@@ -389,7 +389,7 @@ function collectDetail(){
   const _fk=(DATA.form&&DATA.form.knv!=null)?DATA.form.knv:null; const _rk=(DATA.kplus&&DATA.form&&DATA.kplus.map&&DATA.kplus.map[DATA.form.date]!=null)?DATA.kplus.map[DATA.form.date]:null;
   const _lk=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date].reduce((s,x)=>s+(x.amt||0),0):0;
   const _lki=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date]:[];
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:((DATA.form&&DATA.form.xfer)||[]), saved_at:new Date().toISOString() };
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ return {bill:x.bill,knv:x.knv,ksk:x.ksk,cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[x.bill])||"")}; })), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -670,6 +670,9 @@ async function loadMonthStatus(){
   bd.textContent = month.split("-")[1]+"/"+(parseInt(month.split("-")[0])+543)+" · ยืนยันแล้ว "+done+"/"+(days.length-holiday)+(holiday?" · วันหยุด "+holiday:"");
   el.innerHTML = days.length ? chips : '<div class="muted">ยังไม่มีข้อมูลเดือนนี้</div>';
 }
+function normName(s){ return String(s||"").replace(/นางสาว|น\.ส\.|นาย|นาง|บริษัท|บจก\.|หจก\.|ร้าน|คุณ|จำกัด|\s|\+/g,""); }
+function nameMatch(a,b){ a=normName(a); b=normName(b); if(a.length<2||b.length<2) return false; return a.indexOf(b)>=0||b.indexOf(a)>=0||(a.slice(0,4)===b.slice(0,4)); }
+async function confirmSuggest(id, bill){ if(!sb) return; const by=prompt("ยืนยันจับคู่บิล "+bill+" — ผู้ยืนยัน:"); if(by===null) return; const {error}=await sb.from("rev_pending").update({status:"matched",matched_bill_no:bill,matched_date:new Date().toISOString().slice(0,10),confirmed_by:(by||"").trim()}).eq("id",id); if(error){ alert("ไม่สำเร็จ: "+error.message); return; } loadPending(); }
 async function loadPending(){
   const list=document.getElementById("pendlist"), cnt=document.getElementById("pendcount"); if(!list) return;
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
@@ -678,8 +681,11 @@ async function loadPending(){
   const sum=data.reduce((s,x)=>s+(parseFloat(x.amount)||0),0); const _oth=data.filter(d=>(d.source||"")==="รับเข้าบัญชีอื่น"); const _othSum=_oth.reduce((s,x)=>s+(parseFloat(x.amount)||0),0); const _mainSum=sum-_othSum;
   cnt.textContent=data.length+" รายการ · "+TH(sum)+" บาท";
   if(!data.length){ list.innerHTML='<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>'; return; }
+  let _bills=[]; try{ const _minD=data.reduce(function(m,d){return d.date<m?d.date:m;},data[0].date); const _a2=await sb.from("rev_audit").select("date,detail").gte("date",_minD); (_a2.data||[]).forEach(function(a){ const xf=(a.detail&&a.detail.xfer)||[]; xf.forEach(function(x){ _bills.push({date:a.date,bill:x.bill,knv:(+x.knv||0),ksk:(+x.ksk||0),cust:x.cust||""}); }); }); }catch(e){}
+  const _Q=String.fromCharCode(39);
+  function _sg(P){ var amt=parseFloat(P.amount)||0; var c=_bills.filter(function(b){ return b.date>=P.date && (Math.abs(b.ksk-amt)<=1||Math.abs(b.knv-amt)<=1); }); if(!c.length) return ''; var nm=P.from_name||''; c.sort(function(a,b){ var an=nameMatch(nm,a.cust)?0:1, bn=nameMatch(nm,b.cust)?0:1; if(an!==bn) return an-bn; return a.date<b.date?-1:1; }); var sgb=c[0]; var ok=nameMatch(nm,sgb.cust); return '<div class="sugg" style="margin-top:4px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:4px 7px;font-size:12px">💡 น่าจะตรงบิล <b>'+esc(sgb.bill)+'</b> ('+beDate(sgb.date)+(sgb.cust?(' · '+esc(sgb.cust)+(ok?' ✓ชื่อตรง':'')):'')+') <button class="btn" style="padding:1px 9px;margin:0 3px" onclick="confirmSuggest('+_Q+P.id+_Q+','+_Q+esc(sgb.bill)+_Q+')">ใช่</button><button class="btn sec" style="padding:1px 9px;margin:0" onclick="this.closest('+_Q+'.sugg'+_Q+').style.display='+_Q+'none'+_Q+'">ไม่</button></div>'; }
   list.innerHTML='<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th>ยอด</th><th></th></tr></thead><tbody>'+
-    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button></td></tr>').join("")+
+    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button>'+_sg(d)+'</td></tr>').join("")+
     '<tr class="tot"><td colspan="5">รวมรอจับคู่ (ไม่รวมบัญชีอื่น)</td><td class="num">'+TH(_mainSum)+'</td><td></td></tr>'+(_othSum>0?'<tr class="tot" style="background:#eff6ff"><td colspan="5">🏷️ แยกหมวด: รับเข้าบัญชีอื่น</td><td class="num">'+TH(_othSum)+'</td><td></td></tr>':'')+'</tbody></table>';
 }
 function xferBill(xf, amt, col){ if(!xf||!xf.length) return null; for(var i=0;i<xf.length;i++){ var x=xf[i]; if((col==='knv'||col==='any')&&(x.knv||0)>0&&Math.abs((x.knv||0)-amt)<=1) return x.bill; if((col==='ksk'||col==='any')&&(x.ksk||0)>0&&Math.abs((x.ksk||0)-amt)<=1) return x.bill; } return null; }

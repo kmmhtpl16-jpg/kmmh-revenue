@@ -172,16 +172,17 @@ async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entrie
     const {data:au}=await sb.from("rev_audit").select("date").is("kplus_today",null);
     const set=new Set((au||[]).map(x=>x.date));
     for(const [date,total] of Object.entries(kp.map)){ if(set.has(date)) await sb.from("rev_audit").update({kplus_today:Math.round(total*100)/100}).eq("date",date); }
-    loadMonthStatus();
+    loadMonthStatus(); refreshOpenDay();
   }catch(e){} }
 async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("bank_dep_today",null);
     const set=new Set((au||[]).map(x=>x.date));
     for(const [date,o] of Object.entries(bk.map)){ if(set.has(date)) await sb.from("rev_audit").update({bank_dep_today:Math.round(o.dep*100)/100}).eq("date",date); }
-    loadMonthStatus();
+    loadMonthStatus(); refreshOpenDay();
   }catch(e){} }
 
+function refreshOpenDay(){ try{ var b=document.getElementById("dayDetail"); if(window._openDay && b && b.innerHTML && b.innerHTML.replace(/\s/g,"").length>0 && b.innerHTML.indexOf("กำลังแก้ไข")<0){ renderDay(window._openDay,false); } }catch(e){} }
 function readFile(input, kind, onName){
   input.addEventListener("change", e=>{
     const file = e.target.files[0]; if(!file) return; onName(file.name);
@@ -389,7 +390,7 @@ function collectDetail(){
   const _fk=(DATA.form&&DATA.form.knv!=null)?DATA.form.knv:null; const _rk=(DATA.kplus&&DATA.form&&DATA.kplus.map&&DATA.kplus.map[DATA.form.date]!=null)?DATA.kplus.map[DATA.form.date]:null;
   const _lk=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date].reduce((s,x)=>s+(x.amt||0),0):0;
   const _lki=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date]:[];
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ return {bill:x.bill,knv:x.knv,ksk:x.ksk,cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[x.bill])||"")}; })), saved_at:new Date().toISOString() };
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ return {bill:x.bill,knv:x.knv,ksk:x.ksk,cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[x.bill])||"")}; })), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -630,13 +631,14 @@ async function showDayDetail(date){ return renderDay(date,false); }
 async function editDay(date){ return renderDay(date,true); }
 async function renderDay(date, edit){
   const box=document.getElementById("dayDetail"); if(!box||!sb) return;
+  window._openDay = edit ? null : date;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
   const _dShift=function(iso,n){ const p=String(iso).slice(0,10).split("-"); const dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
   const [a,d,pq,dp]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path").eq("date",date).eq("source","รับเข้าบัญชีอื่น"), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)) ]);
   const au=a.data, da=d.data;
   const _deps=(dp&&dp.data)?dp.data:[];
   const _otherAcct=(pq&&pq.data)?pq.data:[]; const _otherAcctSum=Math.round(_otherAcct.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
-  const _kIn=(au&&au.kplus_today!=null)||(da&&da.kplus_total!=null); const _bIn=(au&&au.bank_dep_today!=null)||(da&&da.bank_dep_total!=null); const _need=[]; if(!_kIn)_need.push("K+"); if(!_bIn)_need.push("สเตทเมนต์"); const _waitBadge=(au&&au.status!=="วันหยุด"&&_need.length)?(' <span style="float:right;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:999px;padding:2px 11px;font-size:12px;font-weight:700">⏳ รออัป'+_need.join("/")+'</span>'):'';
+  const _kIn=(au&&au.kplus_today!=null)||(da&&da.kplus_total!=null); const _bIn=(au&&au.bank_dep_today!=null)||(da&&da.bank_dep_total!=null); const _need=[]; if(!_kIn)_need.push("K+"); if(!_bIn)_need.push("สเตทเมนต์"); const _waitBadge=(au&&au.status!=="วันหยุด"&&_need.length&&!(au.detail&&au.detail.recon_ok===false))?(' <span style="float:right;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:999px;padding:2px 11px;font-size:12px;font-weight:700">⏳ รออัป'+_need.join("/")+'</span>'):'';
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+_waitBadge+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
   if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
   if(au){
@@ -679,7 +681,7 @@ async function saveDay(date){
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
   const oldCns=(a.data&&a.data.detail&&a.data.detail.cns)||[]; cns.forEach((c,i)=>{ const m=oldCns.find(o=>o.cn_no&&o.cn_no===c.cn_no)||oldCns[i]; if(m){ if(m.bill_amt!=null&&c.bill_amt==null) c.bill_amt=m.bill_amt; if(m.bill_total!=null&&c.bill_total==null) c.bill_total=m.bill_total; } });
   const _od=(a.data&&a.data.detail)||{};
-  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), refunds:(_od.refunds!=null?_od.refunds:null), saved_at:new Date().toISOString(), edited:true };
+  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), refunds:(_od.refunds!=null?_od.refunds:null), recon_ok:(_od.recon_ok!=null?_od.recon_ok:null), saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   loadMonthStatus(); showDayDetail(date);

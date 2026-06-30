@@ -511,7 +511,7 @@ async function loadDeposits(){
       const days=Math.floor((today-new Date(d.received_date))/86400000); const warn=days>30;
       const matched = DATA.form && DATA.form.refund>0 && Math.abs(amt-DATA.form.refund)<=1;
       const cust=(d.customer||'—')+(matched?' <span style="color:#15803d;font-size:11.5px;font-weight:700">✓ ประกบฟอร์มวันนี้</span>':'');
-      return '<tr class="'+(warn?'flag':'')+'" style="'+(matched?'background:#f0fdf4':'')+'"><td>'+beDate(d.received_date)+'</td><td>'+(d.deposit_no||'—')+'</td><td>'+cust+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+(used?TH(used):'—')+'</td><td class="num"><b>'+TH(rem)+'</b></td><td class="num">'+days+(warn?' ⚠':'')+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+d.id+'\','+rem+')">หักมัดจำ</button></td></tr>';
+      return '<tr class="'+(warn?'flag':'')+'" style="'+(matched?'background:#f0fdf4':'')+'"><td>'+beDate(d.received_date)+'</td><td>'+(d.deposit_no||'—')+'</td><td>'+cust+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+(used?TH(used):'—')+'</td><td class="num"><b>'+TH(rem)+'</b></td><td class="num">'+days+(warn?' ⚠':'')+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="useDeposit(\''+d.id+'\','+rem+')">หักมัดจำ</button> <button class="btn sec" style="padding:3px 9px;margin:0;border-color:#fca5a5;color:#b91c1c" onclick="refundDeposit(\''+d.id+'\','+rem+')">↩️ คืนเงิน</button></td></tr>';
     }).join("")+'</tbody></table>';
 }
 async function addDeposit(){
@@ -537,6 +537,23 @@ async function useDeposit(id, remaining, billDefault, amtDefault){
   const newUsed=(parseFloat(dep.used_amount)||0)+amt; const closed=newUsed >= (parseFloat(dep.amount)||0)-0.01;
   const {error:e3}=await sb.from("rev_deposits").update({used_amount:newUsed, status:closed?"matched":"open", matched_bill_no:bill.trim(), matched_date:new Date().toISOString().slice(0,10), confirmed_by:(by||"").trim()}).eq("id",id);
   if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; } loadDeposits();
+}
+async function refundDeposit(id, remaining){
+  if(!sb) return;
+  const amtStr=prompt("คืนเงินมัดจำให้ลูกค้า — ยอดที่คืนครั้งนี้ (เหลือ "+TH(remaining)+"):", String(remaining)); if(amtStr===null) return;
+  const amt=parseFloat(amtStr)||0; if(amt<=0){ alert("ใส่ยอดคืนให้ถูกต้อง"); return; }
+  if(amt>remaining+0.01){ alert("ยอดคืนมากกว่ามัดจำที่เหลือ ("+TH(remaining)+")"); return; }
+  const how=prompt("คืนเป็น (เงินสด/โอน):","เงินสด"); if(how===null) return;
+  const by=prompt("ผู้ยืนยัน:"); if(by===null) return;
+  if(!confirm("ยืนยันคืนเงินมัดจำ "+TH(amt)+" บาท ("+(how||"").trim()+")? — เงินจริงคุณต้องจ่ายลูกค้าเอง ระบบแค่บันทึก")) return;
+  const {error:e1}=await sb.from("rev_deposit_uses").insert({deposit_id:id,bill_no:"(คืนเงิน "+(how||"").trim()+")",amount:amt,confirmed_by:(by||"").trim()});
+  if(e1){ alert("บันทึกการคืนไม่ได้: "+e1.message); return; }
+  const {data:dep,error:e2}=await sb.from("rev_deposits").select("amount,used_amount").eq("id",id).single();
+  if(e2){ alert("อ่านยอดไม่ได้: "+e2.message); return; }
+  const newUsed=(parseFloat(dep.used_amount)||0)+amt; const closed=newUsed >= (parseFloat(dep.amount)||0)-0.01;
+  const {error:e3}=await sb.from("rev_deposits").update({used_amount:newUsed, status:closed?"refunded":"open", note:"คืนเงินลูกค้า "+TH(amt)+" ("+(how||"").trim()+") "+new Date().toISOString().slice(0,10)+(by?" โดย "+by.trim():"")}).eq("id",id);
+  if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; }
+  alert("✓ บันทึกคืนเงินมัดจำ "+TH(amt)+" บาทแล้ว"+(closed?" — ปิดใบมัดจำ":" — ยังเหลือมัดจำ "+TH((parseFloat(dep.amount)||0)-newUsed))); loadDeposits();
 }
 async function saveExDeposits(){
   if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
@@ -583,7 +600,8 @@ function recalcRem(inp){ const tr=inp.closest("tr"); if(!tr) return; const aEl=t
 function cnRowHtml(c,edit){ c=c||{}; const amt=parseFloat(c.amt)||0, cash=parseFloat(c.cash)||0, rem=amt-cash;
   if(edit) return '<tr data-cn><td><input class="rsn k-cust" value="'+escAttr(c.cust)+'" style="max-width:120px"></td><td><input class="rsn k-cn" value="'+escAttr(c.cn_no)+'" style="max-width:110px"></td><td><input class="rsn k-bill" value="'+escAttr(c.bill)+'" style="max-width:110px"></td><td><input class="cell k-amt" type="number" value="'+(c.amt==null?"":c.amt)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td><input class="cell k-cash" type="number" value="'+(c.cash==null?"":c.cash)+'" style="max-width:90px" oninput="recalcRem(this)"></td><td class="num left k-rem">'+TH(rem)+'</td><td><input class="rsn k-reason" value="'+escAttr(c.reason)+'" style="max-width:130px"></td><td><input class="rsn k-seller" value="'+escAttr(c.seller)+'" style="max-width:90px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
   const _ba=parseFloat(c.bill_amt!=null?c.bill_amt:c.bill_total)||0; const _rc=(_ba>0 && Math.abs(_ba-rem)>1)?"num left":"num";
-  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="'+_rc+'">'+cnRemHtml(amt,cash,_ba)+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
+  let _chk=''; if(_deps && _ba>0 && (rem-_ba)>1){ const _rs=String(c.reason||''); if(/มัดจำ/.test(_rs)){ const _hit=_deps.some(function(dp){ return nameMatch(c.cust,dp.customer); }); _chk=_hit?' <span style="color:#15803d;font-weight:700">· ✓ เข้าทะเบียนมัดจำแล้ว</span>':' <span style="color:#b45309;font-weight:700">· ⚠ ยังไม่เข้าทะเบียนมัดจำ</span>'; } else if(/คืน/.test(_rs)){ _chk=' <span style="color:#64748b">· ↩️ คืนเงินลูกค้า</span>'; } else { _chk=' <span style="color:#b45309;font-weight:700">· ⚠ เช็ก: มัดจำหรือคืนเงิน?</span>'; } }
+  return '<tr><td>'+esc(c.cust||"—")+'</td><td>'+esc(c.cn_no||"—")+'</td><td>'+esc(c.bill||"—")+'</td><td class="num">'+TH(amt)+'</td><td class="num">'+TH(cash)+'</td><td class="'+_rc+'">'+cnRemHtml(amt,cash,_ba)+_chk+'</td><td>'+esc(c.reason||"—")+'</td><td>'+esc(c.seller||"—")+'</td></tr>';
 }
 function exRowHtml(e,edit){ e=e||{};
   if(edit) return '<tr data-ex2><td><input class="rsn x-cat" value="'+escAttr(e.cat)+'" placeholder="ประเภท" style="max-width:150px"></td><td><input class="rsn x-ref" value="'+escAttr(e.ref)+'" placeholder="อ้างอิง" style="max-width:170px"></td><td><input class="cell x-amt" type="number" value="'+(e.amt==null?"":e.amt)+'" style="max-width:100px"></td><td><button class="btn sec" type="button" style="padding:2px 7px;margin:0" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>';
@@ -592,13 +610,13 @@ function exRowHtml(e,edit){ e=e||{};
 function addCnRow(){ const tb=document.querySelector("#edcn tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=cnRowHtml({},true); tb.appendChild(t.firstChild); }
 function addExRow(){ const tb=document.querySelector("#edex tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=exRowHtml({},true); tb.appendChild(t.firstChild); }
 function figRow(label,val,fb){ return '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):(fb||"—"))+'</b></div>'; }
-function renderItems(det, edit){ det=det||{};
+function renderItems(det, edit, _deps){ det=det||{};
   let h="";
   const f=det.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
   if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
   const cns=det.cns||[];
   h+='<div style="font-weight:700;margin:6px 0 4px">📋 ใบลดหนี้ (CN)'+(edit?' — แก้ไขได้':'')+'</div>';
-  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit)).join(""):(edit?"":'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
+  h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit,_deps)).join(""):(edit?"":'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';
@@ -613,8 +631,10 @@ async function editDay(date){ return renderDay(date,true); }
 async function renderDay(date, edit){
   const box=document.getElementById("dayDetail"); if(!box||!sb) return;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
-  const [a,d,pq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path").eq("date",date).eq("source","รับเข้าบัญชีอื่น") ]);
+  const _dShift=function(iso,n){ const p=String(iso).slice(0,10).split("-"); const dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
+  const [a,d,pq,dp]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path").eq("date",date).eq("source","รับเข้าบัญชีอื่น"), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)) ]);
   const au=a.data, da=d.data;
+  const _deps=(dp&&dp.data)?dp.data:[];
   const _otherAcct=(pq&&pq.data)?pq.data:[]; const _otherAcctSum=Math.round(_otherAcct.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
   const _kIn=(au&&au.kplus_today!=null)||(da&&da.kplus_total!=null); const _bIn=(au&&au.bank_dep_today!=null)||(da&&da.bank_dep_total!=null); const _need=[]; if(!_kIn)_need.push("K+"); if(!_bIn)_need.push("สเตทเมนต์"); const _waitBadge=(au&&au.status!=="วันหยุด"&&_need.length)?(' <span style="float:right;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:999px;padding:2px 11px;font-size:12px;font-weight:700">⏳ รออัป'+_need.join("/")+'</span>'):'';
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+_waitBadge+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
@@ -644,7 +664,7 @@ async function renderDay(date, edit){
       html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🔁 คืนเงินลูกค้า '+_ref.length+' ราย — ลูกค้าโอนเข้า แล้วร้านโอนคืน (เช็กว่าถูกต้อง)</b>'+_ref.map(function(x){ var net=Math.round(((+x.d.dep||0)-(+x.w.wd||0))*100)/100; var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +x.d.dep, 'any'); return '<div style="border-top:1px solid #fecaca;margin-top:6px;padding-top:6px"><div><b>'+esc(x.wn)+'</b>'+(_mb?(' <span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):'')+'</div><div class="kv"><span>โอนเข้า '+TH(x.d.dep)+' → ร้านโอนคืน '+TH(x.w.wd)+'</span><b style="color:#15803d">สุทธิเข้าจริง '+TH(net)+'</b></div></div>';}).join('')+'<div class="muted" style="margin-top:6px">ℹ️ ยอดบิลยังเป็นรายได้ตามจริง · เงินคืนนี้คือลูกค้าโอนเกิน/มีมัดจำอยู่แล้ว ร้านจึงโอนคืนส่วนเกิน — อธิบายว่าทำไมยอดฝากเข้าบัญชีสุทธิน้อยกว่ายอดโอนเข้า</div></div>';
     })();
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
-    html+=renderItems(au.detail, edit);
+    html+=renderItems(au.detail, edit, _deps);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
     else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';

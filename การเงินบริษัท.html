@@ -276,7 +276,7 @@ function renderExpense(){
 
   <div class="card">
     <h3>📥 อัปรายงานซื้อจาก ACC-BILLING (Excel)</h3>
-    <div class="muted" style="margin-bottom:6px">ส่งออกรายงานซื้อจาก ACC-BILLING เป็น Excel แล้วเลือกไฟล์ที่นี่ ระบบจะให้จับคู่คอลัมน์เอง</div>
+    <div class="muted" style="margin-bottom:6px">ส่งออก “รายงานซื้อ แยกตามวันที่” จาก ACC-BILLING เป็น Excel แล้วเลือกไฟล์ที่นี่ — ระบบอ่านรายบิลแยกตามวันให้อัตโนมัติ (ไฟล์รูปแบบอื่นจะให้จับคู่คอลัมน์เอง)</div>
     <input type="file" id="accfile" accept=".xlsx,.xls,.csv" onchange="loadAcc(this)">
     <div id="acc_map"></div>
   </div>
@@ -342,17 +342,58 @@ function loadAcc(input){
       const wb=XLSX.read(ev.target.result,{type:"binary",cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-      // หาแถวหัวตาราง = แถวแรกที่มีเซลล์ไม่ว่าง >= 2
-      let hi=0; for(let i=0;i<Math.min(aoa.length,15);i++){ if(aoa[i].filter(c=>String(c).trim()!=="").length>=2){ hi=i; break; } }
-      _accRows={aoa,hi,header:aoa[hi]||[]};
+      // ตรวจว่าเป็นฟอร์แมต "รายงานซื้อ แยกตามวันที่" ของ ACC-BILLING หรือไม่
+      const isBill=aoa.some(r=>(r||[]).some(c=>String(c).includes("เลขที่บิลซื้อ")))
+                && aoa.some(r=>(r||[]).some(c=>String(c).indexOf("ประจำวันที่")===0));
+      if(isBill){ const p=parseAccBill(aoa); _accRows={mode:"accbill",items:p.items,foot:p.foot}; }
+      else {
+        // ฟอร์แมตทั่วไป: หาแถวหัวตาราง = แถวแรกที่มีเซลล์ไม่ว่าง >= 2
+        let hi=0; for(let i=0;i<Math.min(aoa.length,15);i++){ if(aoa[i].filter(c=>String(c).trim()!=="").length>=2){ hi=i; break; } }
+        _accRows={mode:"generic",aoa,hi,header:aoa[hi]||[]};
+      }
     }catch(e){ alert("อ่านไฟล์ไม่ได้: "+e.message); _accRows=null; }
     renderAccMap();
   };
   rd.readAsBinaryString(f);
 }
+/* อ่านรายงานซื้อ ACC-BILLING แบบ "แยกตามวันที่": หัวข้อ ประจำวันที่ คั่นกลุ่ม + รายบิล + แถวยอดรวมรายวัน (ข้าม) */
+function parseAccBill(aoa){
+  const items=[]; let cur=null; const foot={cash:0,cn:0,grand:0};
+  const maxNum=row=>row.reduce((m,c)=>Math.max(m,num(c)),0);
+  for(let i=0;i<aoa.length;i++){
+    const row=aoa[i]||[];
+    const c0=String(row[0]||"").trim(), c1=String(row[1]||"").trim(), c3=String(row[3]||"").trim();
+    if(c1.indexOf("ประจำวันที่")===0){ const iso=isoFromExcel(row[2]); if(iso) cur=iso; continue; }
+    const rowText=row.map(x=>String(x==null?"":x)).join(" ");
+    if(rowText.includes("ซื้อสด")){ foot.cash=maxNum(row); continue; }        // เอาค่าสุดท้าย (สรุปซ้ำหลายหน้า)
+    if(rowText.includes("ใบลดหนี้")){ foot.cn=maxNum(row); continue; }
+    if(rowText.includes("รวมทั้งหมด")){ foot.grand=maxNum(row); continue; }
+    if(!c0) continue;                 // แถวยอดรวมรายวัน/หัวข้อหมวด/แถว รวม (คอลัมน์แรกว่าง) = ข้าม กันนับซ้ำ
+    if(c0==="เลขที่") continue;        // แถวหัวตาราง
+    const net=num(row[6]), goods=num(row[4]); const amt=r2(net>0?net:goods);
+    if(!(amt>0) || !cur) continue;
+    items.push({exp_date:cur, amount:amt, description:c3, ref:(c1||c0)});
+  }
+  return {items,foot};
+}
 function renderAccMap(){
   const box=document.getElementById("acc_map"); if(!box) return;
   if(!_accRows){ box.innerHTML=""; return; }
+  if(_accRows.mode==="accbill"){
+    const it=_accRows.items||[], f=_accRows.foot||{};
+    const tot=it.reduce((s,r)=>s+r.amount,0);
+    const days=[...new Set(it.map(r=>r.exp_date))].sort();
+    const prev=it.slice(0,12).map(r=>`<tr><td>${beDate(r.exp_date)}</td><td>${esc(r.ref)}</td><td>${esc(r.description)}</td><td class="n">${TH(r.amount)}</td></tr>`).join("");
+    box.innerHTML=`
+      <div class="note">✅ ตรวจพบรูปแบบ “รายงานซื้อ แยกตามวันที่” — อ่านรายบิลอัตโนมัติ <b>${it.length} บิล</b>${days.length?` ใน ${days.length} วัน (${beDate(days[0])}–${beDate(days[days.length-1])})`:""}</div>
+      <div class="row"><label>หมวด</label><select id="ac_cat">${catOptions("ค่าซื้อสินค้า")}</select>
+        <label><input type="checkbox" id="ac_cogs" checked> เป็นต้นทุนสินค้า (COGS)</label>
+        <b style="margin-left:auto">รวมซื้อเชื่อ ${TH(tot)} บาท</b></div>
+      ${(f.cash||f.cn||f.grand)?`<div class="muted" style="margin-top:6px">ℹ️ ท้ายรายงานมี: ซื้อสด ${TH(f.cash||0)} · หักใบลดหนี้ ${TH(f.cn||0)}${f.grand?` · รวมทั้งหมด ${TH(f.grand)}`:""} — ระบบนำเข้าเฉพาะรายบิลซื้อเชื่อ (ที่มีวันที่กำกับ); ซื้อสด/ใบลดหนี้เป็นยอดสรุปไม่มีวันรายตัว หากต้องการให้เพิ่มในช่องกรอกมือ</div>`:""}
+      <div class="scroll"><table style="margin-top:8px"><thead><tr><th>วันที่</th><th>เลขที่บิล</th><th>ผู้ขาย</th><th class="n">สุทธิ</th></tr></thead><tbody>${prev}</tbody></table></div>
+      <button class="btn" style="margin-top:8px" onclick="saveAcc()">💾 บันทึกทั้งหมด (${it.length} บิล)</button>`;
+    return;
+  }
   const h=_accRows.header;
   const opts=(sel)=>h.map((c,i)=>`<option value="${i}"${i===sel?" selected":""}>${esc(String(c||("คอลัมน์ "+(i+1))))}</option>`).join("");
   const guess=(kw)=>{ for(let i=0;i<h.length;i++){ if(kw.some(k=>String(h[i]).includes(k))) return i; } return -1; };
@@ -396,12 +437,22 @@ function previewAcc(){
     <button class="btn" style="margin-top:8px" onclick="saveAcc()">💾 บันทึกทั้งหมด (${rows.length} รายการ)</button>`;
 }
 async function saveAcc(){
-  const rows=accParse(); if(!rows.length){ alert("ไม่พบรายการ"); return; }
   const cat=document.getElementById("ac_cat").value, cogs=document.getElementById("ac_cogs").checked;
-  const recs=rows.map(r=>({exp_date:r.exp_date,category:cat,description:r.description,amount:r.amount,source:"acc_billing",ref:"ACC-BILLING",is_cogs:cogs,created_by:"owner"}));
+  let items;
+  if(_accRows.mode==="accbill"){ items=_accRows.items||[]; }
+  else { items=accParse().map(r=>({exp_date:r.exp_date,amount:r.amount,description:r.description,ref:"ACC-BILLING"})); }
+  if(!items.length){ alert("ไม่พบรายการ"); return; }
+  // กันซ้ำ: ตัดรายการที่มี วันที่+ยอด+อ้างอิง ตรงกับที่บันทึกไว้แล้ว (source=acc_billing)
+  const dates=items.map(i=>i.exp_date).sort(); const lo=dates[0], hi=dates[dates.length-1];
+  const {data:ex}=await sb.from("rev_expenses").select("exp_date,amount,ref").eq("source","acc_billing").gte("exp_date",lo).lte("exp_date",hi);
+  const seen=new Set((ex||[]).map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
+  const fresh=items.filter(i=>!seen.has(i.exp_date+"|"+r2(i.amount)+"|"+(i.ref||"")));
+  if(!fresh.length){ alert("รายการทั้งหมดถูกบันทึกไว้แล้ว (กันซ้ำ)"); return; }
+  const recs=fresh.map(i=>({exp_date:i.exp_date,category:cat,description:i.description,amount:i.amount,source:"acc_billing",ref:i.ref,is_cogs:cogs,created_by:"owner"}));
   const {error}=await sb.from("rev_expenses").insert(recs);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
-  alert("บันทึก "+recs.length+" รายการแล้ว");
+  const skip=items.length-fresh.length;
+  alert("บันทึก "+recs.length+" รายการ"+(skip?(" (ข้ามซ้ำ "+skip+")"):""));
   _accRows=null; await reloadAll(); tab("expense");
 }
 

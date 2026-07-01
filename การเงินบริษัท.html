@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>การเงินบริษัท — กิจมั่งมีโฮม</title>
+<link rel="icon" href="favicon.ico">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--g:#16a34a;--g2:#15803d;--bg:#f6f7f9;--bd:#e5e7eb;--mut:#6b7280;--red:#dc2626;--amb:#d97706;--blu:#2563eb}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Sarabun",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:#111827;font-size:15px}
+.wrap{max-width:1080px;margin:0 auto;padding:12px}
+header{background:linear-gradient(135deg,var(--g),var(--g2));color:#fff;padding:14px 16px;border-radius:0 0 14px 14px}
+header h1{margin:0;font-size:19px}
+header .sub{opacity:.9;font-size:13px;margin-top:2px}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+nav a{font-size:13px;text-decoration:none;color:var(--g2);background:#fff;border:1px solid var(--bd);padding:5px 10px;border-radius:999px}
+nav a.on{background:var(--g);color:#fff;border-color:var(--g)}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0}
+.tabs button{font-family:inherit;font-size:13.5px;cursor:pointer;border:1px solid var(--bd);background:#fff;padding:8px 12px;border-radius:10px 10px 0 0;color:#374151}
+.tabs button.on{background:var(--g);color:#fff;border-color:var(--g);font-weight:700}
+.card{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:15.5px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+label{font-size:13px;color:var(--mut)}
+input,select{font-family:inherit;font-size:14px;padding:7px 9px;border:1px solid var(--bd);border-radius:8px;background:#fff}
+input[type=date]{min-width:150px}
+.btn{font-family:inherit;font-size:14px;cursor:pointer;border:none;background:var(--g);color:#fff;padding:8px 14px;border-radius:9px;font-weight:600}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn.gray{background:#6b7280}.btn.red{background:var(--red)}.btn.blu{background:var(--blu)}.btn.amb{background:var(--amb)}
+.btn.ghost{background:#fff;color:var(--g2);border:1px solid var(--bd)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top}
+th{background:#f9fafb;font-weight:700;color:#374151;position:sticky;top:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tot td{font-weight:800;background:#f0fdf4;border-top:2px solid var(--g)}
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;font-weight:700}
+.chip.kp{background:#fef3c7;color:#92400e}.chip.cogs{background:#dbeafe;color:#1e40af}
+.chip.st{background:#e0e7ff;color:#3730a3}.chip.mn{background:#dcfce7;color:#166534}.chip.ac{background:#fae8ff;color:#86198f}
+.muted{color:var(--mut);font-size:12.5px}
+.day-h{background:#eef2ff;font-weight:700}
+.pos{color:var(--g2)}.neg{color:var(--red)}
+.gate{position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99}
+.gate .box{background:#fff;padding:22px;border-radius:14px;width:280px;text-align:center}
+.hide{display:none!important}
+.scroll{overflow:auto;max-height:70vh}
+canvas{max-height:320px}
+.note{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;font-size:12.5px;color:#92400e;margin:6px 0}
+.sub2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.sub2 button{font-size:13px;cursor:pointer;border:1px solid var(--bd);background:#fff;padding:6px 11px;border-radius:8px}
+.sub2 button.on{background:#111827;color:#fff;border-color:#111827}
+</style>
+</head>
+<body>
+<!-- ===== PIN GATE (เจ้าของ) ===== -->
+<div id="gate" class="gate">
+  <div class="box">
+    <div style="font-size:32px">🔐</div>
+    <div style="font-weight:700;margin:6px 0">การเงินบริษัท</div>
+    <div class="muted" style="margin-bottom:10px">สำหรับเจ้าของ — ใส่รหัสผ่าน</div>
+    <input id="pin" type="password" inputmode="numeric" maxlength="8" style="width:100%;text-align:center" onkeydown="if(event.key==='Enter')doGate()">
+    <button class="btn" style="width:100%;margin-top:10px" onclick="doGate()">เข้าใช้งาน</button>
+    <div id="gerr" style="color:var(--red);font-size:12.5px;margin-top:6px"></div>
+  </div>
+</div>
+
+<main id="app" class="hide">
+<header>
+  <h1>💼 การเงินบริษัท</h1>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น</div>
+</header>
+<div class="wrap">
+  <nav>
+    <a href="index.html">🧾 ตรวจรายได้</a>
+    <a href="Dashboard-สรุปรายได้.html">📊 Dashboard รายได้</a>
+    <a href="สารบัญ-รายได้.html">📇 สารบัญ</a>
+    <a class="on" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
+  </nav>
+
+  <!-- ช่วงเวลา -->
+  <div class="card">
+    <div class="row">
+      <label>ตั้งแต่</label><input type="date" id="from">
+      <label>ถึง</label><input type="date" id="to">
+      <button class="btn sm ghost" onclick="quick('m')">เดือนนี้</button>
+      <button class="btn sm ghost" onclick="quick('pm')">เดือนก่อน</button>
+      <button class="btn sm ghost" onclick="quick('y')">ปีนี้</button>
+      <button class="btn sm" onclick="reloadAll()">โหลดข้อมูล</button>
+      <span id="loadmsg" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button data-t="income" class="on" onclick="tab('income')">💰 รายรับรายวัน (สเตทเมนต์)</button>
+    <button data-t="expense" onclick="tab('expense')">🧾 รายจ่าย</button>
+    <button data-t="monthly" onclick="tab('monthly')">📅 สรุปรายจ่ายรายเดือน</button>
+    <button data-t="cash" onclick="tab('cash')">🔄 กระแสเงินสด</button>
+    <button data-t="gross" onclick="tab('gross')">📈 กำไรขั้นต้น</button>
+  </div>
+
+  <section id="p_income"></section>
+  <section id="p_expense" class="hide"></section>
+  <section id="p_monthly" class="hide"></section>
+  <section id="p_cash" class="hide"></section>
+  <section id="p_gross" class="hide"></section>
+</div>
+</main>
+
+<script>
+/* ================= ค่าคงที่ + ยูทิล ================= */
+const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+const LOGIN_FN_URL=SB_URL+"/functions/v1/login";
+const OWNER_PIN="0402";
+let sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY);}catch(e){console.warn("sb init",e);}
+
+const num=v=>(typeof v==="number")?v:(parseFloat(String(v==null?"":v).replace(/,/g,""))||0);
+const r2=n=>Math.round((+n||0)*100)/100;
+const TH=n=>(n==null||isNaN(n))?"—":Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+const TH0=n=>(n==null||isNaN(n))?"—":Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
+const beDate=s=>{ if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); };
+const monthKey=s=>String(s||"").slice(0,7);
+const beMonth=mk=>{ const p=String(mk).split("-"); const mn=["","ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."]; return (mn[parseInt(p[1])]||p[1])+" "+(parseInt(p[0])+543); };
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function pad2(n){return String(n).padStart(2,"0");}
+function isoFromExcel(v){
+  if(v==null) return null;
+  if(typeof v==="number" && window.XLSX && XLSX.SSF){ const dc=XLSX.SSF.parse_date_code(v); if(dc){ let y=dc.y; if(y>2400)y-=543; return y+"-"+pad2(dc.m)+"-"+pad2(dc.d); } }
+  if(v instanceof Date && !isNaN(v)){ let y=v.getUTCFullYear(); if(y>2400)y-=543; return y+"-"+pad2(v.getUTCMonth()+1)+"-"+pad2(v.getUTCDate()); }
+  const s=String(v).trim();
+  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m){ let y=+m[1]; if(y>2400)y-=543; return y+"-"+m[2]+"-"+m[3]; }
+  m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); if(m){ let d=+m[1],mo=+m[2],y=+m[3]; if(y<100)y+=(y>50?2500:2000); if(y>2400)y-=543; return y+"-"+pad2(mo)+"-"+pad2(d); }
+  return null;
+}
+
+/* หมวดรายจ่ายมาตรฐาน (COGS = ต้นทุนสินค้า) */
+const CATS=["ค่าซื้อสินค้า","ค่าแรง/เงินเดือน","ค่าขนส่ง","ค่าน้ำ-ไฟ-โทรศัพท์","ค่าเช่า","ค่าธรรมเนียม/ดอกเบี้ย","ภาษี","ซ่อมบำรุง","ของใช้สำนักงาน","การตลาด","อื่นๆ"];
+const catOptions=(sel)=>CATS.map(c=>`<option${c===sel?" selected":""}>${c}</option>`).join("");
+
+/* ================= GATE ================= */
+async function doGate(){
+  const v=document.getElementById("pin").value.trim();
+  if(v!==OWNER_PIN){ document.getElementById("gerr").textContent="รหัสไม่ถูกต้อง"; return; }
+  document.getElementById("gerr").textContent="กำลังเข้าสู่ระบบ…";
+  const ok=await ensureRevSession(v);
+  if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
+  sessionStorage.setItem("rev_dash_ok","1");
+  document.getElementById("gate").classList.add("hide");
+  document.getElementById("app").classList.remove("hide");
+  quick("m"); reloadAll();
+}
+async function ensureRevSession(pin){
+  if(!sb) return false;
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(session) return true;
+    const resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin})});
+    const j=await resp.json();
+    if(resp.ok && j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; }
+  }catch(e){ console.error("ensureRevSession",e); }
+  return false;
+}
+
+/* ================= ช่วงเวลา ================= */
+function quick(k){
+  const now=new Date(); let f,t;
+  if(k==="m"){ f=new Date(now.getFullYear(),now.getMonth(),1); t=new Date(now.getFullYear(),now.getMonth()+1,0); }
+  else if(k==="pm"){ f=new Date(now.getFullYear(),now.getMonth()-1,1); t=new Date(now.getFullYear(),now.getMonth(),0); }
+  else { f=new Date(now.getFullYear(),0,1); t=new Date(now.getFullYear(),11,31); }
+  const iso=d=>d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+  document.getElementById("from").value=iso(f); document.getElementById("to").value=iso(t);
+}
+const gFrom=()=>document.getElementById("from").value;
+const gTo=()=>document.getElementById("to").value;
+
+/* ================= ข้อมูล ================= */
+let STATE={daily:[],audit:[],exp:[]};
+async function reloadAll(){
+  if(!sb) return;
+  const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
+  try{
+    const [d,a,e]=await Promise.all([
+      sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
+      sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
+      sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date")
+    ]);
+    if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
+    STATE.daily=d.data||[]; STATE.audit=a.data||[]; STATE.exp=e.data||[];
+    msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
+    renderAll();
+  }catch(err){ msg.textContent="ผิดพลาด: "+err.message; }
+}
+function renderAll(){ renderIncome(); renderExpense(); renderMonthly(); renderCash(); renderGross(); }
+
+/* ================= TABS ================= */
+function tab(t){
+  ["income","expense","monthly","cash","gross"].forEach(x=>{
+    document.getElementById("p_"+x).classList.toggle("hide",x!==t);
+    document.querySelector('.tabs button[data-t="'+x+'"]').classList.toggle("on",x===t);
+  });
+}
+
+/* ================= TAB 1: รายรับรายวัน (สเตทเมนต์) ================= */
+function renderIncome(){
+  const el=document.getElementById("p_income");
+  const days=STATE.daily.filter(d=>Array.isArray(d.bank_rows)&&d.bank_rows.length);
+  let rowsHtml="", grTransfer=0, grKplus=0, cntDay=0;
+  days.forEach(d=>{
+    const deps=(d.bank_rows||[]).filter(r=>num(r.dep)>0);
+    if(!deps.length) return; cntDay++;
+    let dTransfer=0,dKplus=0;
+    const inner=deps.map(r=>{
+      const amt=num(r.dep), kp=!!r.kp; if(kp)dKplus+=amt; else dTransfer+=amt;
+      return `<tr><td></td><td>${esc(r.ch||"")}</td><td>${esc(r.detail||"")} ${kp?'<span class="chip kp">K+/QR</span>':''}</td><td class="n">${TH(amt)}</td></tr>`;
+    }).join("");
+    grTransfer+=dTransfer; grKplus+=dKplus;
+    rowsHtml+=`<tr class="day-h"><td colspan="3">📅 ${beDate(d.date)}</td><td class="n">${TH(dTransfer+dKplus)}</td></tr>`+inner
+      +`<tr><td></td><td colspan="2" class="muted" style="text-align:right">— โอนเข้าจริง ${TH(dTransfer)} · K+/QR ${TH(dKplus)}</td><td></td></tr>`;
+  });
+  el.innerHTML=`
+  <div class="card">
+    <h3>💰 รายรับจากสเตทเมนต์ (แยกเป็นวัน)</h3>
+    <div class="note">ใช้ตรวจกับเอกสารจริง (สลิป/สเตทเมนต์ธนาคาร) · <b>โอนเข้าจริง</b> = เงินลูกค้าโอนเข้าบัญชี · <b>K+/QR</b> = ยอดบัตร/สแกนที่ธนาคารโอนเข้าก้อนเดียว (นับเป็นรายได้ในฟอร์มแล้ว ไม่ใช่เงินก้อนใหม่ — แยกไว้กันนับซ้ำ)</div>
+    ${cntDay?`<div class="scroll"><table>
+      <thead><tr><th style="width:20px"></th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน (บาท)</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot><tr class="tot"><td colspan="3">รวมทั้งช่วง — โอนเข้าจริง ${TH(grTransfer)} + K+/QR ${TH(grKplus)}</td><td class="n">${TH(grTransfer+grKplus)}</td></tr></tfoot>
+    </table></div>`:`<div class="muted">ยังไม่มีข้อมูลสเตทเมนต์ในช่วงนี้ (อัปไฟล์สเตทเมนต์ในหน้า “ตรวจรายได้” ก่อน)</div>`}
+  </div>`;
+}
+
+/* ================= TAB 2: รายจ่าย ================= */
+let _accRows=null; // แคชแถวไฟล์ ACC-BILLING ที่อัป
+function renderExpense(){
+  const el=document.getElementById("p_expense");
+  // เงินออกจากสเตทเมนต์ที่ยังไม่ได้บันทึก
+  const recorded=new Set(STATE.exp.filter(x=>x.source==="statement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
+  let wdHtml="", wdCount=0;
+  STATE.daily.forEach(d=>{
+    (d.bank_rows||[]).filter(r=>num(r.wd)>0).forEach((r,i)=>{
+      const amt=r2(r.wd), ref=String(r.detail||""), key=d.date+"|"+amt+"|"+ref, done=recorded.has(key);
+      wdCount++;
+      wdHtml+=`<tr><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}</td><td class="n">${TH(amt)}</td>
+        <td>${done?'<span class="chip mn">บันทึกแล้ว</span>':
+        `<select id="wc_${d.date}_${i}" class="sm">${catOptions("อื่นๆ")}</select>
+         <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>`}</td></tr>`;
+    });
+  });
+
+  // ตารางรายจ่ายที่บันทึกแล้ว
+  const exps=[...STATE.exp].sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
+  const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':'<span class="chip mn">กรอกมือ</span>';
+  let expHtml=exps.map(x=>`<tr>
+      <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
+      <td>${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''}</td>
+      <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
+      <td><button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+          <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button></td></tr>`).join("");
+  const expTot=exps.reduce((s,x)=>s+num(x.amount),0);
+
+  el.innerHTML=`
+  <div class="card">
+    <h3>➕ เพิ่มรายจ่ายเอง</h3>
+    <div class="row">
+      <input type="date" id="m_date">
+      <select id="m_cat">${catOptions("อื่นๆ")}</select>
+      <input id="m_desc" placeholder="รายละเอียด" style="min-width:180px">
+      <input id="m_amt" type="number" step="0.01" placeholder="จำนวนเงิน" style="width:130px">
+      <label><input type="checkbox" id="m_cogs"> เป็นต้นทุนสินค้า (COGS)</label>
+      <button class="btn" onclick="addManualExp()">บันทึก</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📥 อัปรายงานซื้อจาก ACC-BILLING (Excel)</h3>
+    <div class="muted" style="margin-bottom:6px">ส่งออกรายงานซื้อจาก ACC-BILLING เป็น Excel แล้วเลือกไฟล์ที่นี่ ระบบจะให้จับคู่คอลัมน์เอง</div>
+    <input type="file" id="accfile" accept=".xlsx,.xls,.csv" onchange="loadAcc(this)">
+    <div id="acc_map"></div>
+  </div>
+
+  <div class="card">
+    <h3>🏦 เงินออกจากสเตทเมนต์ (จัดหมวดเป็นรายจ่าย)</h3>
+    <div class="muted" style="margin-bottom:6px">เลือกหมวดแล้วกด “ลงรายจ่าย” ทีละรายการ · รายการที่ลงแล้วจะขึ้น “บันทึกแล้ว”</div>
+    ${wdCount?`<div class="scroll"><table>
+      <thead><tr><th>วันที่</th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th><th>จัดหมวด</th></tr></thead>
+      <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">ไม่มีรายการเงินออกในช่วงนี้</div>`}
+  </div>
+
+  <div class="card">
+    <h3>📋 รายจ่ายที่บันทึก (${exps.length} รายการ)</h3>
+    ${exps.length?`<div class="scroll"><table>
+      <thead><tr><th>วันที่</th><th>หมวด</th><th>รายละเอียด</th><th>แหล่ง</th><th class="n">จำนวน</th><th></th></tr></thead>
+      <tbody>${expHtml}</tbody>
+      <tfoot><tr class="tot"><td colspan="4">รวมรายจ่ายในช่วง</td><td class="n">${TH(expTot)}</td><td></td></tr></tfoot>
+    </table></div>`:`<div class="muted">ยังไม่มีรายจ่ายบันทึกในช่วงนี้</div>`}
+  </div>`;
+  const md=document.getElementById("m_date"); if(md&&!md.value) md.value=gTo();
+  if(_accRows) renderAccMap();
+}
+
+async function addStmtExp(date,amt,btn,selId,ref){
+  const cat=document.getElementById(selId).value;
+  const isCogs=cat==="ค่าซื้อสินค้า";
+  btn.disabled=true; btn.textContent="…";
+  const {error}=await sb.from("rev_expenses").insert([{exp_date:date,category:cat,description:ref,amount:amt,source:"statement",ref:ref,is_cogs:isCogs,created_by:"owner"}]);
+  if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); btn.disabled=false; btn.textContent="➕ ลงรายจ่าย"; return; }
+  await reloadAll(); tab("expense");
+}
+async function addManualExp(){
+  const date=document.getElementById("m_date").value, cat=document.getElementById("m_cat").value;
+  const desc=document.getElementById("m_desc").value.trim(), amt=r2(document.getElementById("m_amt").value);
+  const cogs=document.getElementById("m_cogs").checked;
+  if(!date||!(amt>0)){ alert("กรอกวันที่และจำนวนเงินให้ถูกต้อง"); return; }
+  const {error}=await sb.from("rev_expenses").insert([{exp_date:date,category:cat,description:desc,amount:amt,source:"manual",is_cogs:cogs,created_by:"owner"}]);
+  if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+}
+async function editExp(id){
+  const x=STATE.exp.find(e=>e.id===id); if(!x) return;
+  const amt=prompt("แก้จำนวนเงิน:",x.amount); if(amt===null) return;
+  const desc=prompt("แก้รายละเอียด:",x.description||x.ref||""); if(desc===null) return;
+  const {error}=await sb.from("rev_expenses").update({amount:r2(amt),description:desc}).eq("id",id);
+  if(error){ alert("แก้ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+}
+async function delExp(id){
+  if(!confirm("ลบรายการนี้?")) return;
+  const {error}=await sb.from("rev_expenses").delete().eq("id",id);
+  if(error){ alert("ลบไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+}
+
+/* ---- อัป ACC-BILLING ---- */
+function loadAcc(input){
+  const f=input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:"binary",cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+      // หาแถวหัวตาราง = แถวแรกที่มีเซลล์ไม่ว่าง >= 2
+      let hi=0; for(let i=0;i<Math.min(aoa.length,15);i++){ if(aoa[i].filter(c=>String(c).trim()!=="").length>=2){ hi=i; break; } }
+      _accRows={aoa,hi,header:aoa[hi]||[]};
+    }catch(e){ alert("อ่านไฟล์ไม่ได้: "+e.message); _accRows=null; }
+    renderAccMap();
+  };
+  rd.readAsBinaryString(f);
+}
+function renderAccMap(){
+  const box=document.getElementById("acc_map"); if(!box) return;
+  if(!_accRows){ box.innerHTML=""; return; }
+  const h=_accRows.header;
+  const opts=(sel)=>h.map((c,i)=>`<option value="${i}"${i===sel?" selected":""}>${esc(String(c||("คอลัมน์ "+(i+1))))}</option>`).join("");
+  const guess=(kw)=>{ for(let i=0;i<h.length;i++){ if(kw.some(k=>String(h[i]).includes(k))) return i; } return -1; };
+  const gAmt=guess(["จำนวนเงิน","ยอด","มูลค่า","รวม","สุทธิ","total","amount"]);
+  const gDate=guess(["วันที่","date","ลงวันที่"]);
+  const gDesc=guess(["รายการ","รายละเอียด","สินค้า","ชื่อ","detail","name"]);
+  box.innerHTML=`
+    <div class="note">พบหัวตารางที่แถว ${_accRows.hi+1} · เลือกว่าคอลัมน์ไหนคืออะไร แล้วกดแสดงตัวอย่าง</div>
+    <div class="row">
+      <label>คอลัมน์จำนวนเงิน</label><select id="ac_amt">${opts(gAmt)}</select>
+      <label>คอลัมน์วันที่</label><select id="ac_date"><option value="-1">— ใช้วันที่เดียวกันทั้งไฟล์ —</option>${opts(gDate)}</select>
+      <label>คอลัมน์รายละเอียด</label><select id="ac_desc"><option value="-1">— ไม่มี —</option>${opts(gDesc)}</select>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <label>วันที่ (ถ้าไฟล์ไม่มีคอลัมน์วันที่)</label><input type="date" id="ac_fallback" value="${gTo()}">
+      <label>หมวด</label><select id="ac_cat">${catOptions("ค่าซื้อสินค้า")}</select>
+      <label><input type="checkbox" id="ac_cogs" checked> เป็นต้นทุนสินค้า (COGS)</label>
+      <button class="btn ghost sm" onclick="previewAcc()">แสดงตัวอย่าง</button>
+    </div>
+    <div id="acc_prev"></div>`;
+}
+function accParse(){
+  const ci=+document.getElementById("ac_amt").value, di=+document.getElementById("ac_date").value, xi=+document.getElementById("ac_desc").value;
+  const fb=document.getElementById("ac_fallback").value;
+  const out=[];
+  for(let i=_accRows.hi+1;i<_accRows.aoa.length;i++){
+    const row=_accRows.aoa[i]; if(!row) continue;
+    const amt=r2(num(row[ci])); if(!(amt>0)) continue;
+    let date=di>=0?isoFromExcel(row[di]):null; if(!date) date=fb;
+    const desc=xi>=0?String(row[xi]||"").trim():"";
+    out.push({exp_date:date,amount:amt,description:desc});
+  }
+  return out;
+}
+function previewAcc(){
+  const rows=accParse(); const tot=rows.reduce((s,r)=>s+r.amount,0);
+  const prev=rows.slice(0,12).map(r=>`<tr><td>${beDate(r.exp_date)}</td><td>${esc(r.description)}</td><td class="n">${TH(r.amount)}</td></tr>`).join("");
+  document.getElementById("acc_prev").innerHTML=`
+    <div class="muted" style="margin-top:8px">พบ ${rows.length} รายการ · รวม ${TH(tot)} บาท (แสดง 12 แถวแรก)</div>
+    <table><thead><tr><th>วันที่</th><th>รายละเอียด</th><th class="n">จำนวน</th></tr></thead><tbody>${prev}</tbody></table>
+    <button class="btn" style="margin-top:8px" onclick="saveAcc()">💾 บันทึกทั้งหมด (${rows.length} รายการ)</button>`;
+}
+async function saveAcc(){
+  const rows=accParse(); if(!rows.length){ alert("ไม่พบรายการ"); return; }
+  const cat=document.getElementById("ac_cat").value, cogs=document.getElementById("ac_cogs").checked;
+  const recs=rows.map(r=>({exp_date:r.exp_date,category:cat,description:r.description,amount:r.amount,source:"acc_billing",ref:"ACC-BILLING",is_cogs:cogs,created_by:"owner"}));
+  const {error}=await sb.from("rev_expenses").insert(recs);
+  if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
+  alert("บันทึก "+recs.length+" รายการแล้ว");
+  _accRows=null; await reloadAll(); tab("expense");
+}
+
+/* ================= TAB 3: สรุปรายจ่ายรายเดือน ================= */
+let chartMon=null;
+function renderMonthly(){
+  const el=document.getElementById("p_monthly");
+  const months=[...new Set(STATE.exp.map(x=>monthKey(x.exp_date)))].sort();
+  const cats=[...new Set(STATE.exp.map(x=>x.category))];
+  const grid={}; months.forEach(m=>{grid[m]={};cats.forEach(c=>grid[m][c]=0);});
+  STATE.exp.forEach(x=>{ const m=monthKey(x.exp_date); if(grid[m]) grid[m][x.category]=(grid[m][x.category]||0)+num(x.amount); });
+  const catTot={}; cats.forEach(c=>catTot[c]=STATE.exp.filter(x=>x.category===c).reduce((s,x)=>s+num(x.amount),0));
+  const monTot={}; months.forEach(m=>monTot[m]=cats.reduce((s,c)=>s+grid[m][c],0));
+  const grand=STATE.exp.reduce((s,x)=>s+num(x.amount),0);
+
+  let head=`<tr><th>หมวด</th>`+months.map(m=>`<th class="n">${beMonth(m)}</th>`).join("")+`<th class="n">รวม</th></tr>`;
+  let body=cats.sort((a,b)=>catTot[b]-catTot[a]).map(c=>`<tr><td>${esc(c)}</td>`+months.map(m=>`<td class="n">${grid[m][c]?TH0(grid[m][c]):"—"}</td>`).join("")+`<td class="n">${TH0(catTot[c])}</td></tr>`).join("");
+  let foot=`<tr class="tot"><td>รวมต่อเดือน</td>`+months.map(m=>`<td class="n">${TH0(monTot[m])}</td>`).join("")+`<td class="n">${TH0(grand)}</td></tr>`;
+
+  el.innerHTML=`
+  <div class="card">
+    <h3>📅 สรุปรายจ่ายรายเดือน แยกหมวด</h3>
+    ${months.length?`<div class="scroll"><table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
+    <canvas id="cMon" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีรายจ่ายในช่วงนี้</div>`}
+  </div>`;
+  if(months.length){
+    const ctx=document.getElementById("cMon");
+    if(chartMon) chartMon.destroy();
+    chartMon=new Chart(ctx,{type:"bar",data:{labels:months.map(beMonth),datasets:[{label:"รายจ่ายรวม (บาท)",data:months.map(m=>monTot[m]),backgroundColor:"#16a34a"}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
+  }
+}
+
+/* ================= TAB 4: กระแสเงินสด ================= */
+let chartCash=null;
+function renderCash(){
+  const el=document.getElementById("p_cash");
+  const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].sort();
+  const rev={},exp={}; months.forEach(m=>{rev[m]=0;exp[m]=0;});
+  STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
+  STATE.exp.forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
+  let cum=0;
+  let body=months.map(m=>{ const net=rev[m]-exp[m]; cum+=net;
+    return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td><td class="n neg">${TH0(exp[m])}</td><td class="n ${net>=0?'pos':'neg'}">${TH0(net)}</td><td class="n">${TH0(cum)}</td></tr>`;
+  }).join("");
+  const tR=months.reduce((s,m)=>s+rev[m],0),tE=months.reduce((s,m)=>s+exp[m],0);
+
+  el.innerHTML=`
+  <div class="card">
+    <h3>🔄 กระแสเงินสด (รายรับ − รายจ่าย)</h3>
+    <div class="note">รายรับ = ยอดขายที่ “ตรวจแล้ว” (จากตัวตรวจรายได้) · รายจ่าย = รายการที่บันทึกในหน้านี้ · ยอดสะสมเริ่มจาก 0 (ยังไม่รวมยอดยกมา/เงินคงเหลือต้นงวด)</div>
+    ${months.length?`<div class="scroll"><table>
+      <thead><tr><th>เดือน</th><th class="n">รายรับ</th><th class="n">รายจ่าย</th><th class="n">กระแสสุทธิ</th><th class="n">สะสม</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr class="tot"><td>รวม</td><td class="n">${TH0(tR)}</td><td class="n">${TH0(tE)}</td><td class="n">${TH0(tR-tE)}</td><td class="n">${TH0(cum)}</td></tr></tfoot>
+    </table></div>
+    <canvas id="cCash" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีข้อมูลในช่วงนี้</div>`}
+  </div>`;
+  if(months.length){
+    const ctx=document.getElementById("cCash"); if(chartCash) chartCash.destroy();
+    let c2=0; const cumArr=months.map(m=>{c2+=rev[m]-exp[m];return c2;});
+    chartCash=new Chart(ctx,{data:{labels:months.map(beMonth),datasets:[
+      {type:"bar",label:"รายรับ",data:months.map(m=>rev[m]),backgroundColor:"#86efac"},
+      {type:"bar",label:"รายจ่าย",data:months.map(m=>exp[m]),backgroundColor:"#fca5a5"},
+      {type:"line",label:"สะสม",data:cumArr,borderColor:"#2563eb",backgroundColor:"#2563eb",tension:.2}
+    ]},options:{scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
+  }
+}
+
+/* ================= TAB 5: กำไรขั้นต้น ================= */
+let chartGross=null;
+function renderGross(){
+  const el=document.getElementById("p_gross");
+  const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].sort();
+  const rev={},cogs={}; months.forEach(m=>{rev[m]=0;cogs[m]=0;});
+  STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
+  STATE.exp.filter(x=>x.is_cogs).forEach(x=>{ const m=monthKey(x.exp_date); if(cogs[m]!=null) cogs[m]+=num(x.amount); });
+  const estPct=r2(document.getElementById("gp_est")?document.getElementById("gp_est").value:0);
+  const useEst=estPct>0;
+
+  let body=months.map(m=>{
+    let cg=cogs[m], estFlag=false;
+    if(useEst && !(cg>0)){ cg=rev[m]*estPct/100; estFlag=true; }
+    const gp=rev[m]-cg, mg=rev[m]>0?(gp/rev[m]*100):null;
+    return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td>
+      <td class="n neg">${cg>0?TH0(cg):"—"}${estFlag?' <span class="chip kp">ประมาณ</span>':''}</td>
+      <td class="n ${gp>=0?'pos':'neg'}">${TH0(gp)}</td><td class="n">${mg==null?"—":mg.toFixed(1)+"%"}</td></tr>`;
+  }).join("");
+  const tR=months.reduce((s,m)=>s+rev[m],0);
+  let tC=0; months.forEach(m=>{ let cg=cogs[m]; if(useEst&&!(cg>0))cg=rev[m]*estPct/100; tC+=cg; });
+  const tGP=tR-tC, tMg=tR>0?(tGP/tR*100):null;
+
+  el.innerHTML=`
+  <div class="card">
+    <h3>📈 กำไรขั้นต้น (ยอดขาย − ต้นทุนสินค้า)</h3>
+    <div class="note">ต้นทุนสินค้า (COGS) = รายจ่ายที่ติดธง “ต้นทุน” (ส่วนใหญ่มาจากรายงานซื้อ ACC-BILLING) · เป็นค่าประมาณจาก “ยอดซื้อในงวด” ไม่ได้ปรับสต๊อกคงเหลือ · ถ้ายังไม่มีข้อมูลซื้อ ใส่ % ต้นทุนโดยประมาณด้านล่างเพื่อคำนวณคร่าวๆ ได้</div>
+    <div class="row" style="margin-bottom:8px">
+      <label>ประมาณต้นทุน % ของยอดขาย (เว้นว่าง=ใช้ข้อมูลจริงเท่านั้น)</label>
+      <input type="number" id="gp_est" step="1" style="width:90px" value="${estPct||''}" oninput="renderGross()"> %
+    </div>
+    ${months.length?`<div class="scroll"><table>
+      <thead><tr><th>เดือน</th><th class="n">ยอดขาย</th><th class="n">ต้นทุนสินค้า</th><th class="n">กำไรขั้นต้น</th><th class="n">% กำไร</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr class="tot"><td>รวม</td><td class="n">${TH0(tR)}</td><td class="n">${TH0(tC)}</td><td class="n">${TH0(tGP)}</td><td class="n">${tMg==null?"—":tMg.toFixed(1)+"%"}</td></tr></tfoot>
+    </table></div>
+    <canvas id="cGross" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีข้อมูลยอดขายในช่วงนี้</div>`}
+  </div>`;
+  if(months.length){
+    const ctx=document.getElementById("cGross"); if(chartGross) chartGross.destroy();
+    const gpArr=months.map(m=>{ let cg=cogs[m]; if(useEst&&!(cg>0))cg=rev[m]*estPct/100; return rev[m]-cg; });
+    chartGross=new Chart(ctx,{data:{labels:months.map(beMonth),datasets:[
+      {type:"bar",label:"ยอดขาย",data:months.map(m=>rev[m]),backgroundColor:"#bbf7d0"},
+      {type:"line",label:"กำไรขั้นต้น",data:gpArr,borderColor:"#16a34a",backgroundColor:"#16a34a",tension:.2}
+    ]},options:{scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
+  }
+}
+
+/* ================= BOOT ================= */
+(async function(){
+  // ถ้าเคยผ่าน gate ในเซสชันนี้ + มี session อยู่แล้ว ให้เข้าเลย
+  if(sessionStorage.getItem("rev_dash_ok")==="1" && sb){
+    const {data:{session}}=await sb.auth.getSession();
+    if(session){ document.getElementById("gate").classList.add("hide"); document.getElementById("app").classList.remove("hide"); quick("m"); reloadAll(); return; }
+  }
+  document.getElementById("pin").focus();
+})();
+</script>
+</body>
+</html>

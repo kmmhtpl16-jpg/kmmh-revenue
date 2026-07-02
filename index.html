@@ -658,7 +658,7 @@ async function renderDay(date, edit){
     let _ndXfer=[]; try{ const _ndr=await sb.from("rev_audit").select("detail").eq("date",nextISO(date)).maybeSingle(); _ndXfer=(_ndr.data&&_ndr.data.detail&&_ndr.data.detail.xfer)||[]; }catch(e){}
     html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
     html+=figRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,null);
-    html+=figRow("ยอดฟอร์ม",au.form_main,null);
+    html+=figRow("ยอดฟอร์ม",au.form_main,null); (function(){var mn=+au.machine_net,fm=+au.form_main,rf=+(au.form_refund||0); if(!isNaN(mn)&&!isNaN(fm)){var okr=Math.abs(mn-fm)<=1,oka=Math.abs(mn-(fm-rf))<=1; if(okr||oka){ if(oka&&!okr){html+='<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสด (ปนในฟอร์ม)</span><b>− '+TH(rf)+'</b></div>';} html+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 10px;margin:5px 0;color:#15803d;font-weight:700">✓ ยอดขายตรงกัน '+TH(mn)+' = '+TH(okr?fm:(fm-rf))+((oka&&!okr)?(' (ฟอร์ม '+TH(fm)+' − คืนเงิน '+TH(rf)+')'):'')+'</div>'; }else{ html+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:7px 10px;margin:5px 0;color:#b91c1c;font-weight:700">🚩 ยอดต่าง '+TH(Math.abs(mn-fm))+' — ตรวจใบลดหนี้/คืนเงิน</div>'; } }})();
     html+=figRow("ใบลดหนี้",au.cn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     html+=kCmp((au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null,(au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:((da&&da.kplus_total!=null)?da.kplus_total:(au.kplus_today!=null?au.kplus_today:null)));

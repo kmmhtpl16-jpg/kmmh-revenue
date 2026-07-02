@@ -266,6 +266,7 @@ function render(){
   const okRaw = Math.abs(diffRaw) <= 1;
   const okAdj = Math.abs(diffAdj) <= 1;
   const ok1 = okRaw || okAdj;
+  const ok1detail = okRaw ? '' : (okAdj ? ' (หักคืนเงิน '+TH0(f.refund)+')' : '');
   const ok2 = p.cns.length === 0;
   const allOk = ok1 && ok2;
   const kPending = !DATA.kplus || !DATA.bank;
@@ -276,13 +277,22 @@ function render(){
                  : okAdj ? '✓ ยอดขายตรง — “คืนเงิน” ถูกรวมอยู่ในยอดขายของฟอร์มแล้ว'
                  : '🚩 ยังไม่ลงตัวทั้งสองแบบ — ตรวจรายการประกอบด้านล่าง / ตาราง ②';
   const matchDep = (f.refund>0) ? (DATA._open||[]).find(d=>Math.abs((parseFloat(d.amount)||0)-f.refund)<=1) : null;
+  const _mForm = okRaw ? sumForm : (sumForm - f.refund);
+  const _saleRows = ok1
+    ? ('<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px;margin-bottom:4px"><span>✅ ยอดขายจากเครื่อง (ยอดบิล '+TH0(p.gross)+' − ใบลดหนี้ '+TH0(p.cnTotal)+')</span><b style="color:#15803d">'+TH(p.net)+' ✓</b></div>'
+      + '<div class="kv"><span>ยอดขายในฟอร์ม (4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+')</span><b'+(okRaw?' style="color:#15803d"':'')+'>'+TH(sumForm)+(okRaw?' ✓':'')+'</b></div>'
+      + ((okAdj&&!okRaw) ? ('<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสดที่ปนอยู่ในฟอร์ม</span><b>− '+TH(f.refund)+'</b></div>'
+          + '<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px"><span>✅ ยอดขายฟอร์ม (หลังหักเงินคืนสด)</span><b style="color:#15803d">'+TH(_mForm)+' ✓</b></div>') : '')
+      + '<div class="verdict v-ok" style="margin-top:10px">✓ 2 ยอดตรงกัน&nbsp;&nbsp;'+TH(p.net)+' = '+TH(_mForm)+((okAdj&&!okRaw)?(' (ฟอร์ม '+TH(sumForm)+' − คืนเงิน '+TH0(f.refund)+')'):'')+'</div>')
+    : ('<div class="kv"><span>ยอดสุทธิจากเครื่อง (ยอดบิล '+TH0(p.gross)+' − ใบลดหนี้ '+TH0(p.cnTotal)+')</span><b>'+TH(p.net)+'</b></div>'
+      + '<div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+'</span><b>'+TH(sumForm)+'</b></div>'
+      + '<div class="kv"><span>ส่วนต่าง (เครื่อง − ฟอร์ม)</span><b style="color:#b91c1c">'+TH(diffRaw)+' 🚩</b></div>'
+      + '<div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน '+TH0(f.refund)+')</span><b style="color:#b91c1c">'+TH(diffAdj)+'</b></div>');
   out.innerHTML += `
   <div class="card">
-    <h2>① ยอดขายตรง <span class="badge ${ok1?'ok':'warn'}">${ok1?'ตรง ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩'}</span></h2>
-    <div class="kv"><span>ยอดสุทธิจากเครื่อง (ยอดบิล ${TH0(p.gross)} − ใบลดหนี้ ${TH0(p.cnTotal)})</span><b>${TH(p.net)}</b></div>
-    <div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด ${TH0(f.main)} + UPK ${TH0(f.upk)}</span><b>${TH(sumForm)}</b></div>
-    <div class="kv"><span>ส่วนต่าง (ไม่หักคืนเงิน)</span><b style="color:${okRaw?'#15803d':'#b91c1c'}">${TH(diffRaw)}</b></div>
-    <div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน ${TH0(f.refund)})</span><b style="color:${okAdj?'#15803d':'#b91c1c'}">${TH(diffAdj)}</b></div>
+    <h2>① ยอดขายตรง <span class="badge ${ok1?'ok':'warn'}">${ok1?'ตรง'+ok1detail+' ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩'}</span></h2>
+    <div class="muted" style="margin:2px 0 10px;line-height:1.55;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px">ℹ️ <b>"ตรง" หมายถึงยอดขายจริงตรงกัน</b> — ไม่ใช่ตัวเลข 2 ช่องเท่ากันเป๊ะ เพราะระบบปรับ 2 อย่างก่อนเทียบ: ฝั่ง<b>เครื่อง</b>หัก <b>ใบลดหนี้</b>ออกแล้ว · ฝั่ง<b>ฟอร์ม</b>อาจมี <b>เงินคืนสด</b>ปนอยู่ ระบบจึงหักออกให้ (ยอมคลาดได้ ±1 บ. จากปัดเศษ)</div>
+    ${_saleRows}
     <div class="muted" style="margin-top:8px">📌 ${scenario}</div>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e5e4">
       <div class="muted" style="margin-bottom:8px"><b>อธิบายยอด “คืนเงิน” ในฟอร์ม = ${TH(f.refund)}</b><br>ใบลดหนี้ที่คืนสด → กรอกช่อง “คืนสดจริง” ในข้อ ② (นับให้อัตโนมัติ) · ส่วนที่เหลือ (มัดจำ/อื่นๆ) เพิ่มรายการที่นี่</div>
@@ -334,7 +344,7 @@ function render(){
   DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_refund:f.refund, cn_total:p.cnTotal,
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
-  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
+  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, ok1detail:ok1detail, refund:f.refund, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
   out.innerHTML += `
   <div class="card">
     <h2>③ ตรงธนาคาร${(kp&&bank)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>'}</h2>
@@ -584,8 +594,10 @@ async function sendAuditAlert(){
   const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
   const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
   const l3 = m.kPending ? "⏳ รอตรวจ K+/สเตทเมนต์" : "ตรวจแล้ว ✓";
+  const _formLine = (m.refund>0) ? ("   ฟอร์ม "+TH(m.sumForm)+" − "+TH(m.refund)+" = "+TH(Math.round((m.sumForm-m.refund)*100)/100)+" บาท\n")
+                                 : ("   ฟอร์ม "+TH(m.sumForm)+" บาท\n");
   const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+"\n\n"
-    +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" · ฟอร์ม "+TH(m.sumForm)+"\n"
+    +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" บาท\n"+_formLine
     +"② ใบลดหนี้: "+l2+"\n"
     +"③ ธนาคาร: "+l3+"\n\n"
     +"<i>"+({cashier:"แคชเชียร์บันทึกแล้ว",finance:"การเงินตรวจสอบแล้ว",owner:"เจ้าของตรวจสอบแล้ว"}[ROLE]||"พนักงานยืนยันแล้ว")+"</i>";

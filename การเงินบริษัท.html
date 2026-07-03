@@ -70,7 +70,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.5 (พิมพ์ A4)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.6 (พิมพ์ A4)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -269,10 +269,12 @@ function renderIncome(){
   </div>`;
 }
 
-/* ---- พิมพ์รายรับ A4 (แยกยอดตามช่องทาง) ---- */
+/* ---- พิมพ์รายรับ A4 (แยกยอดตามช่องทาง) — ตามตัวกรองบนหน้าจอ ---- */
 function printIncome(){
   const w=window.open("","_blank");   // เปิดแบบ sync ก่อน กัน iOS บล็อก
   if(!w){ alert("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup แล้วลองใหม่"); return; }
+  const showBank=_incSrc!=="kplus", showKp=_incSrc!=="bank";   // ตามตัวกรองบนหน้าจอ (all/bank/kplus)
+  const srcLabel=_incSrc==="kplus"?"เฉพาะ K+/QR":_incSrc==="bank"?"เฉพาะบัญชีธนาคาร (โอนเข้าจริง)":"ทั้งหมด";
   const kTime2=s=>{ const m=String(s||"").match(/(\d{1,2}:\d{2})/); return m?m[1]:esc(String(s||"")); };
   const cleanCh=s=>String(s||"").replace("Internet/Mobile ","").trim();
   let days=STATE.daily.filter(d=>(Array.isArray(d.bank_rows)&&d.bank_rows.length)||(Array.isArray(d.kplus_rows)&&d.kplus_rows.length));
@@ -285,19 +287,28 @@ function printIncome(){
     const kpItems=Array.isArray(d.kplus_rows)?d.kplus_rows:[];
     const dT=nonKp.reduce((s,r)=>s+num(r.dep),0);
     const dK=kpLump.length?kpLump.reduce((s,r)=>s+num(r.dep),0):kpItems.reduce((s,r)=>s+num(r.amt),0);
-    grTransfer+=dT; grKplus+=dK;
-    nonKp.forEach(r=>{ const c=cleanCh(r.ch); chSum[c]=(chSum[c]||0)+num(r.dep); });
-    if(dK>0) chSum["K+ / QR"]=(chSum["K+ / QR"]||0)+dK;
-    let rows=nonKp.map(r=>`<tr><td>${esc(cleanCh(r.ch))}</td><td>${esc(r.detail||"")}</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
-    if(kpItems.length){
-      rows+=`<tr class="sub"><td colspan="2">K+ / QR รายตัว (${kpItems.length} รายการ)</td><td class="n">${TH(dK)}</td></tr>`;
-      rows+=kpItems.slice().sort((a,b)=>String(a.t).localeCompare(String(b.t))).map(r=>`<tr class="kp"><td>K+ / QR</td><td>เวลา ${kTime2(r.t)}</td><td class="n">${TH(num(r.amt))}</td></tr>`).join("");
-    } else if(kpLump.length){
-      rows+=kpLump.map(r=>`<tr class="kp"><td>K+ / QR</td><td>${esc(r.detail||"")} (ยังไม่อัปรายงาน K+)</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
+    let rows="";
+    if(showBank){
+      grTransfer+=dT;
+      nonKp.forEach(r=>{ const c=cleanCh(r.ch); chSum[c]=(chSum[c]||0)+num(r.dep); });
+      rows+=nonKp.map(r=>`<tr><td>${esc(cleanCh(r.ch))}</td><td>${esc(r.detail||"")}</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
     }
-    detail+=`<h3>📅 ${beDate(d.date)} — รวม ${TH(dT+dK)}</h3>
+    if(showKp){
+      grKplus+=dK;
+      if(dK>0) chSum["K+ / QR"]=(chSum["K+ / QR"]||0)+dK;
+      if(kpItems.length){
+        rows+=`<tr class="sub"><td colspan="2">K+ / QR รายตัว (${kpItems.length} รายการ)</td><td class="n">${TH(dK)}</td></tr>`;
+        rows+=kpItems.slice().sort((a,b)=>String(a.t).localeCompare(String(b.t))).map(r=>`<tr class="kp"><td>K+ / QR</td><td>เวลา ${kTime2(r.t)}</td><td class="n">${TH(num(r.amt))}</td></tr>`).join("");
+      } else if(kpLump.length){
+        rows+=kpLump.map(r=>`<tr class="kp"><td>K+ / QR</td><td>${esc(r.detail||"")} (ยังไม่อัปรายงาน K+)</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
+      }
+    }
+    if(!rows) return;   // วันนี้ไม่มีรายการตามตัวกรอง → ข้าม
+    const dTot=(showBank?dT:0)+(showKp?dK:0);
+    const footTxt=(showBank&&showKp)?`โอนเข้าจริง ${TH(dT)} + K+/QR ${TH(dK)}`:showBank?`โอนเข้าจริง ${TH(dT)}`:`K+/QR ${TH(dK)}`;
+    detail+=`<h3>📅 ${beDate(d.date)} — รวม ${TH(dTot)}</h3>
       <table class="det"><thead><tr><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th></tr></thead><tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="2">โอนเข้าจริง ${TH(dT)} + K+/QR ${TH(dK)}</td><td class="n">${TH(dT+dK)}</td></tr></tfoot></table>`;
+      <tfoot><tr><td colspan="2">${footTxt}</td><td class="n">${TH(dTot)}</td></tr></tfoot></table>`;
   });
   const chKeys=Object.keys(chSum).filter(k=>k!=="K+ / QR").sort((a,b)=>chSum[b]-chSum[a]);
   const sumRows=chKeys.map(k=>`<tr><td>${esc(k)}</td><td class="n">${TH(chSum[k])}</td></tr>`).join("")||`<tr><td colspan="2" style="text-align:center;color:#888">— ไม่มีรายการ —</td></tr>`;
@@ -316,17 +327,18 @@ function printIncome(){
    tr.kp td{color:#92400e} tr.sub td{background:#fffbeb;font-weight:bold}
    tfoot td{font-weight:bold;background:#f0fdf4}
    .grand{font-size:14px;font-weight:bold;text-align:right;margin-top:8px;border-top:2px solid #16a34a;padding-top:6px}
-   .btnbar{margin:8px 0} .btnbar button{font-size:14px;padding:7px 16px;cursor:pointer;background:#16a34a;color:#fff;border:none;border-radius:6px}
+   .btnbar{margin:8px 0;display:flex;gap:8px;flex-wrap:wrap} .btnbar button{font-size:14px;padding:7px 16px;cursor:pointer;background:#16a34a;color:#fff;border:none;border-radius:6px}
+   .btnbar button.close{background:#6b7280}
    .det{page-break-inside:auto} h3{page-break-after:avoid}
    @media print{.btnbar{display:none}}
   </style></head><body>
-  <div class="btnbar"><button onclick="window.print()">🖨️ สั่งพิมพ์ / บันทึกเป็น PDF</button></div>
+  <div class="btnbar"><button onclick="window.print()">🖨️ สั่งพิมพ์ / บันทึกเป็น PDF</button><button class="close" onclick="window.close()">✖️ ปิดหน้าต่างนี้</button></div>
   <h1>💰 รายรับจากสเตทเมนต์ — กิจมั่งมีโฮม</h1>
-  <div class="meta">ช่วง ${esc(period)} · พิมพ์เมื่อ ${beDate(todayIso())}</div>
+  <div class="meta">ช่วง ${esc(period)} · ตัวกรอง: <b>${esc(srcLabel)}</b> · พิมพ์เมื่อ ${beDate(todayIso())}</div>
   <h2>สรุปรายรับ</h2>
   <table><thead><tr><th>รายการ</th><th class="n">ยอด (บาท)</th></tr></thead><tbody>
-    <tr><td>เข้าบัญชีบริษัท (เงินโอนเข้า)</td><td class="n">${TH(grTransfer)}</td></tr>
-    <tr><td>K+ / QR</td><td class="n">${TH(grKplus)}</td></tr>
+    ${showBank?`<tr><td>เข้าบัญชีบริษัท (เงินโอนเข้า)</td><td class="n">${TH(grTransfer)}</td></tr>`:""}
+    ${showKp?`<tr><td>K+ / QR</td><td class="n">${TH(grKplus)}</td></tr>`:""}
     <tr class="sumT"><td>รวมทั้งสิ้น</td><td class="n">${TH(grTransfer+grKplus)}</td></tr>
   </tbody></table>
   <h2>รายละเอียดรายวัน</h2>

@@ -204,12 +204,22 @@ function tab(t){
 }
 
 /* ================= TAB 1: รายรับรายวัน (สเตทเมนต์) ================= */
+let _incDay="";        // "" = ทุกวันในช่วง / ISO = เฉพาะวันนั้น
+let _incSrc="all";     // all | bank | kplus
+function todayIso(){ const d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function incToday(){ _incDay=todayIso(); renderIncome(); }
+function incAllDays(){ _incDay=""; renderIncome(); }
+function setIncDay(v){ _incDay=v||""; renderIncome(); }
+function setIncSrc(s){ _incSrc=s; renderIncome(); }
 function renderIncome(){
   const el=document.getElementById("p_income");
-  const days=STATE.daily.filter(d=>Array.isArray(d.bank_rows)&&d.bank_rows.length);
+  let days=STATE.daily.filter(d=>Array.isArray(d.bank_rows)&&d.bank_rows.length);
+  if(_incDay) days=days.filter(d=>d.date===_incDay);
+  const showBoth=_incSrc==="all", wantKp=_incSrc==="kplus";
   let rowsHtml="", grTransfer=0, grKplus=0, cntDay=0;
   days.forEach(d=>{
-    const deps=(d.bank_rows||[]).filter(r=>num(r.dep)>0);
+    let deps=(d.bank_rows||[]).filter(r=>num(r.dep)>0);
+    deps=deps.filter(r=> showBoth || (wantKp? !!r.kp : !r.kp));   // กรองช่องทาง
     if(!deps.length) return; cntDay++;
     let dTransfer=0,dKplus=0;
     const inner=deps.map(r=>{
@@ -218,17 +228,29 @@ function renderIncome(){
     }).join("");
     grTransfer+=dTransfer; grKplus+=dKplus;
     rowsHtml+=`<tr class="day-h"><td colspan="3">📅 ${beDate(d.date)}</td><td class="n">${TH(dTransfer+dKplus)}</td></tr>`+inner
-      +`<tr><td></td><td colspan="2" class="muted" style="text-align:right">— โอนเข้าจริง ${TH(dTransfer)} · K+/QR ${TH(dKplus)}</td><td></td></tr>`;
+      +(showBoth?`<tr><td></td><td colspan="2" class="muted" style="text-align:right">— โอนเข้าจริง ${TH(dTransfer)} · K+/QR ${TH(dKplus)}</td><td></td></tr>`:"");
   });
+  const srcBtn=(v,l)=>`<button class="${_incSrc===v?"on":""}" onclick="setIncSrc('${v}')">${l}</button>`;
+  const footLabel = showBoth?`รวม — โอนเข้าจริง ${TH(grTransfer)} + K+/QR ${TH(grKplus)}`
+                  : wantKp?`รวมเฉพาะ K+/QR` : `รวมเฉพาะบัญชีธนาคาร (โอนเข้าจริง)`;
+  const emptyMsg = _incDay?`ยังไม่มีรายการรายรับของวันที่ ${beDate(_incDay)} (ยังไม่ได้อัปสเตทเมนต์วันนี้ หรือวันนั้นไม่มีเงินเข้าตามช่องทางที่เลือก)`
+                  : `ยังไม่มีข้อมูลสเตทเมนต์ในช่วงนี้ (อัปไฟล์สเตทเมนต์ในหน้า “ตรวจรายได้” ก่อน)`;
   el.innerHTML=`
   <div class="card">
     <h3>💰 รายรับจากสเตทเมนต์ (แยกเป็นวัน)</h3>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn sm" onclick="incToday()">📅 เฉพาะรายรับวันนี้</button>
+      <button class="btn sm ghost" onclick="incAllDays()">ทุกวันในช่วง</button>
+      <label>หรือเลือกวัน</label><input type="date" id="inc_day" value="${_incDay}" onchange="setIncDay(this.value)">
+      <span class="sub2" style="margin-left:auto;margin-bottom:0">${srcBtn("all","ทั้งหมด")}${srcBtn("bank","เฉพาะบัญชีธนาคาร")}${srcBtn("kplus","เฉพาะ K+/QR")}</span>
+    </div>
+    ${_incDay?`<div class="muted" style="margin-bottom:6px">กำลังดูเฉพาะวันที่ <b>${beDate(_incDay)}</b>${showBoth?"":(wantKp?" · เฉพาะ K+/QR":" · เฉพาะบัญชีธนาคาร")}</div>`:""}
     <div class="note">ใช้ตรวจกับเอกสารจริง (สลิป/สเตทเมนต์ธนาคาร) · <b>โอนเข้าจริง</b> = เงินลูกค้าโอนเข้าบัญชี · <b>K+/QR</b> = ยอดบัตร/สแกนที่ธนาคารโอนเข้าก้อนเดียว (นับเป็นรายได้ในฟอร์มแล้ว ไม่ใช่เงินก้อนใหม่ — แยกไว้กันนับซ้ำ)</div>
     ${cntDay?`<div class="scroll"><table>
       <thead><tr><th style="width:20px"></th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน (บาท)</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
-      <tfoot><tr class="tot"><td colspan="3">รวมทั้งช่วง — โอนเข้าจริง ${TH(grTransfer)} + K+/QR ${TH(grKplus)}</td><td class="n">${TH(grTransfer+grKplus)}</td></tr></tfoot>
-    </table></div>`:`<div class="muted">ยังไม่มีข้อมูลสเตทเมนต์ในช่วงนี้ (อัปไฟล์สเตทเมนต์ในหน้า “ตรวจรายได้” ก่อน)</div>`}
+      <tfoot><tr class="tot"><td colspan="3">${footLabel}</td><td class="n">${TH(grTransfer+grKplus)}</td></tr></tfoot>
+    </table></div>`:`<div class="muted">${emptyMsg}</div>`}
   </div>`;
 }
 

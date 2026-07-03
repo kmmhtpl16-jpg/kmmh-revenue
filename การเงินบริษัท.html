@@ -213,22 +213,36 @@ function setIncDay(v){ _incDay=v||""; renderIncome(); }
 function setIncSrc(s){ _incSrc=s; renderIncome(); }
 function renderIncome(){
   const el=document.getElementById("p_income");
-  let days=STATE.daily.filter(d=>Array.isArray(d.bank_rows)&&d.bank_rows.length);
+  let days=STATE.daily.filter(d=>(Array.isArray(d.bank_rows)&&d.bank_rows.length)||(Array.isArray(d.kplus_rows)&&d.kplus_rows.length));
   if(_incDay) days=days.filter(d=>d.date===_incDay);
   const showBoth=_incSrc==="all", wantKp=_incSrc==="kplus";
+  const kTime=s=>{ const m=String(s||"").match(/(\d{1,2}:\d{2})/); return m?m[1]:esc(String(s||"")); };
   let rowsHtml="", grTransfer=0, grKplus=0, cntDay=0;
   days.forEach(d=>{
-    let deps=(d.bank_rows||[]).filter(r=>num(r.dep)>0);
-    deps=deps.filter(r=> showBoth || (wantKp? !!r.kp : !r.kp));   // กรองช่องทาง
-    if(!deps.length) return; cntDay++;
-    let dTransfer=0,dKplus=0;
-    const inner=deps.map(r=>{
-      const amt=num(r.dep), kp=!!r.kp; if(kp)dKplus+=amt; else dTransfer+=amt;
-      return `<tr><td></td><td>${esc(r.ch||"")}</td><td>${esc(r.detail||"")} ${kp?'<span class="chip kp">K+/QR</span>':''}</td><td class="n">${TH(amt)}</td></tr>`;
-    }).join("");
-    grTransfer+=dTransfer; grKplus+=dKplus;
-    rowsHtml+=`<tr class="day-h"><td colspan="3">📅 ${beDate(d.date)}</td><td class="n">${TH(dTransfer+dKplus)}</td></tr>`+inner
-      +(showBoth?`<tr><td></td><td colspan="2" class="muted" style="text-align:right">— โอนเข้าจริง ${TH(dTransfer)} · K+/QR ${TH(dKplus)}</td><td></td></tr>`:"");
+    const allDeps=(d.bank_rows||[]).filter(r=>num(r.dep)>0);
+    const nonKp=allDeps.filter(r=>!r.kp);                         // เงินโอนเข้าบัญชีจริง
+    const kpLump=allDeps.filter(r=>!!r.kp);                       // K+/QR ก้อนเดียวจากสเตทเมนต์
+    const kpItems=Array.isArray(d.kplus_rows)?d.kplus_rows:[];    // K+ รายตัวจากรายงาน K+
+    const dTransfer=nonKp.reduce((s,r)=>s+num(r.dep),0);
+    const dKplus=kpLump.length?kpLump.reduce((s,r)=>s+num(r.dep),0):kpItems.reduce((s,r)=>s+num(r.amt),0);
+    let lines="";
+    if(_incSrc!=="kplus"){   // แสดงบัญชีธนาคาร
+      lines+=nonKp.map(r=>`<tr><td></td><td>${esc(r.ch||"")}</td><td>${esc(r.detail||"")}</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
+    }
+    if(_incSrc!=="bank"){    // แสดง K+/QR
+      if(kpItems.length){    // มีรายงาน K+ → กางรายตัว (เวลา+จำนวน)
+        lines+=`<tr><td></td><td colspan="2" class="muted">📱 K+ / QR รายตัว (${kpItems.length} รายการ)</td><td class="n muted">${TH(dKplus)}</td></tr>`;
+        lines+=kpItems.slice().sort((a,b)=>String(a.t).localeCompare(String(b.t))).map(r=>`<tr><td></td><td>K+ / QR</td><td>🕒 ${kTime(r.t)} <span class="chip kp">K+</span></td><td class="n">${TH(num(r.amt))}</td></tr>`).join("");
+      } else {               // ไม่มีรายงาน K+ → โชว์ก้อนเดียวจากสเตทเมนต์
+        lines+=kpLump.map(r=>`<tr><td></td><td>${esc(r.ch||"")}</td><td>${esc(r.detail||"")} <span class="chip kp">K+/QR</span></td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
+      }
+    }
+    if(!lines) return; cntDay++;
+    if(_incSrc!=="kplus") grTransfer+=dTransfer;
+    if(_incSrc!=="bank") grKplus+=dKplus;
+    const dayTotal=(_incSrc==="bank"?dTransfer:_incSrc==="kplus"?dKplus:dTransfer+dKplus);
+    rowsHtml+=`<tr class="day-h"><td colspan="3">📅 ${beDate(d.date)}</td><td class="n">${TH(dayTotal)}</td></tr>`+lines
+      +(showBoth?`<tr><td></td><td colspan="2" class="muted" style="text-align:right">— โอนเข้าจริง ${TH(dTransfer)} · K+/QR ${TH(dKplus)}${kpItems.length?" (กางรายตัวแล้ว)":(kpLump.length?" (ยังไม่อัปรายงาน K+ — โชว์ก้อนเดียว)":"")}</td><td></td></tr>`:"");
   });
   const srcBtn=(v,l)=>`<button class="${_incSrc===v?"on":""}" onclick="setIncSrc('${v}')">${l}</button>`;
   const footLabel = showBoth?`รวม — โอนเข้าจริง ${TH(grTransfer)} + K+/QR ${TH(grKplus)}`
@@ -245,7 +259,7 @@ function renderIncome(){
       <span class="sub2" style="margin-left:auto;margin-bottom:0">${srcBtn("all","ทั้งหมด")}${srcBtn("bank","เฉพาะบัญชีธนาคาร")}${srcBtn("kplus","เฉพาะ K+/QR")}</span>
     </div>
     ${_incDay?`<div class="muted" style="margin-bottom:6px">กำลังดูเฉพาะวันที่ <b>${beDate(_incDay)}</b>${showBoth?"":(wantKp?" · เฉพาะ K+/QR":" · เฉพาะบัญชีธนาคาร")}</div>`:""}
-    <div class="note">ใช้ตรวจกับเอกสารจริง (สลิป/สเตทเมนต์ธนาคาร) · <b>โอนเข้าจริง</b> = เงินลูกค้าโอนเข้าบัญชี · <b>K+/QR</b> = ยอดบัตร/สแกนที่ธนาคารโอนเข้าก้อนเดียว (นับเป็นรายได้ในฟอร์มแล้ว ไม่ใช่เงินก้อนใหม่ — แยกไว้กันนับซ้ำ)</div>
+    <div class="note">ใช้ตรวจกับเอกสารจริง (สลิป/สเตทเมนต์ธนาคาร) · <b>โอนเข้าจริง</b> = เงินลูกค้าโอนเข้าบัญชี · <b>K+/QR</b> = ยอดบัตร/สแกนที่ธนาคารโอนเข้าก้อนเดียว — ถ้าอัป <b>รายงาน K+ (KPSR)</b> ของวันนั้นในหน้าตรวจรายได้ ระบบจะกาง K+ เป็นรายตัว (เวลา+จำนวน) ให้ตรวจได้</div>
     ${cntDay?`<div class="scroll"><table>
       <thead><tr><th style="width:20px"></th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน (บาท)</th></tr></thead>
       <tbody>${rowsHtml}</tbody>

@@ -240,7 +240,7 @@
 
   /* ---------- ใบวางบิล: เลือกหลายบิล (ลูกค้าเดียวกัน) แล้วรับชำระรวม ---------- */
   window.__billSel={};
-  function selKeyOf(o){ return (o.code && String(o.code).trim()) ? ("C:"+String(o.code).trim()) : ("N:"+normName(o.cust)); }
+  function selKeyOf(o){ return "N:"+normName(o.cust); }   // จับกลุ่มด้วยชื่อ (normName) — code บางบิลว่าง (ดูดอัตโนมัติ) จับกลุ่มด้วยชื่อจึงตรงกันเสมอ
   function updateBillSelBar(){
     var bar=document.getElementById("billselbar"); if(!bar) return;
     var ids=Object.keys(window.__billSel);

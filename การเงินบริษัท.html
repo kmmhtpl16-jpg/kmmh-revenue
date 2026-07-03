@@ -70,7 +70,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.3 (พิมพ์ A4)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.4 (พิมพ์ A4)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -323,12 +323,12 @@ function printIncome(){
   <div class="btnbar"><button onclick="window.print()">🖨️ สั่งพิมพ์ / บันทึกเป็น PDF</button></div>
   <h1>💰 รายรับจากสเตทเมนต์ — กิจมั่งมีโฮม</h1>
   <div class="meta">ช่วง ${esc(period)} · พิมพ์เมื่อ ${beDate(todayIso())}</div>
-  <h2>สรุปแยกช่องทาง — เงินเข้ามาจากทางไหนบ้าง</h2>
-  <table><thead><tr><th>ช่องทาง (โอนเข้าบัญชีธนาคาร)</th><th class="n">จำนวน (บาท)</th></tr></thead>
-    <tbody>${sumRows}<tr class="sumT"><td>รวมโอนเข้าบัญชีธนาคาร (โอนเข้าจริง)</td><td class="n">${TH(grTransfer)}</td></tr></tbody></table>
-  <table><thead><tr><th>K+ / QR (บัตร/สแกน — เข้าก้อนเดียว)</th><th class="n">จำนวน (บาท)</th></tr></thead>
-    <tbody><tr class="sumT"><td>รวม K+ / QR</td><td class="n">${TH(grKplus)}</td></tr></tbody></table>
-  <div class="grand">รวมรายรับทั้งสิ้น = โอนเข้าจริง ${TH(grTransfer)} + K+/QR ${TH(grKplus)} = ${TH(grTransfer+grKplus)} บาท</div>
+  <h2>สรุปรายรับ</h2>
+  <table><thead><tr><th>รายการ</th><th class="n">ยอด (บาท)</th></tr></thead><tbody>
+    <tr><td>เข้าบัญชีบริษัท (เงินโอนเข้า)</td><td class="n">${TH(grTransfer)}</td></tr>
+    <tr><td>K+ / QR</td><td class="n">${TH(grKplus)}</td></tr>
+    <tr class="sumT"><td>รวมทั้งสิ้น</td><td class="n">${TH(grTransfer+grKplus)}</td></tr>
+  </tbody></table>
   <h2>รายละเอียดรายวัน</h2>
   ${detail||"<div style='color:#888'>ไม่มีรายการในช่วงที่เลือก</div>"}
   </body></html>`;

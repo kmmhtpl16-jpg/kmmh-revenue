@@ -174,7 +174,7 @@ async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entrie
     for(const [date,total] of Object.entries(kp.map)){ if(set.has(date)) await sb.from("rev_audit").update({kplus_today:Math.round(total*100)/100}).eq("date",date); }
     loadMonthStatus(); refreshOpenDay();
   }catch(e){} }
-async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100})); if(!rows.length) return;
+async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100, bank_rows:(bk.rowsByDate&&bk.rowsByDate[date])||null})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("bank_dep_today",null);
     const set=new Set((au||[]).map(x=>x.date));
@@ -493,13 +493,13 @@ function parseBank(text){
   for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="ฝากเงิน")){ h=i; break; } }
   if(h<0) throw new Error("ไม่พบหัวตาราง (ฝากเงิน) — ใช่สเตทเมนต์กสิกรไหม?");
   const map={};
-  for(let i=h+1;i<R.length;i++){ const r=R[i]; if(!r||!r[1]) continue;
+  const rowsByDate={}; for(let i=h+1;i<R.length;i++){ const r=R[i]; if(!r||!r[1]) continue;
     const m=String(r[1]).match(/(\d{2})-(\d{2})-(\d{2})/); if(!m) continue;
     const iso="20"+m[3]+"-"+m[2]+"-"+m[1]; const dep=num(r[6]), wd=num(r[4]);
     const ch=String(r[10]||""), detail=String(r[12]||"");
     const isKplus = ch.indexOf("K SHOP")>=0 || ch.indexOf("MYQR")>=0 || ch.indexOf("EDC")>=0 || detail.indexOf("KB000001825670")>=0;
-    if(!map[iso]) map[iso]={dep:0,wd:0,kplus:0}; map[iso].dep+=dep; map[iso].wd+=wd; if(isKplus) map[iso].kplus+=dep; }
-  return {map};
+    if(!map[iso]) map[iso]={dep:0,wd:0,kplus:0}; map[iso].dep+=dep; map[iso].wd+=wd; if(isKplus) map[iso].kplus+=dep; if(!rowsByDate[iso]) rowsByDate[iso]=[]; rowsByDate[iso].push({ch:ch,dt:String(r[1]),kp:isKplus,wd:wd,dep:dep,detail:detail}); }
+  return {map, rowsByDate};
 }
 const fbk=document.getElementById("f_bank");
 if(fbk) fbk.addEventListener("change", e=>{

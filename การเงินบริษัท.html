@@ -70,7 +70,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.1 (กาง K+)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.2 (พิมพ์ A4)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -257,6 +257,7 @@ function renderIncome(){
       <button class="btn sm ghost" onclick="incAllDays()">ทุกวันในช่วง</button>
       <label>หรือเลือกวัน</label><input type="date" id="inc_day" value="${_incDay}" onchange="setIncDay(this.value)">
       <span class="sub2" style="margin-left:auto;margin-bottom:0">${srcBtn("all","ทั้งหมด")}${srcBtn("bank","เฉพาะบัญชีธนาคาร")}${srcBtn("kplus","เฉพาะ K+/QR")}</span>
+      <button class="btn sm blu" style="margin-left:6px" onclick="printIncome()">🖨️ พิมพ์ A4</button>
     </div>
     ${_incDay?`<div class="muted" style="margin-bottom:6px">กำลังดูเฉพาะวันที่ <b>${beDate(_incDay)}</b>${showBoth?"":(wantKp?" · เฉพาะ K+/QR":" · เฉพาะบัญชีธนาคาร")}</div>`:""}
     <div class="note">ใช้ตรวจกับเอกสารจริง (สลิป/สเตทเมนต์ธนาคาร) · <b>โอนเข้าจริง</b> = เงินลูกค้าโอนเข้าบัญชี · <b>K+/QR</b> = ยอดบัตร/สแกนที่ธนาคารโอนเข้าก้อนเดียว — ถ้าอัป <b>รายงาน K+ (KPSR)</b> ของวันนั้นในหน้าตรวจรายได้ ระบบจะกาง K+ เป็นรายตัว (เวลา+จำนวน) ให้ตรวจได้</div>
@@ -266,6 +267,72 @@ function renderIncome(){
       <tfoot><tr class="tot"><td colspan="3">${footLabel}</td><td class="n">${TH(grTransfer+grKplus)}</td></tr></tfoot>
     </table></div>`:`<div class="muted">${emptyMsg}</div>`}
   </div>`;
+}
+
+/* ---- พิมพ์รายรับ A4 (แยกยอดตามช่องทาง) ---- */
+function printIncome(){
+  const w=window.open("","_blank");   // เปิดแบบ sync ก่อน กัน iOS บล็อก
+  if(!w){ alert("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup แล้วลองใหม่"); return; }
+  const kTime2=s=>{ const m=String(s||"").match(/(\d{1,2}:\d{2})/); return m?m[1]:esc(String(s||"")); };
+  const cleanCh=s=>String(s||"").replace("Internet/Mobile ","").trim();
+  let days=STATE.daily.filter(d=>(Array.isArray(d.bank_rows)&&d.bank_rows.length)||(Array.isArray(d.kplus_rows)&&d.kplus_rows.length));
+  if(_incDay) days=days.filter(d=>d.date===_incDay);
+  days=days.slice().sort((a,b)=>a.date<b.date?-1:1);
+  const chSum={}; let grTransfer=0, grKplus=0, detail="";
+  days.forEach(d=>{
+    const deps=(d.bank_rows||[]).filter(r=>num(r.dep)>0);
+    const nonKp=deps.filter(r=>!r.kp), kpLump=deps.filter(r=>!!r.kp);
+    const kpItems=Array.isArray(d.kplus_rows)?d.kplus_rows:[];
+    const dT=nonKp.reduce((s,r)=>s+num(r.dep),0);
+    const dK=kpLump.length?kpLump.reduce((s,r)=>s+num(r.dep),0):kpItems.reduce((s,r)=>s+num(r.amt),0);
+    grTransfer+=dT; grKplus+=dK;
+    nonKp.forEach(r=>{ const c=cleanCh(r.ch); chSum[c]=(chSum[c]||0)+num(r.dep); });
+    if(dK>0) chSum["K+ / QR"]=(chSum["K+ / QR"]||0)+dK;
+    let rows=nonKp.map(r=>`<tr><td>${esc(cleanCh(r.ch))}</td><td>${esc(r.detail||"")}</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
+    if(kpItems.length){
+      rows+=`<tr class="sub"><td colspan="2">K+ / QR รายตัว (${kpItems.length} รายการ)</td><td class="n">${TH(dK)}</td></tr>`;
+      rows+=kpItems.slice().sort((a,b)=>String(a.t).localeCompare(String(b.t))).map(r=>`<tr class="kp"><td>K+ / QR</td><td>เวลา ${kTime2(r.t)}</td><td class="n">${TH(num(r.amt))}</td></tr>`).join("");
+    } else if(kpLump.length){
+      rows+=kpLump.map(r=>`<tr class="kp"><td>K+ / QR</td><td>${esc(r.detail||"")} (ยังไม่อัปรายงาน K+)</td><td class="n">${TH(num(r.dep))}</td></tr>`).join("");
+    }
+    detail+=`<h3>📅 ${beDate(d.date)} — รวม ${TH(dT+dK)}</h3>
+      <table class="det"><thead><tr><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th></tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="2">โอนเข้าจริง ${TH(dT)} + K+/QR ${TH(dK)}</td><td class="n">${TH(dT+dK)}</td></tr></tfoot></table>`;
+  });
+  const chKeys=Object.keys(chSum).filter(k=>k!=="K+ / QR").sort((a,b)=>chSum[b]-chSum[a]);
+  const sumRows=chKeys.map(k=>`<tr><td>${esc(k)}</td><td class="n">${TH(chSum[k])}</td></tr>`).join("")||`<tr><td colspan="2" style="text-align:center;color:#888">— ไม่มีรายการ —</td></tr>`;
+  const period=_incDay?beDate(_incDay):(beDate(gFrom())+" – "+beDate(gTo()));
+  const html=`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>รายรับ ${esc(period)}</title>
+  <style>
+   @page{size:A4;margin:14mm}
+   *{box-sizing:border-box} body{font-family:"Sarabun","TH Sarabun New","Segoe UI",sans-serif;color:#111;font-size:12px;margin:0}
+   h1{font-size:17px;margin:0 0 2px} .meta{font-size:12px;color:#555;margin-bottom:10px}
+   h2{font-size:13px;margin:14px 0 4px;border-bottom:2px solid #16a34a;padding-bottom:2px}
+   h3{font-size:12.5px;margin:12px 0 3px;background:#eef2ff;padding:3px 6px}
+   table{width:100%;border-collapse:collapse;margin-bottom:6px}
+   th,td{border:1px solid #ccc;padding:3px 6px;text-align:left;font-size:11.5px;vertical-align:top}
+   th{background:#f3f4f6} td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+   .sumT td{font-weight:bold;background:#f0fdf4}
+   tr.kp td{color:#92400e} tr.sub td{background:#fffbeb;font-weight:bold}
+   tfoot td{font-weight:bold;background:#f0fdf4}
+   .grand{font-size:14px;font-weight:bold;text-align:right;margin-top:8px;border-top:2px solid #16a34a;padding-top:6px}
+   .btnbar{margin:8px 0} .btnbar button{font-size:14px;padding:7px 16px;cursor:pointer;background:#16a34a;color:#fff;border:none;border-radius:6px}
+   .det{page-break-inside:auto} h3{page-break-after:avoid}
+   @media print{.btnbar{display:none}}
+  </style></head><body>
+  <div class="btnbar"><button onclick="window.print()">🖨️ สั่งพิมพ์ / บันทึกเป็น PDF</button></div>
+  <h1>💰 รายรับจากสเตทเมนต์ — กิจมั่งมีโฮม</h1>
+  <div class="meta">ช่วง ${esc(period)} · พิมพ์เมื่อ ${beDate(todayIso())}</div>
+  <h2>สรุปแยกช่องทาง — เงินเข้ามาจากทางไหนบ้าง</h2>
+  <table><thead><tr><th>ช่องทาง (โอนเข้าบัญชีธนาคาร)</th><th class="n">จำนวน (บาท)</th></tr></thead>
+    <tbody>${sumRows}<tr class="sumT"><td>รวมโอนเข้าบัญชีธนาคาร (โอนเข้าจริง)</td><td class="n">${TH(grTransfer)}</td></tr></tbody></table>
+  <table><thead><tr><th>K+ / QR (บัตร/สแกน — เข้าก้อนเดียว)</th><th class="n">จำนวน (บาท)</th></tr></thead>
+    <tbody><tr class="sumT"><td>รวม K+ / QR</td><td class="n">${TH(grKplus)}</td></tr></tbody></table>
+  <div class="grand">รวมรายรับทั้งสิ้น = โอนเข้าจริง ${TH(grTransfer)} + K+/QR ${TH(grKplus)} = ${TH(grTransfer+grKplus)} บาท</div>
+  <h2>รายละเอียดรายวัน</h2>
+  ${detail||"<div style='color:#888'>ไม่มีรายการในช่วงที่เลือก</div>"}
+  </body></html>`;
+  w.document.write(html); w.document.close(); w.focus();
 }
 
 /* ================= TAB 2: รายจ่าย ================= */

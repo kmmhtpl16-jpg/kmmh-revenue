@@ -110,6 +110,7 @@
       '<div class="muted" style="margin-bottom:10px">ลูกค้าเอาของไปก่อน/จ่ายบางส่วน แล้วทยอยจ่าย — บันทึกการจ่ายได้หลายครั้งต่อบิล จนครบ · ดูดอัตโนมัติจากชีต “ลงบัญชี” เมื่ออัปไฟล์ฟอร์ม</div>',
       '<div id="creditmsg" class="muted" style="margin-bottom:8px"></div>',
       '<div id="creditlist" class="muted">กำลังโหลด…</div>',
+      '<div id="billselbar" style="display:none;margin-top:10px;padding:8px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;align-items:center;gap:10px;flex-wrap:wrap"></div>',
       '<div class="rowflex" style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px;align-items:center;flex-wrap:wrap;gap:6px">',
         '<span class="muted" style="font-size:12.5px">➕ เพิ่มบิลเอง:</span>',
         '<input class="rsn" id="cb_bill" placeholder="เลขบิล (ถ้ามี)" style="max-width:130px">',
@@ -134,6 +135,7 @@
     if(!list) return;
     if(!sbReady()){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; return; }
     list.textContent="กำลังโหลด…";
+    window.__billSel={}; var _bar=document.getElementById("billselbar"); if(_bar){ _bar.style.display="none"; _bar.innerHTML=""; }
     var showPaid=document.getElementById("cb_showpaid") && document.getElementById("cb_showpaid").checked;
     var q=sb.from("rev_credit_bills").select("*,rev_credit_payments(*)").order("bill_date",{ascending:true});
     if(!showPaid) q=q.neq("status","paid");
@@ -155,6 +157,7 @@
           ' <a href="#" onclick="return delCreditPayment(\''+p.id+'\')" style="color:#b91c1c;text-decoration:none">✕</a></div>';
       }).join(""):'<div style="font-size:12px;color:#94a3b8">ยังไม่มีการจ่าย</div>';
       return '<tr>'+
+        '<td style="text-align:center">'+(rem>0.01?'<input type="checkbox" class="billchk" onclick="toggleBillSel(this)" data-id="'+b.id+'" data-code="'+esc(b.customer_code||"")+'" data-cust="'+esc(b.customer||"")+'" data-rem="'+rem+'" data-date="'+esc(b.bill_date||"")+'" data-no="'+esc(b.bill_no||"")+'">':"")+'</td>'+
         '<td>'+beDate(b.bill_date)+'</td>'+
         '<td>'+esc(b.bill_no||"—")+'</td>'+
         '<td>'+esc(b.customer)+(b.source==="auto-form"?' <span class="badge info" style="font-size:10px">ดูดจากฟอร์ม</span>':"")+'</td>'+
@@ -169,7 +172,7 @@
         '</td>'+
       '</tr>';
     }).join("");
-    list.innerHTML='<table><thead><tr><th>วันที่บิล</th><th>เลขบิล</th><th>ลูกค้า</th><th>ยอดบิล</th><th>จ่ายแล้ว</th><th>คงเหลือ</th><th>สถานะ</th><th></th></tr></thead><tbody>'+rows+"</tbody></table>";
+    list.innerHTML='<table><thead><tr><th style="width:26px"></th><th>วันที่บิล</th><th>เลขบิล</th><th>ลูกค้า</th><th>ยอดบิล</th><th>จ่ายแล้ว</th><th>คงเหลือ</th><th>สถานะ</th><th></th></tr></thead><tbody>'+rows+"</tbody></table>";
   };
 
   window.toggleCreditPays=function(id){ var d=document.getElementById("cp_"+id); if(d) d.style.display=(d.style.display==="none"?"block":"none"); };
@@ -234,6 +237,72 @@
     var status= paid>=tot-0.01 ? "paid" : (paid>0.01?"partial":"open");
     await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100, status:status}).eq("id",id);
   }
+
+  /* ---------- ใบวางบิล: เลือกหลายบิล (ลูกค้าเดียวกัน) แล้วรับชำระรวม ---------- */
+  window.__billSel={};
+  function selKeyOf(o){ return (o.code && String(o.code).trim()) ? ("C:"+String(o.code).trim()) : ("N:"+normName(o.cust)); }
+  function updateBillSelBar(){
+    var bar=document.getElementById("billselbar"); if(!bar) return;
+    var ids=Object.keys(window.__billSel);
+    if(!ids.length){ bar.style.display="none"; bar.innerHTML=""; return; }
+    var tot=ids.reduce(function(s,id){ return s+num(window.__billSel[id].rem); },0);
+    var cust=window.__billSel[ids[0]].cust;
+    bar.style.display="flex";
+    bar.innerHTML='<span style="font-weight:600">🧾 เลือก '+ids.length+' บิล · '+esc(cust)+' · รวมคงเหลือ '+fmt(tot)+' บาท</span>'+
+      '<button class="btn" style="margin-left:auto" onclick="paySelectedBills()">💰 รับชำระรวม</button>'+
+      '<button class="btn" style="background:#f1f5f9;color:#334155" onclick="clearBillSel()">ล้างการเลือก</button>';
+  }
+  window.toggleBillSel=function(cb){
+    var id=cb.getAttribute("data-id");
+    var o={ id:id, code:cb.getAttribute("data-code")||"", cust:cb.getAttribute("data-cust")||"", rem:num(cb.getAttribute("data-rem")), date:cb.getAttribute("data-date")||"", no:cb.getAttribute("data-no")||"" };
+    if(cb.checked){
+      var keys=Object.keys(window.__billSel);
+      if(keys.length && selKeyOf(o)!==selKeyOf(window.__billSel[keys[0]])){
+        alert("ใบวางบิลเลือกได้เฉพาะลูกค้าเดียวกัน\nถ้าจะเปลี่ยนลูกค้า ให้กด “ล้างการเลือก” ก่อน");
+        cb.checked=false; return;
+      }
+      window.__billSel[id]=o;
+    } else { delete window.__billSel[id]; }
+    updateBillSelBar();
+  };
+  window.clearBillSel=function(){
+    window.__billSel={};
+    var chks=document.querySelectorAll(".billchk"); for(var i=0;i<chks.length;i++) chks[i].checked=false;
+    updateBillSelBar();
+  };
+  window.paySelectedBills=async function(){
+    var ids=Object.keys(window.__billSel); if(!ids.length) return;
+    var items=ids.map(function(id){ return window.__billSel[id]; });
+    items.sort(function(a,b){ return String(a.date).localeCompare(String(b.date)) || String(a.no).localeCompare(String(b.no)); }); // เก่าก่อน
+    var totRem=Math.round(items.reduce(function(s,o){ return s+num(o.rem); },0)*100)/100;
+    var cust=items[0].cust;
+    var amtS=prompt("รับชำระรวม — "+cust+"\n"+items.length+" บิล · คงเหลือรวม "+fmt(totRem)+" บาท\nใส่ยอดที่รับครั้งนี้ (จัดสรรบิลเก่าก่อน):", String(totRem));
+    if(amtS===null) return;
+    var pay=num(amtS); if(pay<=0){ alert("ยอดไม่ถูกต้อง"); return; }
+    if(pay>totRem+0.01){
+      if(!confirm("ยอดที่รับ ("+fmt(pay)+") มากกว่าคงเหลือรวม ("+fmt(totRem)+")\nจะบันทึกเท่าคงเหลือรวมแทน ต่อไหม?")) return;
+      pay=totRem;
+    }
+    var mList=METHODS.map(function(m,i){ return (i+1)+"="+m; }).join("  ");
+    var mS=prompt("ช่องทางจ่าย ("+mList+"):","1"); if(mS===null) return;
+    var method=METHODS[parseInt(mS,10)-1]||METHODS[0];
+    var pdate=prompt("วันที่จ่าย (YYYY-MM-DD):", todayISO()); if(pdate===null) return;
+    var ref=prompt("อ้างอิง/หมายเหตุ (เช่น เลขที่โอน — เว้นว่างได้):","")||"";
+    var by=prompt("ผู้รับเงิน/ยืนยัน:","")||"";
+    var leftover=pay, payments=[];
+    for(var i=0;i<items.length;i++){
+      if(leftover<=0.005) break;
+      var give=Math.round(Math.min(num(items[i].rem), leftover)*100)/100;
+      if(give>0.005){ payments.push({ bill_id:items[i].id, pay_date:pdate||todayISO(), amount:give, method:method, ref:(ref.trim()||null), confirmed_by:(by.trim()||null) }); leftover=Math.round((leftover-give)*100)/100; }
+    }
+    if(!payments.length){ alert("ไม่มีบิลให้ลงชำระ"); return; }
+    var ins=await sb.from("rev_credit_payments").insert(payments);
+    if(ins.error){ alert("บันทึกรับชำระไม่สำเร็จ: "+ins.error.message); return; }
+    for(var j=0;j<payments.length;j++){ await recomputeBill(payments[j].bill_id); }
+    window.__billSel={};
+    alert("รับชำระรวม "+payments.length+" บิล · "+fmt(pay)+" บาท เรียบร้อย"+(leftover>0.005?"\n(เหลือเงินทอน/ยังไม่จัดสรร "+fmt(leftover)+")":""));
+    loadCreditBills();
+  };
 
   /* ---------- ดูดบิลลงบัญชีอัตโนมัติจากไฟล์ฟอร์ม ---------- */
   function parseCreditSheet(wb){

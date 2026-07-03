@@ -167,7 +167,7 @@ function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
-async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entries(kp.map).map(([date,total])=>({date, kplus_total:Math.round(total*100)/100})); if(!rows.length) return;
+async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entries(kp.map).map(([date,total])=>({date, kplus_total:Math.round(total*100)/100, kplus_rows:(kp.rowsByDate&&kp.rowsByDate[date])||null})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("kplus_today",null);
     const set=new Set((au||[]).map(x=>x.date));
@@ -472,14 +472,14 @@ function parseKPlus(text){
   if(h<0) throw new Error("ไม่พบหัวตาราง (Date Time) — ใช่รายงาน K+ ไหม?");
   const hdr=R[h].map(c=>String(c||"").trim()); const iDt=hdr.indexOf("Date Time"), iAmt=hdr.indexOf("Amount"), iNm=hdr.indexOf("From Account");
   if(iDt<0||iAmt<0) throw new Error("ไม่พบคอลัมน์ Date Time / Amount");
-  const map={}; const late={}; let total=0, count=0;
+  const map={}; const late={}; const rowsByDate={}; let total=0, count=0;
   for(let i=h+1;i<R.length;i++){ const row=R[i]; if(!row||!row[iDt]) continue;
     const md=String(row[iDt]).match(/(\d{2})-(\d{2})-(\d{4})/); if(!md) continue;
     const tm=String(row[iDt]).match(/(\d{2}):(\d{2})/);
     const iso=md[3]+"-"+md[2]+"-"+md[1]; const amt=num(row[iAmt]); if(!amt) continue;
-    map[iso]=(map[iso]||0)+amt; total+=amt; count++;
+    map[iso]=(map[iso]||0)+amt; total+=amt; count++; (rowsByDate[iso]=rowsByDate[iso]||[]).push({t:String(row[iDt]).trim(),amt:amt});
     if(tm){ const hh=+tm[1], mm=+tm[2]; if(hh>15||(hh===15&&mm>=30)){ (late[iso]=late[iso]||[]).push({hhmm:tm[1]+":"+tm[2], amt:amt, name:(iNm>=0?String(row[iNm]||"").trim():"")}); } } }
-  return {map, late, total, count};
+  return {map, late, total, count, rowsByDate};
 }
 const fkp=document.getElementById("f_kplus");
 if(fkp) fkp.addEventListener("change", e=>{

@@ -156,6 +156,7 @@ async function doGate(){
     if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
   }
   sessionStorage.setItem("rev_dash_ok","1");
+  sessionStorage.setItem("rev_role",role);
   document.getElementById("gate").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
   applyGating();
@@ -706,7 +707,7 @@ function renderGross(){
   // ถ้าเคยผ่าน gate ในเซสชันนี้ + มี session อยู่แล้ว ให้เข้าเลย
   if(sessionStorage.getItem("rev_dash_ok")==="1" && sb){
     const {data:{session}}=await sb.auth.getSession();
-    if(session){ document.getElementById("gate").classList.add("hide"); document.getElementById("app").classList.remove("hide"); quick("m"); reloadAll(); return; }
+    if(session){ ROLE=sessionStorage.getItem("rev_role")||"owner"; document.getElementById("gate").classList.add("hide"); document.getElementById("app").classList.remove("hide"); applyGating(); quick("m"); reloadAll(); return; }
   }
   document.getElementById("pin").focus();
 })();

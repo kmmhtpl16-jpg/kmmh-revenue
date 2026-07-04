@@ -126,39 +126,63 @@
     if(!sbReady()){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; return; }
     list.textContent="กำลังโหลด…";
     var viewDate=(window._creditDay||window._openDay||todayISO());
-    var lbl=document.getElementById("cb_daylabel"); if(lbl) lbl.innerHTML='📅 บิลลงบัญชีของวันที่ <b>'+beDate(viewDate)+'</b>';
-    // ยอดลูกหนี้ค้างรวม (ทุกวัน) → badge
+    var lbl=document.getElementById("cb_daylabel"); if(lbl) lbl.innerHTML='📅 บิลลงบัญชี/จ่ายหนี้ ของวันที่ <b>'+beDate(viewDate)+'</b>';
+    // badge: ยอดลูกหนี้ค้างรวม (ปัจจุบัน)
     var allR=await sb.from("rev_credit_bills").select("total_amount,paid_amount,status").neq("status","paid");
-    if(cnt){
-      if(allR.error){ cnt.textContent="—"; }
-      else{ var out=(allR.data||[]); var totRemain=out.reduce(function(s,b){return s+(num(b.total_amount)-num(b.paid_amount));},0);
-        cnt.textContent=out.length+" บิลค้าง · เหลือ "+fmt(totRemain)+" บาท"; }
-    }
-    // บิลลงบัญชีเฉพาะวันที่เลือก
-    var r=await sb.from("rev_credit_bills").select("*").eq("bill_date",viewDate).order("bill_no",{ascending:true});
+    if(cnt){ if(allR.error){ cnt.textContent="—"; } else{ var out=(allR.data||[]); var totRemain=out.reduce(function(s,b){return s+(num(b.total_amount)-num(b.paid_amount));},0); cnt.textContent=out.length+" บิลค้าง · เหลือ "+fmt(totRemain)+" บาท"; } }
+    // A) บิลลงบัญชีใหม่ของวัน (หนี้ที่เกิดวันนี้) — จ่ายแล้ว/คงเหลือ คิด "ณ วันนั้น" (เฉพาะจ่ายที่ pay_date <= วันนั้น)
+    var r=await sb.from("rev_credit_bills").select("*,rev_credit_payments(pay_date,amount)").eq("bill_date",viewDate).order("bill_no",{ascending:true});
     if(r.error){ list.innerHTML='<span style="color:#b91c1c">โหลดไม่ได้: '+esc(r.error.message)+"</span>"; return; }
     var data=r.data||[];
-    if(!data.length){ list.innerHTML='<div class="muted">ไม่มีบิลลงบัญชีของวันที่ '+beDate(viewDate)+' · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็มเพื่อดูลูกหนี้ทั้งหมด →</a></div>'; return; }
-    var dayTot=data.reduce(function(s,b){return s+num(b.total_amount);},0);
-    var dayRem=data.reduce(function(s,b){return s+(num(b.total_amount)-num(b.paid_amount));},0);
-    var rows=data.map(function(b){
-      var tot=num(b.total_amount), paid=num(b.paid_amount), rem=tot-paid;
-      var stColor= b.status==="paid"?"#15803d":(b.status==="partial"?"#b45309":"#64748b");
-      var stText= b.status==="paid"?"✓ ครบแล้ว":(b.status==="partial"?"◑ จ่ายบางส่วน":"● ยังไม่จ่าย");
-      return '<tr>'+
-        '<td>'+esc(b.bill_no||"—")+'</td>'+
-        '<td>'+esc(b.customer)+(b.customer_code?' <span class="badge info" style="font-size:10px">'+esc(b.customer_code)+'</span>':"")+(b.source==="auto-form"?' <span class="badge info" style="font-size:10px">ดูดจากฟอร์ม</span>':"")+'</td>'+
-        '<td style="text-align:right">'+fmt(tot)+'</td>'+
-        '<td style="text-align:right;color:#15803d">'+fmt(paid)+'</td>'+
-        '<td style="text-align:right;font-weight:600;color:'+(rem>0.01?"#b91c1c":"#15803d")+'">'+fmt(rem)+'</td>'+
-        '<td style="text-align:center;color:'+stColor+';font-size:12px">'+stText+'</td>'+
-      '</tr>';
-    }).join("");
-    list.innerHTML='<table><thead><tr><th>เลขบิล</th><th>ลูกค้า</th><th>ยอดบิล</th><th>จ่ายแล้ว</th><th>คงเหลือ</th><th>สถานะ</th></tr></thead><tbody>'+rows+
-      '<tr class="tot"><td colspan="2">รวมวันที่ '+beDate(viewDate)+' ('+data.length+' บิล)</td>'+
-      '<td style="text-align:right">'+fmt(dayTot)+'</td><td></td>'+
-      '<td style="text-align:right;color:#b91c1c">'+fmt(dayRem)+'</td><td></td></tr>'+
-      '</tbody></table>';
+    var htmlA="";
+    if(data.length){
+      var dayTot=0, dayRem=0;
+      var rows=data.map(function(b){
+        var tot=num(b.total_amount);
+        var paidAsOf=(b.rev_credit_payments||[]).reduce(function(s,p){ return s+((String(p.pay_date).slice(0,10)<=viewDate)?num(p.amount):0); },0);
+        paidAsOf=Math.round(paidAsOf*100)/100;
+        var rem=Math.round((tot-paidAsOf)*100)/100;
+        dayTot+=tot; dayRem+=rem;
+        var stColor= rem<=0.01?"#15803d":(paidAsOf>0.01?"#b45309":"#64748b");
+        var stText= rem<=0.01?"✓ ครบแล้ว":(paidAsOf>0.01?"◑ จ่ายบางส่วน":"● ยังไม่จ่าย");
+        return '<tr>'+
+          '<td>'+esc(b.bill_no||"—")+'</td>'+
+          '<td>'+esc(b.customer)+(b.customer_code?' <span class="badge info" style="font-size:10px">'+esc(b.customer_code)+'</span>':"")+'</td>'+
+          '<td style="text-align:right">'+fmt(tot)+'</td>'+
+          '<td style="text-align:right;color:#15803d">'+fmt(paidAsOf)+'</td>'+
+          '<td style="text-align:right;font-weight:600;color:'+(rem>0.01?"#b91c1c":"#15803d")+'">'+fmt(rem)+'</td>'+
+          '<td style="text-align:center;color:'+stColor+';font-size:12px">'+stText+'</td>'+
+        '</tr>';
+      }).join("");
+      htmlA='<div style="font-weight:700;font-size:13px;margin-bottom:4px">🧾 บิลลงบัญชีใหม่วันนี้ (หนี้ที่เกิดวันนี้)</div>'+
+        '<table><thead><tr><th>เลขบิล</th><th>ลูกค้า</th><th>ยอดบิล</th><th>จ่ายแล้ว(ถึงวันนี้)</th><th>คงเหลือ</th><th>สถานะ</th></tr></thead><tbody>'+rows+
+        '<tr class="tot"><td colspan="2">รวมบิลใหม่ '+data.length+' บิล</td><td style="text-align:right">'+fmt(dayTot)+'</td><td></td><td style="text-align:right;color:#b91c1c">'+fmt(dayRem)+'</td><td></td></tr>'+
+        '</tbody></table>';
+    }
+    // B) จ่ายหนี้ที่รับในวันนั้น (pay_date = วันนั้น) — ลูกหนี้เอาเงินมาจ่ายวันนี้
+    var pr=await sb.from("rev_credit_payments").select("amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",viewDate);
+    var pays=(pr.data||[]);
+    var htmlB="";
+    if(pays.length){
+      var pTot=0;
+      var prows=pays.map(function(p){
+        var bi=p.rev_credit_bills||{}; pTot+=num(p.amount);
+        return '<tr>'+
+          '<td>'+esc(bi.customer||"—")+'</td>'+
+          '<td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td>'+
+          '<td style="text-align:right;color:#15803d;font-weight:600">'+fmt(p.amount)+'</td>'+
+          '<td>'+esc(p.method||"")+'</td>'+
+          '<td style="font-size:11px;color:#64748b">'+esc(p.ref||"")+'</td>'+
+        '</tr>';
+      }).join("");
+      htmlB='<div style="margin-top:14px;font-weight:700;font-size:13px;color:#15803d">💵 จ่ายหนี้ที่รับวันนี้ ('+pays.length+' รายการ · '+fmt(pTot)+' บาท)</div>'+
+        '<table style="margin-top:4px"><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th></tr></thead><tbody>'+prows+'</tbody></table>';
+    }
+    if(!data.length && !pays.length){
+      list.innerHTML='<div class="muted">ไม่มีบิลลงบัญชี/การจ่ายหนี้ของวันที่ '+beDate(viewDate)+' · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็มเพื่อดูลูกหนี้ทั้งหมด →</a></div>';
+      return;
+    }
+    list.innerHTML=(htmlA||'<div class="muted">— ไม่มีบิลลงบัญชีใหม่ของวันนี้ —</div>')+htmlB;
   };
 
   /* ---------- จับคู่เลขบิลจากไฟล์เครื่อง (DATA.pos ที่ index.html แพร์สไว้) ---------- */

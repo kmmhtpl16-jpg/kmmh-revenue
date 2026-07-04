@@ -151,10 +151,8 @@ async function doGate(){
   if(!role){ document.getElementById("gerr").textContent="รหัสไม่ถูกต้อง"; return; }
   ROLE=role;
   document.getElementById("gerr").textContent="กำลังเข้าสู่ระบบ…";
-  if(role==="owner"){
-    const ok=await ensureRevSession(v);
-    if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
-  }
+  const ok=await ensureRevSession(v);   // 0402=เจ้าของ / 9989(pin_price)=พนักงาน — ทั้งคู่มินต์ session ผ่าน RLS ได้
+  if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
   sessionStorage.setItem("rev_dash_ok","1");
   sessionStorage.setItem("rev_role",role);
   document.getElementById("gate").classList.add("hide");

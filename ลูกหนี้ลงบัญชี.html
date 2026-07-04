@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ทะเบียนลูกหนี้ลงบัญชี — กิจมั่งมีโฮม</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{--g:#16a34a;--g2:#15803d;--bg:#f6f7f9;--bd:#e5e7eb;--mut:#6b7280;--red:#dc2626;--amb:#d97706;--blu:#2563eb}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Sarabun",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:#111827;font-size:15px}
+.wrap{max-width:1080px;margin:0 auto;padding:12px}
+header{background:linear-gradient(135deg,var(--g),var(--g2));color:#fff;padding:14px 16px;border-radius:0 0 14px 14px}
+header h1{margin:0;font-size:19px}
+header .sub{opacity:.9;font-size:13px;margin-top:2px}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+nav a{font-size:13px;text-decoration:none;color:var(--g2);background:#fff;border:1px solid var(--bd);padding:5px 10px;border-radius:999px}
+nav a.on{background:var(--g);color:#fff;border-color:var(--g)}
+.card{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:15.5px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+label{font-size:13px;color:var(--mut)}
+input,select{font-family:inherit;font-size:14px;padding:7px 9px;border:1px solid var(--bd);border-radius:8px;background:#fff}
+input[type=date]{min-width:150px}
+.btn{font-family:inherit;font-size:14px;cursor:pointer;border:none;background:var(--g);color:#fff;padding:8px 14px;border-radius:9px;font-weight:600}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn.gray{background:#6b7280}.btn.red{background:var(--red)}.btn.blu{background:var(--blu)}.btn.amb{background:var(--amb)}
+.btn.ghost{background:#fff;color:var(--g2);border:1px solid var(--bd)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:middle}
+th{background:#f9fafb;font-weight:700;color:#374151}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.muted{color:var(--mut);font-size:12.5px}
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;font-weight:700}
+.chip.info{background:#e0e7ff;color:#3730a3}.chip.warn{background:#fef2f2;color:#b91c1c}.chip.ok{background:#dcfce7;color:#166534}
+.gate{position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99}
+.gate .box{background:#fff;padding:24px;border-radius:14px;width:290px;text-align:center}
+.gate input{font-size:22px;letter-spacing:6px;text-align:center;width:170px;margin:12px 0 4px}
+.gate .perr{color:var(--red);font-size:13px;min-height:18px}
+.hide{display:none!important}
+.custrow{cursor:pointer}
+.custrow:hover{background:#f0fdf4}
+.billsub{background:#fcfcfd}
+.selbar{position:sticky;bottom:0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 14px;margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+.big{font-size:20px;font-weight:800}
+</style>
+</head>
+<body>
+<!-- ===== PIN GATE ===== -->
+<div id="gate" class="gate">
+  <div class="box">
+    <div style="font-size:32px">🔒</div>
+    <h2 style="margin:6px 0 2px;font-size:18px">ทะเบียนลูกหนี้ KMMH</h2>
+    <div class="muted">ใส่ PIN เพื่อเข้าใช้งาน</div>
+    <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
+    <div class="perr" id="pinErr"></div>
+    <button class="btn" style="width:100%;margin-top:6px" onclick="submitPin()">เข้าใช้งาน</button>
+  </div>
+</div>
+
+<header>
+  <div class="wrap" style="padding:0">
+    <h1>📒 ทะเบียนลูกหนี้ลงบัญชี</h1>
+    <div class="sub">กิจมั่งมีโฮม · ลูกค้าเอาของไปก่อน จ่ายทีหลัง — จัดกลุ่มตามลูกค้า · รับชำระรวมได้</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav>
+    <a href="index.html">🧾 ตรวจรายได้</a>
+    <a href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
+    <a href="สารบัญ-รายได้.html">📇 สารบัญ</a>
+    <a href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
+    <a class="on" href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
+  </nav>
+
+  <!-- สรุปยอด -->
+  <div class="card" id="summaryCard">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="muted">ลูกหนี้ค้างชำระทั้งหมด</div>
+        <div class="big" id="sumRemain" style="color:var(--red)">…</div>
+      </div>
+      <div style="text-align:right">
+        <div class="muted"><span id="sumCust">…</span> ราย · <span id="sumBills">…</span> บิล</div>
+        <div class="row" style="justify-content:flex-end;margin-top:6px">
+          <input id="q" placeholder="🔍 ค้นชื่อลูกค้า" style="max-width:200px" oninput="renderRegister()">
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="showPaid" onchange="loadRegister()"> แสดงที่จ่ายครบแล้ว</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ทะเบียน -->
+  <div class="card">
+    <h3>รายชื่อลูกหนี้ (กดที่ลูกค้าเพื่อกางดูบิล)</h3>
+    <div id="reg" class="muted">กำลังโหลด…</div>
+    <div id="selbar" class="selbar hide"></div>
+  </div>
+
+  <!-- เพิ่มบิลเอง -->
+  <div class="card">
+    <h3>➕ เพิ่มบิลลงบัญชีเอง</h3>
+    <div class="row">
+      <input id="cb_bill" placeholder="เลขบิล (ถ้ามี)" style="max-width:150px">
+      <input id="cb_cust" placeholder="ชื่อลูกค้า" style="max-width:200px">
+      <input id="cb_code" placeholder="รหัสลูกค้า (ถ้ามี)" style="max-width:150px">
+      <input id="cb_amt" type="number" placeholder="ยอดบิล" style="max-width:120px">
+      <input id="cb_date" type="date" style="max-width:160px">
+      <button class="btn" onclick="addBillManual()">+ บันทึกบิล</button>
+    </div>
+    <div class="muted" style="margin-top:6px">บิลจากชีต “ลงบัญชี” จะถูกดูดเข้าอัตโนมัติเมื่ออัปไฟล์ฟอร์มในหน้าตรวจรายได้</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- PIN gate ---------- */
+var PINMAP={"1234":"cashier","9989":"finance","0402":"owner"};
+var ROLE=null;
+function submitPin(){
+  var el=document.getElementById("pinInput"), v=(el.value||"").trim();
+  var r=PINMAP[v];
+  if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง ลองใหม่"; el.value=""; el.focus(); return; }
+  ROLE=r; document.getElementById("gate").style.display="none";
+  boot();
+}
+
+/* ---------- Supabase (เหมือน index.html) ---------- */
+var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ console.warn("sb init",e); }
+function sbReady(){ return (typeof sb!=="undefined" && sb); }
+
+/* ---------- helpers ---------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function num(v){ if(v==null) return 0; var n=parseFloat(String(v).replace(/[, ]/g,"")); return isNaN(n)?0:n; }
+function fmt(n){ return (Math.round(num(n)*100)/100).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function beDate(s){ if(!s) return "—"; var p=String(s).slice(0,10).split("-"); if(p.length<3) return s; return p[2]+"/"+p[1]+"/"+(parseInt(p[0],10)+543); }
+function pad2(n){ return String(n).padStart(2,"0"); }
+function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function normName(s){ return String(s||"").replace(/นางสาว|น\.ส\.|นาย|นาง|บริษัท|บจก\.|หจก\.|ร้าน|คุณ|จำกัด|\s|\+/g,""); }
+function daysBetween(iso){ if(!iso) return 0; var a=new Date(iso+"T00:00:00"), b=new Date(); return Math.max(0, Math.floor((b-a)/86400000)); }
+var METHODS=["เงินสด","โอน K+","โอนกสิกร","อื่นๆ/เช็ค"];
+function newBatchRef(){ var d=new Date(); return "BR"+String(d.getFullYear()+543).slice(2)+pad2(d.getMonth()+1)+pad2(d.getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase(); }
+
+/* ---------- state ---------- */
+var BILLS=[];          // บิลทั้งหมดที่โหลดมา (พร้อม payments)
+var GROUPS=[];         // จัดกลุ่มตามลูกค้า
+var OPEN={};           // customerKey -> เปิดกางอยู่ไหม
+var SEL={};            // bill_id -> {id,cust,rem,date,no,key}
+
+/* ---------- โหลด + จัดกลุ่ม ---------- */
+window.loadRegister=async function(){
+  var reg=document.getElementById("reg");
+  if(!sbReady()){ reg.innerHTML='<span style="color:var(--red)">เชื่อม Supabase ไม่ได้</span>'; return; }
+  reg.textContent="กำลังโหลด…";
+  SEL={}; renderSelBar();
+  var showPaid=document.getElementById("showPaid").checked;
+  var q=sb.from("rev_credit_bills").select("*,rev_credit_payments(*)").order("bill_date",{ascending:true});
+  if(!showPaid) q=q.neq("status","paid");
+  var r=await q;
+  if(r.error){ reg.innerHTML='<span style="color:var(--red)">โหลดไม่ได้: '+esc(r.error.message)+"</span>"; return; }
+  BILLS=r.data||[];
+  // จัดกลุ่มตามชื่อ (normName) — บิลดูดอัตโนมัติไม่มีรหัสลูกค้า จับกลุ่มด้วยชื่อจึงตรงกันเสมอ
+  var map={};
+  BILLS.forEach(function(b){
+    var key=normName(b.customer)||("ID:"+b.id);
+    if(!map[key]) map[key]={key:key, name:b.customer, code:b.customer_code||"", bills:[], remain:0, totBill:0, maxOd:0};
+    var g=map[key];
+    var rem=num(b.total_amount)-num(b.paid_amount);
+    g.bills.push(b);
+    g.remain+=rem; g.totBill++;
+    if(b.customer_code && !g.code) g.code=b.customer_code;
+    if(rem>0.01){ var od=daysBetween(b.bill_date); if(od>g.maxOd) g.maxOd=od; }
+  });
+  GROUPS=Object.keys(map).map(function(k){return map[k];});
+  // เรียง: ค้างมากก่อน
+  GROUPS.sort(function(a,b){ return b.remain-a.remain; });
+  renderRegister();
+};
+
+function renderRegister(){
+  var reg=document.getElementById("reg");
+  var qv=normName(document.getElementById("q").value||"");
+  var groups=GROUPS.filter(function(g){ return !qv || normName(g.name).indexOf(qv)>=0 || (g.code&&g.code.indexOf(document.getElementById("q").value.trim())>=0); });
+  // สรุปยอด (จากทั้งหมด ไม่กรอง)
+  var allRemain=GROUPS.reduce(function(s,g){return s+g.remain;},0);
+  var allBills=GROUPS.reduce(function(s,g){return s+g.bills.filter(function(b){return num(b.total_amount)-num(b.paid_amount)>0.01;}).length;},0);
+  var allCust=GROUPS.filter(function(g){return g.remain>0.01;}).length;
+  document.getElementById("sumRemain").textContent=fmt(allRemain)+" บาท";
+  document.getElementById("sumCust").textContent=allCust;
+  document.getElementById("sumBills").textContent=allBills;
+  if(!groups.length){ reg.innerHTML='<div class="muted">'+(GROUPS.length?"ไม่พบลูกค้าที่ค้นหา":"ยังไม่มีลูกหนี้ลงบัญชี 👍")+"</div>"; return; }
+  var html='<table><thead><tr><th style="width:26px"></th><th>ลูกค้า</th><th class="n">คงเหลือ</th><th class="n">บิลค้าง</th><th class="n">ค้างนานสุด</th></tr></thead><tbody>';
+  groups.forEach(function(g){
+    var opened=!!OPEN[g.key];
+    var openBills=g.bills.filter(function(b){return num(b.total_amount)-num(b.paid_amount)>0.01;}).length;
+    html+='<tr class="custrow" onclick="toggleCust(\''+esc(g.key)+'\')">'+
+      '<td>'+(opened?"▾":"▸")+'</td>'+
+      '<td><b>'+esc(g.name)+'</b>'+(g.code?' <span class="chip info">'+esc(g.code)+'</span>':"")+'</td>'+
+      '<td class="n" style="font-weight:700;color:'+(g.remain>0.01?"var(--red)":"var(--g2)")+'">'+fmt(g.remain)+'</td>'+
+      '<td class="n">'+openBills+"/"+g.totBill+'</td>'+
+      '<td class="n">'+(g.maxOd?g.maxOd+" วัน":"—")+'</td>'+
+    '</tr>';
+    if(opened) html+='<tr class="billsub"><td></td><td colspan="4" style="padding:0">'+billsTable(g)+'</td></tr>';
+  });
+  html+='</tbody></table>';
+  reg.innerHTML=html;
+}
+
+function billsTable(g){
+  var rows=g.bills.slice().sort(function(a,b){ return String(a.bill_date).localeCompare(String(b.bill_date)) || String(a.bill_no||"").localeCompare(String(b.bill_no||"")); });
+  var out='<table style="margin:6px 0"><thead><tr><th style="width:24px"></th><th>วันที่บิล</th><th>เลขบิล</th><th class="n">ยอดบิล</th><th class="n">จ่ายแล้ว</th><th class="n">คงเหลือ</th><th>สถานะ</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(b){
+    var tot=num(b.total_amount), paid=num(b.paid_amount), rem=Math.round((tot-paid)*100)/100;
+    var stColor= b.status==="paid"?"var(--g2)":(b.status==="partial"?"var(--amb)":"var(--mut)");
+    var stText= b.status==="paid"?"✓ ครบแล้ว":(b.status==="partial"?"◑ จ่ายบางส่วน":"● ยังไม่จ่าย");
+    var od=daysBetween(b.bill_date);
+    var pays=(b.rev_credit_payments||[]).slice().sort(function(x,y){return String(x.pay_date).localeCompare(String(y.pay_date));});
+    var payHtml=pays.length? pays.map(function(p){
+      return '<div class="muted" style="padding:2px 0">• '+beDate(p.pay_date)+' — '+fmt(p.amount)+' ('+esc(p.method||"")+")"+
+        (p.billing_note_no?' · ใบวางบิล '+esc(p.billing_note_no):"")+(p.ref?" · "+esc(p.ref):"")+(p.batch_ref?' <span class="chip info" style="font-size:10px">'+esc(p.batch_ref)+'</span>':"")+(p.confirmed_by?" · "+esc(p.confirmed_by):"")+
+        ' <a href="#" onclick="return delPayment(\''+p.id+'\')" style="color:var(--red);text-decoration:none">✕</a></div>';
+    }).join(""):'<div class="muted">ยังไม่มีการจ่าย</div>';
+    out+='<tr>'+
+      '<td>'+(rem>0.01?'<input type="checkbox" class="billchk" data-id="'+b.id+'" onclick="toggleSel(this)" data-cust="'+esc(b.customer||"")+'" data-key="'+esc(g.key)+'" data-rem="'+rem+'" data-date="'+esc(b.bill_date||"")+'" data-no="'+esc(b.bill_no||"")+'">':"")+'</td>'+
+      '<td>'+beDate(b.bill_date)+'</td>'+
+      '<td>'+esc(b.bill_no||"—")+(b.source==="auto-form"?' <span class="chip info" style="font-size:10px">ดูดจากฟอร์ม</span>':"")+'</td>'+
+      '<td class="n">'+fmt(tot)+'</td>'+
+      '<td class="n" style="color:var(--g2)">'+fmt(paid)+'</td>'+
+      '<td class="n" style="font-weight:700;color:'+(rem>0.01?"var(--red)":"var(--g2)")+'">'+fmt(rem)+'</td>'+
+      '<td style="color:'+stColor+';font-size:12.5px">'+stText+(rem>0.01&&od?'<br><span class="muted">ค้าง '+od+' วัน</span>':"")+'</td>'+
+      '<td style="white-space:nowrap">'+
+        (rem>0.01?'<button class="btn sm" onclick="payBill(\''+b.id+'\')">+ จ่าย</button> ':"")+
+        '<button class="btn sm ghost" onclick="togglePays(\''+b.id+'\')">การจ่าย ▾</button>'+
+        '<div id="cp_'+b.id+'" class="hide" style="margin-top:6px">'+payHtml+'</div>'+
+      '</td>'+
+    '</tr>';
+  });
+  out+='</tbody></table>';
+  return out;
+}
+
+window.toggleCust=function(key){ OPEN[key]=!OPEN[key]; renderRegister(); restoreChecks(); };
+window.togglePays=function(id){ var d=document.getElementById("cp_"+id); if(d) d.classList.toggle("hide"); };
+
+/* ---------- เลือกหลายบิล (ลูกค้าเดียวกัน) ---------- */
+window.toggleSel=function(cb){
+  var id=cb.getAttribute("data-id");
+  var o={ id:id, cust:cb.getAttribute("data-cust")||"", key:cb.getAttribute("data-key")||"", rem:num(cb.getAttribute("data-rem")), date:cb.getAttribute("data-date")||"", no:cb.getAttribute("data-no")||"" };
+  if(cb.checked){
+    var keys=Object.keys(SEL);
+    if(keys.length && SEL[keys[0]].key!==o.key){
+      alert("ใบวางบิลเลือกได้เฉพาะลูกค้าเดียวกัน\nถ้าจะเปลี่ยนลูกค้า ให้กด “ล้างการเลือก” ก่อน");
+      cb.checked=false; return;
+    }
+    SEL[id]=o;
+  } else { delete SEL[id]; }
+  renderSelBar();
+};
+function restoreChecks(){ var chks=document.querySelectorAll(".billchk"); for(var i=0;i<chks.length;i++){ var id=chks[i].getAttribute("data-id"); chks[i].checked=!!SEL[id]; } }
+window.clearSel=function(){ SEL={}; var chks=document.querySelectorAll(".billchk"); for(var i=0;i<chks.length;i++) chks[i].checked=false; renderSelBar(); };
+function renderSelBar(){
+  var bar=document.getElementById("selbar"); if(!bar) return;
+  var ids=Object.keys(SEL);
+  if(!ids.length){ bar.classList.add("hide"); bar.innerHTML=""; return; }
+  var tot=ids.reduce(function(s,id){return s+num(SEL[id].rem);},0);
+  var cust=SEL[ids[0]].cust;
+  bar.classList.remove("hide");
+  bar.innerHTML='<span style="font-weight:700">🧾 เลือก '+ids.length+' บิล · '+esc(cust)+' · รวมคงเหลือ '+fmt(tot)+' บาท</span>'+
+    '<button class="btn" style="margin-left:auto" onclick="payCombined()">💰 รับชำระรวม (บิลเก่าก่อน)</button>'+
+    '<button class="btn ghost" onclick="clearSel()">ล้างการเลือก</button>';
+}
+
+/* ---------- รับชำระรวม FIFO + batch ref + เลขที่ใบวางบิล ---------- */
+window.payCombined=async function(){
+  var ids=Object.keys(SEL); if(!ids.length) return;
+  var items=ids.map(function(id){return SEL[id];});
+  items.sort(function(a,b){ return String(a.date).localeCompare(String(b.date)) || String(a.no).localeCompare(String(b.no)); });
+  var totRem=Math.round(items.reduce(function(s,o){return s+num(o.rem);},0)*100)/100;
+  var cust=items[0].cust;
+  var amtS=prompt("รับชำระรวม — "+cust+"\n"+items.length+" บิล · คงเหลือรวม "+fmt(totRem)+" บาท\nใส่ยอดที่รับครั้งนี้ (จัดสรรบิลเก่าก่อน):", String(totRem));
+  if(amtS===null) return;
+  var pay=num(amtS); if(pay<=0){ alert("ยอดไม่ถูกต้อง"); return; }
+  if(pay>totRem+0.01){ if(!confirm("ยอดที่รับ ("+fmt(pay)+") มากกว่าคงเหลือรวม ("+fmt(totRem)+")\nจะบันทึกเท่าคงเหลือรวมแทน ต่อไหม?")) return; pay=totRem; }
+  var mS=prompt("ช่องทางจ่าย ("+METHODS.map(function(m,i){return (i+1)+"="+m;}).join("  ")+"):","1"); if(mS===null) return;
+  var method=METHODS[parseInt(mS,10)-1]||METHODS[0];
+  var pdate=prompt("วันที่รับชำระ (YYYY-MM-DD):", todayISO()); if(pdate===null) return;
+  var noteNo=prompt("เลขที่ใบวางบิล (จากโปรแกรมบัญชี — เว้นว่างได้):","")||"";
+  var ref=prompt("อ้างอิง/หมายเหตุ (เช่น เลขที่โอน — เว้นว่างได้):","")||"";
+  var by=prompt("ผู้รับเงิน/ยืนยัน:","")||"";
+  var batch=newBatchRef();
+  var leftover=pay, payments=[];
+  for(var i=0;i<items.length;i++){
+    if(leftover<=0.005) break;
+    var give=Math.round(Math.min(num(items[i].rem), leftover)*100)/100;
+    if(give>0.005){ payments.push({ bill_id:items[i].id, pay_date:pdate||todayISO(), amount:give, method:method, ref:(ref.trim()||null), billing_note_no:(noteNo.trim()||null), batch_ref:batch, confirmed_by:(by.trim()||null) }); leftover=Math.round((leftover-give)*100)/100; }
+  }
+  if(!payments.length){ alert("ไม่มีบิลให้ลงชำระ"); return; }
+  var ins=await sb.from("rev_credit_payments").insert(payments);
+  if(ins.error){ alert("บันทึกรับชำระไม่สำเร็จ: "+ins.error.message); return; }
+  for(var j=0;j<payments.length;j++){ await recomputeBill(payments[j].bill_id); }
+  SEL={};
+  alert("รับชำระรวม "+payments.length+" บิล · "+fmt(pay)+" บาท เรียบร้อย\nรหัสชุด "+batch+(leftover>0.005?"\n(เหลือเงินทอน/ยังไม่จัดสรร "+fmt(leftover)+")":""));
+  loadRegister();
+};
+
+/* ---------- จ่ายบิลเดียว ---------- */
+window.payBill=async function(id){
+  var r=await sb.from("rev_credit_bills").select("*").eq("id",id).single();
+  if(r.error){ alert("โหลดบิลไม่ได้"); return; }
+  var b=r.data, rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100;
+  var amtS=prompt("บันทึกการจ่าย — บิล "+(b.bill_no||b.customer)+"\nคงเหลือ "+fmt(rem)+" บาท\nใส่ยอดที่จ่ายครั้งนี้:", String(rem));
+  if(amtS===null) return;
+  var amt=num(amtS); if(amt<=0){ alert("ยอดไม่ถูกต้อง"); return; }
+  var mS=prompt("ช่องทางจ่าย ("+METHODS.map(function(m,i){return (i+1)+"="+m;}).join("  ")+"):","1"); if(mS===null) return;
+  var method=METHODS[parseInt(mS,10)-1]||METHODS[0];
+  var pdate=prompt("วันที่รับชำระ (YYYY-MM-DD):", todayISO()); if(pdate===null) return;
+  var noteNo=prompt("เลขที่ใบวางบิล (จากโปรแกรมบัญชี — เว้นว่างได้):","")||"";
+  var ref=prompt("อ้างอิง/หมายเหตุ (เว้นว่างได้):","")||"";
+  var by=prompt("ผู้รับเงิน/ยืนยัน:","")||"";
+  var pi=await sb.from("rev_credit_payments").insert({
+    bill_id:id, pay_date:pdate||todayISO(), amount:amt, method:method, ref:ref.trim()||null, billing_note_no:noteNo.trim()||null, confirmed_by:by.trim()||null
+  });
+  if(pi.error){ alert("บันทึกการจ่ายไม่ได้: "+pi.error.message); return; }
+  await recomputeBill(id);
+  loadRegister();
+};
+
+window.delPayment=async function(pid){
+  if(!confirm("ลบรายการจ่ายนี้?")) return false;
+  var p=await sb.from("rev_credit_payments").select("bill_id").eq("id",pid).single();
+  var bid=p.data&&p.data.bill_id;
+  var d=await sb.from("rev_credit_payments").delete().eq("id",pid);
+  if(d.error){ alert("ลบไม่ได้: "+d.error.message); return false; }
+  if(bid) await recomputeBill(bid);
+  loadRegister();
+  return false;
+};
+
+async function recomputeBill(id){
+  var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
+  var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
+  var b=await sb.from("rev_credit_bills").select("total_amount").eq("id",id).single();
+  var tot=num(b.data&&b.data.total_amount);
+  var status= paid>=tot-0.01 ? "paid" : (paid>0.01?"partial":"open");
+  await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100, status:status}).eq("id",id);
+}
+
+/* ---------- เพิ่มบิลเอง ---------- */
+window.addBillManual=async function(){
+  var bill=document.getElementById("cb_bill").value.trim();
+  var cust=document.getElementById("cb_cust").value.trim();
+  var code=document.getElementById("cb_code").value.trim();
+  var amt=num(document.getElementById("cb_amt").value);
+  var date=document.getElementById("cb_date").value||todayISO();
+  if(!cust){ alert("ใส่ชื่อลูกค้า"); return; }
+  if(amt<=0){ alert("ใส่ยอดบิล"); return; }
+  var by=prompt("บันทึกบิลลงบัญชี — ผู้บันทึก:","");
+  if(by===null) return;
+  var r=await sb.from("rev_credit_bills").insert({
+    source_key:null, bill_no:bill||null, customer:cust, customer_code:code||null, bill_date:date,
+    total_amount:amt, paid_amount:0, status:"open", source:"manual", created_by:(by||"").trim()
+  });
+  if(r.error){ alert("บันทึกไม่ได้: "+r.error.message); return; }
+  document.getElementById("cb_bill").value=""; document.getElementById("cb_cust").value=""; document.getElementById("cb_code").value=""; document.getElementById("cb_amt").value="";
+  loadRegister();
+};
+
+/* ---------- boot ---------- */
+function boot(){
+  document.getElementById("cb_date").value=todayISO();
+  loadRegister();
+}
+</script>
+</body>
+</html>

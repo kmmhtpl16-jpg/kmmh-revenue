@@ -105,21 +105,18 @@
     card.className="card"; card.id="creditcard";
     card.innerHTML=[
       '<h2>📒 บิลลงบัญชี (ลูกหนี้ค้างชำระ) <span class="badge info" id="creditcount">…</span></h2>',
-      '<div class="muted" style="margin-bottom:10px">การ์ดนี้แสดง<b>เฉพาะบิลลงบัญชีของวันที่เลือก</b> (อ่านอย่างเดียว) · จัดการ/รับชำระที่หน้าทะเบียนเต็ม · ดูดอัตโนมัติจากชีต “ลงบัญชี” เมื่ออัปไฟล์ฟอร์ม</div>',
-      '<div class="rowflex" style="align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">',
-        '<label class="muted" style="font-size:13px">ดูบิลลงบัญชีของวันที่:</label>',
-        '<input class="rsn" id="cb_viewdate" type="date" style="max-width:160px">',
-        '<a class="btn" href="'+REGISTER_URL+'" style="margin-left:auto;text-decoration:none">📒 เปิดทะเบียนลูกหนี้เต็ม (จัดกลุ่มลูกค้า/รับชำระ) →</a>',
+      '<div class="rowflex" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
+        '<span class="muted" style="font-size:13px" id="cb_daylabel">📅 บิลลงบัญชีของวันที่เปิดดู</span>',
+        '<a class="btn" href="'+REGISTER_URL+'" style="margin-left:auto;text-decoration:none">📒 เปิดทะเบียนลูกหนี้เต็ม (จัดกลุ่ม/รับชำระ/เลือกวัน) →</a>',
       '</div>',
+      '<div class="muted" style="margin-bottom:8px;font-size:12px">แสดงเฉพาะบิลลงบัญชีของ<b>วันที่กำลังเปิดดูด้านบน</b> (อ่านอย่างเดียว) · เลือกวันอื่น/จัดการ/รับชำระ ที่ทะเบียนลูกหนี้เต็ม · ดูดอัตโนมัติจากชีต “ลงบัญชี” เมื่ออัปไฟล์ฟอร์ม</div>',
       '<div id="creditmsg" class="muted" style="margin-bottom:8px"></div>',
       '<div id="creditlist" class="muted">กำลังโหลด…</div>'
     ].join("");
     var dep=document.getElementById("depcard");
     if(dep && dep.parentNode){ dep.parentNode.insertBefore(card, dep); }
     else { var out=document.getElementById("out"); (out&&out.parentNode?out.parentNode:document.body).appendChild(card); }
-    var vd=document.getElementById("cb_viewdate");
-    vd.value=(window._openDay||todayISO());
-    vd.addEventListener("change", loadCreditBills);
+    // การ์ดนี้ตามวันที่เปิดดู (window._openDay/_creditDay) อัตโนมัติ — ไม่มีช่องเลือกวันแล้ว
   }
 
   window.loadCreditBills = async function(){
@@ -128,8 +125,8 @@
     if(!list) return;
     if(!sbReady()){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; return; }
     list.textContent="กำลังโหลด…";
-    var vd=document.getElementById("cb_viewdate");
-    var viewDate=(vd&&vd.value)||todayISO();
+    var viewDate=(window._creditDay||window._openDay||todayISO());
+    var lbl=document.getElementById("cb_daylabel"); if(lbl) lbl.innerHTML='📅 บิลลงบัญชีของวันที่ <b>'+beDate(viewDate)+'</b>';
     // ยอดลูกหนี้ค้างรวม (ทุกวัน) → badge
     var allR=await sb.from("rev_credit_bills").select("total_amount,paid_amount,status").neq("status","paid");
     if(cnt){
@@ -210,7 +207,7 @@
       var r=await sb.from("rev_credit_bills").upsert(payload,{onConflict:"source_key",ignoreDuplicates:true});
       if(r.error){ if(msg){ msg.innerHTML='<span style="color:#b91c1c">ดูดบิลลงบัญชีไม่สำเร็จ: '+esc(r.error.message)+"</span>"; } return; }
       // เลื่อนวันที่การ์ดไปยังวันของฟอร์มที่เพิ่งอัป เพื่อให้เห็นบิลที่ดูดเข้ามา
-      if(parsed.date){ var vd=document.getElementById("cb_viewdate"); if(vd) vd.value=parsed.date; }
+      if(parsed.date){ window._creditDay=parsed.date; }
       if(msg) msg.innerHTML='<span style="color:#15803d">✓ ดูดบิลลงบัญชีจากฟอร์ม '+parsed.entries.length+' รายการ ('+beDate(parsed.date)+') เข้าทะเบียนแล้ว · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็ม →</a></span>';
       loadCreditBills();
     }catch(err){ var m=document.getElementById("creditmsg"); if(m) m.innerHTML='<span style="color:#b91c1c">อ่านไฟล์ฟอร์มไม่ได้: '+esc(err.message)+"</span>"; }
@@ -228,10 +225,18 @@
   }
 
   /* ---------- init ---------- */
+  function wrapShowDay(){
+    if(typeof window.showDayDetail==="function" && !window.showDayDetail.__creditWrapped){
+      var _orig=window.showDayDetail;
+      window.showDayDetail=function(d){ if(d) window._creditDay=d; var res=_orig.apply(this,arguments); try{ if(window.loadCreditBills) loadCreditBills(); }catch(e){} return res; };
+      window.showDayDetail.__creditWrapped=true;
+    }
+  }
   function init(){
     injectMonthSel();
     injectCreditCard();
     hookFormInput();
+    wrapShowDay();
     if(typeof loadMonthStatus==="function") loadMonthStatus();
     loadCreditBills();
   }

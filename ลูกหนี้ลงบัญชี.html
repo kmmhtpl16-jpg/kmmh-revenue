@@ -96,6 +96,19 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
   </div>
 
+  <!-- ดูบิลลงบัญชีรายวัน -->
+  <div class="card" id="dayCard">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h3 style="margin:0">📅 ดูบิลลงบัญชีรายวัน</h3>
+      <div class="row">
+        <label>วันที่:</label>
+        <input id="dayPick" type="date" style="max-width:160px" onchange="renderDayView()">
+        <button class="btn ghost sm" onclick="clearDayView()">ล้าง</button>
+      </div>
+    </div>
+    <div id="dayView" class="muted" style="margin-top:8px">เลือกวันที่เพื่อดูบิลลงบัญชีที่ลงในวันนั้น (แสดงทุกบิลของวันนั้น รวมที่จ่ายครบแล้ว)</div>
+  </div>
+
   <!-- ทะเบียน -->
   <div class="card">
     <h3>รายชื่อลูกหนี้ (กดที่ลูกค้าเพื่อกางดูบิล)</h3>
@@ -379,6 +392,29 @@ function applyGating(){
   document.querySelectorAll(".r-fin").forEach(function(e){e.classList.toggle("gated",!showFin);});
   document.querySelectorAll(".r-owner").forEach(function(e){e.classList.toggle("gated",!showOwner);});
 }
+/* ---------- ดูบิลลงบัญชีรายวัน (ตามวันที่เลือก) ---------- */
+window.renderDayView=async function(){
+  var dv=document.getElementById("dayView"); if(!dv) return;
+  var d=(document.getElementById("dayPick")||{}).value;
+  if(!d){ dv.innerHTML="เลือกวันที่เพื่อดูบิลลงบัญชีที่ลงในวันนั้น (แสดงทุกบิลของวันนั้น รวมที่จ่ายครบแล้ว)"; return; }
+  if(!sbReady()){ dv.innerHTML='<span style="color:var(--red)">เชื่อม Supabase ไม่ได้</span>'; return; }
+  dv.textContent="กำลังโหลด…";
+  var r=await sb.from("rev_credit_bills").select("*").eq("bill_date",d).order("bill_no",{ascending:true});
+  if(r.error){ dv.innerHTML='<span style="color:var(--red)">โหลดไม่ได้: '+esc(r.error.message)+"</span>"; return; }
+  var data=r.data||[];
+  if(!data.length){ dv.innerHTML='<div class="muted">ไม่มีบิลลงบัญชีของวันที่ '+beDate(d)+"</div>"; return; }
+  var tot=data.reduce(function(s2,b){return s2+num(b.total_amount);},0);
+  var remT=data.reduce(function(s2,b){return s2+(num(b.total_amount)-num(b.paid_amount));},0);
+  var rows=data.map(function(b){
+    var t=num(b.total_amount),pd=num(b.paid_amount),rem=t-pd;
+    var st=b.status==="paid"?"✓ ครบแล้ว":(b.status==="partial"?"◑ จ่ายบางส่วน":"● ยังไม่จ่าย");
+    var sc=b.status==="paid"?"var(--g2)":(b.status==="partial"?"var(--amb)":"var(--mut)");
+    return '<tr><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer)+(b.customer_code?' <span class="chip info">'+esc(b.customer_code)+"</span>":"")+(b.source==="auto-form"?' <span class="chip info">ดูดจากฟอร์ม</span>':"")+'</td><td class="n">'+fmt(t)+'</td><td class="n" style="color:var(--g2)">'+fmt(pd)+'</td><td class="n" style="font-weight:700;color:'+(rem>0.01?"var(--red)":"var(--g2)")+'">'+fmt(rem)+'</td><td style="color:'+sc+';font-size:12.5px">'+st+"</td></tr>";
+  }).join("");
+  dv.innerHTML='<table><thead><tr><th>เลขบิล</th><th>ลูกค้า</th><th class="n">ยอดบิล</th><th class="n">จ่ายแล้ว</th><th class="n">คงเหลือ</th><th>สถานะ</th></tr></thead><tbody>'+rows+'<tr style="font-weight:800;background:#f0fdf4"><td colspan="2">รวมวันที่ '+beDate(d)+" ("+data.length+' บิล)</td><td class="n">'+fmt(tot)+'</td><td></td><td class="n" style="color:var(--red)">'+fmt(remT)+"</td><td></td></tr></tbody></table>";
+};
+window.clearDayView=function(){ var dp=document.getElementById("dayPick"); if(dp) dp.value=""; renderDayView(); };
+
 /* ---------- boot ---------- */
 function boot(){
   document.getElementById("cb_date").value=todayISO();

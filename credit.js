@@ -161,6 +161,35 @@
       '</tbody></table>';
   };
 
+  /* ---------- จับคู่เลขบิลจากไฟล์เครื่อง (DATA.pos ที่ index.html แพร์สไว้) ---------- */
+  var _lastFormDate=null;
+  function matchBillNo(cust, amt){
+    try{
+      var P=window.DATA && window.DATA.pos; if(!P || !P.billCust || !P.billTotal) return null;
+      var bc=P.billCust, bt=P.billTotal, nn=normName(cust); if(!nn) return null;
+      var cand=[]; for(var b in bt){ if(Math.abs(num(bt[b])-num(amt))<=1){ var bn=normName(bc[b]||""); if(bn && (nn.indexOf(bn)>=0 || bn.indexOf(nn)>=0)) cand.push(b); } }
+      if(cand.length){ cand.sort(); return cand[0]; }
+      // fallback: ยอดตรงและมีบิลเดียวในไฟล์เครื่องที่ยอดนี้ (ปลอดภัยเพราะยูนีค)
+      var only=[]; for(var b2 in bt){ if(Math.abs(num(bt[b2])-num(amt))<=1) only.push(b2); }
+      if(only.length===1) return only[0];
+      return null;
+    }catch(e){ return null; }
+  }
+  // เติมเลขบิลให้บิลลงบัญชี (สมาชิก) ที่ยังว่างของวันนั้น โดยจับคู่กับไฟล์เครื่องที่โหลดอยู่
+  window.__creditFillBills=async function(dateISO){
+    try{
+      if(!sbReady() || !window.DATA || !window.DATA.pos || !window.DATA.pos.billTotal || !dateISO) return 0;
+      var r=await sb.from("rev_credit_bills").select("id,customer,total_amount").eq("bill_date",dateISO).is("bill_no",null).eq("source","auto-form");
+      var rows=(r.data||[]), n=0;
+      for(var i=0;i<rows.length;i++){
+        var bn=matchBillNo(rows[i].customer, rows[i].total_amount);
+        if(bn){ var u=await sb.from("rev_credit_bills").update({bill_no:bn}).eq("id",rows[i].id); if(!u.error) n++; }
+      }
+      if(n>0) loadCreditBills();
+      return n;
+    }catch(e){ return 0; }
+  };
+
   /* ---------- ดูดบิลลงบัญชีอัตโนมัติจากไฟล์ฟอร์ม ---------- */
   function parseCreditSheet(wb){
     var X=window.XLSX; if(!X) return {date:null, entries:[]};
@@ -207,8 +236,9 @@
       var r=await sb.from("rev_credit_bills").upsert(payload,{onConflict:"source_key",ignoreDuplicates:true});
       if(r.error){ if(msg){ msg.innerHTML='<span style="color:#b91c1c">ดูดบิลลงบัญชีไม่สำเร็จ: '+esc(r.error.message)+"</span>"; } return; }
       // เลื่อนวันที่การ์ดไปยังวันของฟอร์มที่เพิ่งอัป เพื่อให้เห็นบิลที่ดูดเข้ามา
-      if(parsed.date){ window._creditDay=parsed.date; }
-      if(msg) msg.innerHTML='<span style="color:#15803d">✓ ดูดบิลลงบัญชีจากฟอร์ม '+parsed.entries.length+' รายการ ('+beDate(parsed.date)+') เข้าทะเบียนแล้ว · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็ม →</a></span>';
+      if(parsed.date){ window._creditDay=parsed.date; _lastFormDate=parsed.date; }
+      var nfill=await window.__creditFillBills(parsed.date);
+      if(msg) msg.innerHTML='<span style="color:#15803d">✓ ดูดบิลลงบัญชีจากฟอร์ม '+parsed.entries.length+' รายการ ('+beDate(parsed.date)+') เข้าทะเบียนแล้ว'+(nfill>0?' · จับคู่เลขบิลจากไฟล์เครื่อง '+nfill+' รายการ':(window.DATA&&window.DATA.pos?'':' · (อัปไฟล์เครื่องด้วยเพื่อจับเลขบิล)'))+' · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็ม →</a></span>';
       loadCreditBills();
     }catch(err){ var m=document.getElementById("creditmsg"); if(m) m.innerHTML='<span style="color:#b91c1c">อ่านไฟล์ฟอร์มไม่ได้: '+esc(err.message)+"</span>"; }
   };
@@ -220,6 +250,16 @@
       fi.addEventListener("change", function(e){
         var f=e.target.files && e.target.files[0];
         if(f) setTimeout(function(){ window.__creditAutoPull(f); }, 300);
+      });
+    }
+  }
+  function hookPosInput(){
+    var fp=document.getElementById("f_pos");
+    if(fp && !fp.__creditPosHooked){
+      fp.__creditPosHooked=true;
+      fp.addEventListener("change", function(e){
+        var f=e.target.files && e.target.files[0];
+        if(f) setTimeout(function(){ var d=_lastFormDate||window._creditDay; if(d) window.__creditFillBills(d); }, 900);
       });
     }
   }
@@ -236,6 +276,7 @@
     injectMonthSel();
     injectCreditCard();
     hookFormInput();
+    hookPosInput();
     wrapShowDay();
     if(typeof loadMonthStatus==="function") loadMonthStatus();
     loadCreditBills();

@@ -190,6 +190,73 @@
     }catch(e){ return 0; }
   };
 
+  /* ---------- ตัดหนี้เก่า: อ่านชีต "บิลเก่า" (เงินสด+โอน) จับคู่ลูกหนี้ค้าง แล้วยืนยันก่อนตัด ---------- */
+  function parseOldBills(wb){
+    var X=window.XLSX; if(!X) return [];
+    var sn=wb.SheetNames.filter(function(n){return String(n).replace(/\s/g,"")==="บิลเก่า";})[0];
+    if(!sn) return [];
+    var rows=X.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
+    var entries=[], method=null;
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i]||[];
+      var c0=(r[0]!=null?String(r[0]).trim():""), c1=(r[1]!=null?String(r[1]).trim():""), c4=(r[4]!=null?String(r[4]).trim():"");
+      if(c0==="เงินสด"){ method="เงินสด"; continue; }
+      if(c0==="โอนเข้าบัญชี"){ method="โอนกสิกร"; continue; }
+      if(c0==="ลำดับ"||c0==="บิลเก่า"){ continue; }
+      if(!method) continue;
+      if(c1 && c1!=="ยอดรวม" && /^KM/i.test(c1) && num(r[2])>0) entries.push({bill_no:c1, amount:num(r[2]), method:method});
+      if(c4 && c4!=="ยอดรวม" && num(r[5])>0) entries.push({customer:c4, amount:num(r[5]), method:method});
+    }
+    return entries;
+  }
+  async function recomputeBillCredit(id){
+    var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
+    var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
+    var b=await sb.from("rev_credit_bills").select("total_amount").eq("id",id).single();
+    var tot=num(b.data&&b.data.total_amount);
+    var status= paid>=tot-0.01?"paid":(paid>0.01?"partial":"open");
+    await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100, status:status}).eq("id",id);
+  }
+  window.__creditOldBills=async function(wb, formDate){
+    try{
+      if(!sbReady()) return;
+      var entries=parseOldBills(wb); if(!entries.length) return;
+      var r=await sb.from("rev_credit_bills").select("id,bill_no,customer,total_amount,paid_amount,bill_date").neq("status","paid").order("bill_date",{ascending:true});
+      var bills=(r.data||[]).map(function(b){ b._paid=num(b.paid_amount); return b; });
+      var plan=[], unmatched=[];
+      entries.forEach(function(e){
+        var cand;
+        if(e.bill_no){ cand=bills.filter(function(b){ return String(b.bill_no||"").trim()===String(e.bill_no).trim(); }); }
+        else { var nn=normName(e.customer); cand=bills.filter(function(b){ var bn=normName(b.customer); return nn && bn && (nn.indexOf(bn)>=0||bn.indexOf(nn)>=0); }); }
+        var left=num(e.amount), allocs=[];
+        for(var i=0;i<cand.length && left>0.005;i++){
+          var rem=Math.round((num(cand[i].total_amount)-cand[i]._paid)*100)/100;
+          if(rem<=0.005) continue;
+          var give=Math.round(Math.min(rem,left)*100)/100;
+          allocs.push({bill:cand[i], give:give}); cand[i]._paid+=give; left=Math.round((left-give)*100)/100;
+        }
+        if(allocs.length) plan.push({e:e, allocs:allocs, leftover:left}); else unmatched.push(e);
+      });
+      var msg=document.getElementById("creditmsg");
+      if(!plan.length){ if(msg && entries.length) msg.innerHTML+='<div class="muted">ℹ️ พบจ่ายหนี้เก่าในฟอร์ม '+entries.length+' รายการ แต่ไม่พบลูกหนี้ในระบบ (อาจเป็นหนี้ก่อนเริ่มใช้ระบบ)</div>'; return; }
+      var lines=plan.map(function(p){
+        var who=p.e.customer||p.e.bill_no;
+        var bl=p.allocs.map(function(a){ return (a.bill.bill_no||("บิล "+beDate(a.bill.bill_date)))+" "+fmt(a.give); }).join(", ");
+        return "• "+who+" "+fmt(p.e.amount)+" ("+p.e.method+") -> ตัด "+bl+(p.leftover>0.005?(" (เหลือ "+fmt(p.leftover)+" ไม่พบบิล)"):"");
+      });
+      var confMsg="พบการจ่ายหนี้เก่าในชีต บิลเก่า "+plan.length+" รายการ จะตัดหนี้ในทะเบียนดังนี้:\n\n"+lines.join("\n")+(unmatched.length?("\n\n(ข้าม "+unmatched.length+" ราย: ไม่พบลูกหนี้ในระบบ)"):"")+"\n\nยืนยันตัดหนี้เลยไหม?";
+      if(!confirm(confMsg)){ if(msg) msg.innerHTML+='<div class="muted">— ยกเลิกการตัดหนี้เก่า</div>'; return; }
+      var batch="OB"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
+      var payments=[]; plan.forEach(function(p){ p.allocs.forEach(function(a){ payments.push({bill_id:a.bill.id, pay_date:formDate||todayISO(), amount:a.give, method:p.e.method, ref:"จ่ายหนี้เก่า (ชีตบิลเก่า)", batch_ref:batch, confirmed_by:"ระบบ-บิลเก่า"}); }); });
+      var ins=await sb.from("rev_credit_payments").insert(payments);
+      if(ins.error){ alert("บันทึกตัดหนี้ไม่สำเร็จ: "+ins.error.message); return; }
+      var ids={}; payments.forEach(function(p){ ids[p.bill_id]=1; });
+      for(var k in ids){ await recomputeBillCredit(k); }
+      if(msg) msg.innerHTML+='<div style="color:#15803d">✓ ตัดหนี้เก่าเรียบร้อย '+payments.length+' รายการ ('+fmt(payments.reduce(function(s,p){return s+p.amount;},0))+' บาท)</div>';
+      loadCreditBills();
+    }catch(err){ console.warn("oldbills",err); }
+  };
+
   /* ---------- ดูดบิลลงบัญชีอัตโนมัติจากไฟล์ฟอร์ม ---------- */
   function parseCreditSheet(wb, overrideDate){
     var X=window.XLSX; if(!X) return {date:null, entries:[]};
@@ -240,6 +307,7 @@
       var nfill=await window.__creditFillBills(parsed.date);
       if(msg) msg.innerHTML='<span style="color:#15803d">✓ ดูดบิลลงบัญชีจากฟอร์ม '+parsed.entries.length+' รายการ ('+beDate(parsed.date)+') เข้าทะเบียนแล้ว'+(nfill>0?' · จับคู่เลขบิลจากไฟล์เครื่อง '+nfill+' รายการ':(window.DATA&&window.DATA.pos?'':' · (อัปไฟล์เครื่องด้วยเพื่อจับเลขบิล)'))+' · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็ม →</a></span>';
       loadCreditBills();
+      try{ await window.__creditOldBills(wb, parsed.date); }catch(e){}
     }catch(err){ var m=document.getElementById("creditmsg"); if(m) m.innerHTML='<span style="color:#b91c1c">อ่านไฟล์ฟอร์มไม่ได้: '+esc(err.message)+"</span>"; }
   };
 

@@ -191,14 +191,14 @@
   };
 
   /* ---------- ดูดบิลลงบัญชีอัตโนมัติจากไฟล์ฟอร์ม ---------- */
-  function parseCreditSheet(wb){
+  function parseCreditSheet(wb, overrideDate){
     var X=window.XLSX; if(!X) return {date:null, entries:[]};
     var sn=wb.SheetNames.filter(function(n){return String(n).replace(/\s/g,"")==="ลงบัญชี";})[0];
     if(!sn) return {date:null, entries:[]};
     var ws=wb.Sheets[sn];
     var rows=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-    var dateISO=null;
-    if(rows[0]) dateISO=cellToISO(rows[0][5]);
+    var dateISO=overrideDate||null;   // ใช้วันที่จริงของฟอร์ม (DATA.form.date) เป็นหลัก กันลงวันผิด
+    if(!dateISO && rows[0]) dateISO=cellToISO(rows[0][5]);
     if(!dateISO){
       var ssn=wb.SheetNames.filter(function(n){return String(n).indexOf("สรุปรายรับ")>=0;})[0];
       if(ssn){ var sr=X.utils.sheet_to_json(wb.Sheets[ssn],{header:1,raw:true,defval:null}); if(sr[0]) dateISO=cellToISO(sr[0][3])||cellToISO(sr[0][1]); }
@@ -226,7 +226,7 @@
       if(!sbReady() || !window.XLSX) return;
       var buf=await file.arrayBuffer();
       var wb=XLSX.read(new Uint8Array(buf),{type:"array",cellDates:true});
-      var parsed=parseCreditSheet(wb);
+      var parsed=parseCreditSheet(wb, (window.DATA&&window.DATA.form&&window.DATA.form.date)||null);
       var msg=document.getElementById("creditmsg");
       if(!parsed.entries.length){ if(msg) msg.textContent=""; return; }
       var payload=parsed.entries.map(function(e){

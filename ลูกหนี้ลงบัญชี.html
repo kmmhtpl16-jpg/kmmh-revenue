@@ -253,6 +253,7 @@ function billsTable(g){
       '<td style="white-space:nowrap">'+
         (rem>0.01?'<button class="btn sm" onclick="payBill(\''+b.id+'\')">+ จ่าย</button> ':"")+
         '<button class="btn sm ghost" onclick="togglePays(\''+b.id+'\')">การจ่าย ▾</button>'+
+        ' <button class="btn sm red" title="ลบบิลนี้ (กรณีลงผิด)" onclick="delBill(\''+b.id+'\')">🗑</button>'+
         '<div id="cp_'+b.id+'" class="hide" style="margin-top:6px">'+payHtml+'</div>'+
       '</td>'+
     '</tr>';
@@ -347,6 +348,13 @@ window.payBill=async function(id){
   loadRegister();
 };
 
+window.delBill=async function(id){
+  if(!confirm('ลบบิลนี้ออกจากทะเบียนลูกหนี้? (ลบรายการจ่ายของบิลนี้ด้วย)\nใช้กรณีลงผิด/ลงวันผิด')) return;
+  try{ await sb.from('rev_credit_payments').delete().eq('bill_id',id); }catch(e){}
+  var d=await sb.from('rev_credit_bills').delete().eq('id',id);
+  if(d.error){ alert('ลบไม่ได้: '+d.error.message); return; }
+  loadRegister();
+};
 window.delPayment=async function(pid){
   if(!confirm("ลบรายการจ่ายนี้?")) return false;
   var p=await sb.from("rev_credit_payments").select("bill_id").eq("id",pid).single();

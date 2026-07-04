@@ -42,6 +42,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .gate input{font-size:22px;letter-spacing:6px;text-align:center;width:170px;margin:12px 0 4px}
 .gate .perr{color:var(--red);font-size:13px;min-height:18px}
 .hide{display:none!important}
+.gated{display:none!important}
 .custrow{cursor:pointer}
 .custrow:hover{background:#f0fdf4}
 .billsub{background:#fcfcfd}
@@ -71,11 +72,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 <div class="wrap">
   <nav>
+    <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a href="index.html">🧾 ตรวจรายได้</a>
-    <a href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
-    <a href="สารบัญ-รายได้.html">📇 สารบัญ</a>
-    <a href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
     <a class="on" href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
+    <a class="r-fin" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
+    <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
   </nav>
 
   <!-- สรุปยอด -->
@@ -127,6 +128,7 @@ function submitPin(){
   var r=PINMAP[v];
   if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง ลองใหม่"; el.value=""; el.focus(); return; }
   ROLE=r; document.getElementById("gate").style.display="none";
+  applyGating();
   boot();
 }
 
@@ -372,6 +374,11 @@ window.addBillManual=async function(){
   loadRegister();
 };
 
+function applyGating(){
+  var showFin=(ROLE==="finance"||ROLE==="owner"), showOwner=(ROLE==="owner");
+  document.querySelectorAll(".r-fin").forEach(function(e){e.classList.toggle("gated",!showFin);});
+  document.querySelectorAll(".r-owner").forEach(function(e){e.classList.toggle("gated",!showOwner);});
+}
 /* ---------- boot ---------- */
 function boot(){
   document.getElementById("cb_date").value=todayISO();

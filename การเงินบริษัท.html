@@ -46,6 +46,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .gate{position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99}
 .gate .box{background:#fff;padding:22px;border-radius:14px;width:280px;text-align:center}
 .hide{display:none!important}
+.gated{display:none!important}
 .scroll{overflow:auto;max-height:70vh}
 canvas{max-height:320px}
 .note{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;font-size:12.5px;color:#92400e;margin:6px 0}
@@ -60,7 +61,7 @@ canvas{max-height:320px}
   <div class="box">
     <div style="font-size:32px">🔐</div>
     <div style="font-weight:700;margin:6px 0">การเงินบริษัท</div>
-    <div class="muted" style="margin-bottom:10px">สำหรับเจ้าของ — ใส่รหัสผ่าน</div>
+    <div class="muted" style="margin-bottom:10px">สำหรับเจ้าของ/การเงิน — ใส่รหัสผ่าน</div>
     <input id="pin" type="password" inputmode="numeric" maxlength="8" style="width:100%;text-align:center" onkeydown="if(event.key==='Enter')doGate()">
     <button class="btn" style="width:100%;margin-top:10px" onclick="doGate()">เข้าใช้งาน</button>
     <div id="gerr" style="color:var(--red);font-size:12.5px;margin-top:6px"></div>
@@ -74,11 +75,11 @@ canvas{max-height:320px}
 </header>
 <div class="wrap">
   <nav>
+    <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a href="index.html">🧾 ตรวจรายได้</a>
-    <a href="Dashboard-สรุปรายได้.html">📊 Dashboard รายได้</a>
-    <a href="สารบัญ-รายได้.html">📇 สารบัญ</a>
-    <a class="on" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
     <a href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
+    <a class="on r-fin" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
+    <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
   </nav>
 
   <!-- ช่วงเวลา -->
@@ -96,10 +97,10 @@ canvas{max-height:320px}
 
   <div class="tabs">
     <button data-t="income" class="on" onclick="tab('income')">💰 รายรับรายวัน (สเตทเมนต์)</button>
-    <button data-t="expense" onclick="tab('expense')">🧾 รายจ่าย</button>
-    <button data-t="monthly" onclick="tab('monthly')">📅 สรุปรายจ่ายรายเดือน</button>
-    <button data-t="cash" onclick="tab('cash')">🔄 กระแสเงินสด</button>
-    <button data-t="gross" onclick="tab('gross')">📈 กำไรขั้นต้น</button>
+    <button data-t="expense" class="r-owner" onclick="tab('expense')">🧾 รายจ่าย</button>
+    <button data-t="monthly" class="r-owner" onclick="tab('monthly')">📅 สรุปรายจ่ายรายเดือน</button>
+    <button data-t="cash" class="r-owner" onclick="tab('cash')">🔄 กระแสเงินสด</button>
+    <button data-t="gross" class="r-owner" onclick="tab('gross')">📈 กำไรขั้นต้น</button>
   </div>
 
   <section id="p_income"></section>
@@ -116,6 +117,8 @@ const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 const LOGIN_FN_URL=SB_URL+"/functions/v1/login";
 const OWNER_PIN="0402";
+const ROLE_PINS={"0402":"owner","9989":"finance"};
+let ROLE=null;
 let sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY);}catch(e){console.warn("sb init",e);}
 
 const num=v=>(typeof v==="number")?v:(parseFloat(String(v==null?"":v).replace(/,/g,""))||0);
@@ -144,14 +147,25 @@ const catOptions=(sel)=>CATS.map(c=>`<option${c===sel?" selected":""}>${c}</opti
 /* ================= GATE ================= */
 async function doGate(){
   const v=document.getElementById("pin").value.trim();
-  if(v!==OWNER_PIN){ document.getElementById("gerr").textContent="รหัสไม่ถูกต้อง"; return; }
+  const role=ROLE_PINS[v];
+  if(!role){ document.getElementById("gerr").textContent="รหัสไม่ถูกต้อง"; return; }
+  ROLE=role;
   document.getElementById("gerr").textContent="กำลังเข้าสู่ระบบ…";
-  const ok=await ensureRevSession(v);
-  if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
+  if(role==="owner"){
+    const ok=await ensureRevSession(v);
+    if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
+  }
   sessionStorage.setItem("rev_dash_ok","1");
   document.getElementById("gate").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
+  applyGating();
   quick("m"); reloadAll();
+}
+function applyGating(){
+  const showOwner=(ROLE==="owner"), showFin=(ROLE==="finance"||ROLE==="owner");
+  document.querySelectorAll(".r-owner").forEach(e=>e.classList.toggle("gated",!showOwner));
+  document.querySelectorAll(".r-fin").forEach(e=>e.classList.toggle("gated",!showFin));
+  if(ROLE!=="owner" && typeof tab==="function") tab("income");
 }
 async function ensureRevSession(pin){
   if(!sb) return false;
@@ -186,7 +200,7 @@ async function reloadAll(){
     const [d,a,e]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
-      sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date")
+      (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[]; STATE.exp=e.data||[];
@@ -198,6 +212,7 @@ function renderAll(){ renderIncome(); renderExpense(); renderMonthly(); renderCa
 
 /* ================= TABS ================= */
 function tab(t){
+  if(ROLE && ROLE!=="owner" && t!=="income") t="income";
   ["income","expense","monthly","cash","gross"].forEach(x=>{
     document.getElementById("p_"+x).classList.toggle("hide",x!==t);
     document.querySelector('.tabs button[data-t="'+x+'"]').classList.toggle("on",x===t);

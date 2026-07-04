@@ -49,6 +49,9 @@
   .rowflex{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .kv{ display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #f5f5f4; font-size:14px; }
   .kv b{ font-variant-numeric:tabular-nums; }
+.topnav{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 16px}
+.topnav a{font-size:13px;text-decoration:none;color:#15803d;background:#fff;border:1px solid #e7e5e4;padding:6px 12px;border-radius:999px;font-weight:700}
+.topnav a.on{background:#16a34a;color:#fff;border-color:#16a34a}
 .gated{display:none!important}
 #pinGate{position:fixed;inset:0;background:#f5f5f4;z-index:9999;display:flex;align-items:center;justify-content:center}
 #pinGate .box{background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:30px 32px;max-width:340px;width:90%;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.10)}
@@ -69,7 +72,13 @@
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
   <div class="lead">อัปโหลดไฟล์ → โปรแกรมตรวจให้อัตโนมัติ · วันที่แสดงเป็น พ.ศ. · <b>v0.1</b></div>
-  <div class="r-owner" style="margin-bottom:14px"><a href="Dashboard-สรุปรายได้.html" style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1.5px solid #2563eb;border-radius:8px;padding:8px 14px;text-decoration:none;font-weight:700">📊 ไปหน้า Dashboard สรุป →</a></div>
+  <nav class="topnav">
+    <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
+    <a class="on" href="index.html">🧾 ตรวจรายได้</a>
+    <a href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
+    <a class="r-fin" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
+    <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
+  </nav>
 
   <div class="drops">
     <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">1. ไฟล์รายรับ (ฟอร์มพนักงาน)</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>

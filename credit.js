@@ -295,7 +295,7 @@
     if(!sn) return {date:null, entries:[]};
     var ws=wb.Sheets[sn];
     var rows=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-    var dateISO=overrideDate||null;   // ใช้วันที่จริงของฟอร์ม (DATA.form.date) เป็นหลัก กันลงวันผิด
+    var dateISO=overrideDate||null;   // ปกติส่ง null มา → อ่านวันที่จาก serial ในไฟล์ผ่าน SSF (ไม่เพี้ยน timezone)
     if(!dateISO && rows[0]) dateISO=cellToISO(rows[0][5]);
     if(!dateISO){
       var ssn=wb.SheetNames.filter(function(n){return String(n).indexOf("สรุปรายรับ")>=0;})[0];
@@ -323,8 +323,10 @@
     try{
       if(!sbReady() || !window.XLSX) return;
       var buf=await file.arrayBuffer();
-      var wb=XLSX.read(new Uint8Array(buf),{type:"array",cellDates:true});
-      var parsed=parseCreditSheet(wb, (window.DATA&&window.DATA.form&&window.DATA.form.date)||null);
+      // อ่านแบบ serial (ไม่ใช้ cellDates) เพื่อให้ cellToISO ใช้ SSF อ่านวันที่ตรงตามหน้า Excel ไม่เพี้ยน timezone
+      var wb=XLSX.read(new Uint8Array(buf),{type:"array"});
+      // ให้ parseCreditSheet อ่านวันที่จาก serial ในไฟล์เอง (แม่นกว่า DATA.form.date ที่แปลงผ่าน Date แล้วเพี้ยน)
+      var parsed=parseCreditSheet(wb, null);
       var msg=document.getElementById("creditmsg");
       if(!parsed.entries.length){ if(msg) msg.textContent=""; return; }
       var payload=parsed.entries.map(function(e){
@@ -359,7 +361,7 @@
       fp.addEventListener("change", function(e){
         var f=e.target.files && e.target.files[0]; if(!f) return;
         setTimeout(async function(){
-          try{ if(window.XLSX){ var buf=await f.arrayBuffer(); var wb=XLSX.read(new Uint8Array(buf),{type:"array",cellDates:true}); var pp=parsePosCredit(wb); if(pp) window._creditPos=pp; } }catch(err){ console.warn("creditPos parse",err); }
+          try{ if(window.XLSX){ var buf=await f.arrayBuffer(); var wb=XLSX.read(new Uint8Array(buf),{type:"array"}); var pp=parsePosCredit(wb); if(pp) window._creditPos=pp; } }catch(err){ console.warn("creditPos parse",err); }
           var d=_lastFormDate||window._creditDay||(window._creditPos&&window._creditPos.date);
           if(d) window.__creditFillBills(d);
         }, 200);

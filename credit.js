@@ -159,50 +159,57 @@
         '<tr class="tot"><td colspan="2">รวมบิลใหม่ '+data.length+' บิล</td><td style="text-align:right">'+fmt(dayTot)+'</td><td></td><td style="text-align:right;color:#b91c1c">'+fmt(dayRem)+'</td><td></td></tr>'+
         '</tbody></table>';
     }
-    // B) จ่ายหนี้ที่รับในวันนั้น (pay_date = วันนั้น) — ลูกหนี้เอาเงินมาจ่ายวันนี้
-    var pr=await sb.from("rev_credit_payments").select("amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",viewDate);
-    var pays=(pr.data||[]);
-    var htmlB="";
-    if(pays.length){
-      var pTot=0;
-      var prows=pays.map(function(p){
-        var bi=p.rev_credit_bills||{}; pTot+=num(p.amount);
-        return '<tr>'+
-          '<td>'+esc(bi.customer||"—")+'</td>'+
-          '<td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td>'+
-          '<td style="text-align:right;color:#15803d;font-weight:600">'+fmt(p.amount)+'</td>'+
-          '<td>'+esc(p.method||"")+'</td>'+
-          '<td style="font-size:11px;color:#64748b">'+esc(p.ref||"")+'</td>'+
-        '</tr>';
-      }).join("");
-      htmlB='<div style="margin-top:14px;font-weight:700;font-size:13px;color:#15803d">💵 จ่ายหนี้ที่รับวันนี้ ('+pays.length+' รายการ · '+fmt(pTot)+' บาท)</div>'+
-        '<table style="margin-top:4px"><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th></tr></thead><tbody>'+prows+'</tbody></table>';
-    }
-    if(!data.length && !pays.length){
-      list.innerHTML='<div class="muted">ไม่มีบิลลงบัญชี/การจ่ายหนี้ของวันที่ '+beDate(viewDate)+' · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็มเพื่อดูลูกหนี้ทั้งหมด →</a></div>';
+    if(!data.length){
+      list.innerHTML='<div class="muted">ไม่มีบิลลงบัญชีของวันที่ '+beDate(viewDate)+' · <a href="'+REGISTER_URL+'" style="color:#15803d">เปิดทะเบียนเต็มเพื่อดูลูกหนี้ทั้งหมด →</a></div>';
       return;
     }
-    list.innerHTML=(htmlA||'<div class="muted">— ไม่มีบิลลงบัญชีใหม่ของวันนี้ —</div>')+htmlB;
+    list.innerHTML=htmlA;
   };
 
-  /* ---------- จับคู่เลขบิลจากไฟล์เครื่อง (DATA.pos ที่ index.html แพร์สไว้) ---------- */
+  /* ---------- จับคู่เลขบิลจากไฟล์เครื่อง (credit.js อ่านเอง _creditPos, สำรอง DATA.pos ของ index) ---------- */
   var _lastFormDate=null;
+  // อ่านไฟล์เครื่อง (รายลูกค้า แบบมี "วันที่ขาย") เป็น billCust/billTotal เอง — ไม่ต้องพึ่งจังหวะ index.html
+  function parsePosCredit(wb){
+    try{
+      var X=window.XLSX; if(!X) return null;
+      var ws=wb.Sheets[wb.SheetNames[0]]; if(!ws) return null;
+      var R=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+      var isB=R.some(function(r){ return r && r.some(function(c){ return String(c==null?"":c).trim()==="วันที่ขาย"; }); });
+      if(!isB) return null;
+      var billCust={}, billTotal={}, last=null, dateISO=null, custRe=/^\d{2,4}-\d{5}$/;
+      for(var i=0;i<R.length;i++){ var r=R[i]||[];
+        var c0=String(r[0]==null?"":r[0]).trim(), c1=String(r[1]==null?"":r[1]).trim(), c2=String(r[2]==null?"":r[2]).trim();
+        if(custRe.test(c1) && !c0){ last=c2; }
+        else if(/^KM/i.test(c0)){ billTotal[c0]=(billTotal[c0]||0)+num(r[4]); billCust[c0]=last||""; if(!dateISO) dateISO=cellToISO(r[1]); }
+      }
+      return {billCust:billCust, billTotal:billTotal, date:dateISO};
+    }catch(e){ return null; }
+  }
+  function _machinePos(){
+    if(window._creditPos && window._creditPos.billTotal) return window._creditPos;
+    if(window.DATA && window.DATA.pos && window.DATA.pos.billTotal) return window.DATA.pos;
+    return null;
+  }
   function matchBillNo(cust, amt){
     try{
-      var P=window.DATA && window.DATA.pos; if(!P || !P.billCust || !P.billTotal) return null;
+      var P=_machinePos(); if(!P) return null;
       var bc=P.billCust, bt=P.billTotal, nn=normName(cust); if(!nn) return null;
+      // 1) ชื่อใกล้กัน + ยอดตรง(±1)
       var cand=[]; for(var b in bt){ if(Math.abs(num(bt[b])-num(amt))<=1){ var bn=normName(bc[b]||""); if(bn && (nn.indexOf(bn)>=0 || bn.indexOf(nn)>=0)) cand.push(b); } }
       if(cand.length){ cand.sort(); return cand[0]; }
-      // fallback: ยอดตรงและมีบิลเดียวในไฟล์เครื่องที่ยอดนี้ (ปลอดภัยเพราะยูนีค)
+      // 2) ยอดตรงและมีบิลเดียวในไฟล์เครื่องที่ยอดนี้
       var only=[]; for(var b2 in bt){ if(Math.abs(num(bt[b2])-num(amt))<=1) only.push(b2); }
       if(only.length===1) return only[0];
+      // 3) ชื่อลูกค้ามีบิลเดียวในไฟล์เครื่อง (ยอดต่างได้ เช่น หักมัดจำ) → ใช้บิลนั้น
+      var byName=[]; for(var b3 in bt){ var bn3=normName(bc[b3]||""); if(bn3 && (nn.indexOf(bn3)>=0 || bn3.indexOf(nn)>=0)) byName.push(b3); }
+      if(byName.length===1) return byName[0];
       return null;
     }catch(e){ return null; }
   }
   // เติมเลขบิลให้บิลลงบัญชี (สมาชิก) ที่ยังว่างของวันนั้น โดยจับคู่กับไฟล์เครื่องที่โหลดอยู่
   window.__creditFillBills=async function(dateISO){
     try{
-      if(!sbReady() || !window.DATA || !window.DATA.pos || !window.DATA.pos.billTotal || !dateISO) return 0;
+      if(!sbReady() || !dateISO || !_machinePos()) return 0;
       var r=await sb.from("rev_credit_bills").select("id,customer,total_amount").eq("bill_date",dateISO).is("bill_no",null).eq("source","auto-form");
       var rows=(r.data||[]), n=0;
       for(var i=0;i<rows.length;i++){
@@ -350,8 +357,12 @@
     if(fp && !fp.__creditPosHooked){
       fp.__creditPosHooked=true;
       fp.addEventListener("change", function(e){
-        var f=e.target.files && e.target.files[0];
-        if(f) setTimeout(function(){ var d=_lastFormDate||window._creditDay; if(d) window.__creditFillBills(d); }, 900);
+        var f=e.target.files && e.target.files[0]; if(!f) return;
+        setTimeout(async function(){
+          try{ if(window.XLSX){ var buf=await f.arrayBuffer(); var wb=XLSX.read(new Uint8Array(buf),{type:"array",cellDates:true}); var pp=parsePosCredit(wb); if(pp) window._creditPos=pp; } }catch(err){ console.warn("creditPos parse",err); }
+          var d=_lastFormDate||window._creditDay||(window._creditPos&&window._creditPos.date);
+          if(d) window.__creditFillBills(d);
+        }, 200);
       });
     }
   }

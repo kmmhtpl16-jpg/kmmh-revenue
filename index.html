@@ -633,7 +633,7 @@ function exRowHtml(e,edit){ e=e||{};
 function addCnRow(){ const tb=document.querySelector("#edcn tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=cnRowHtml({},true); tb.appendChild(t.firstChild); }
 function addExRow(){ const tb=document.querySelector("#edex tbody"); if(!tb) return; const t=document.createElement("tbody"); t.innerHTML=exRowHtml({},true); tb.appendChild(t.firstChild); }
 function figRow(label,val,fb){ return '<div class="kv"><span>'+label+'</span><b>'+(val!=null?TH(val):(fb||"—"))+'</b></div>'; }
-function renderItems(det, edit, _deps){ det=det||{};
+function renderItems(det, edit, _deps, _pays){ det=det||{};
   let h="";
   const f=det.files||{}; const fl=[]; if(f.form)fl.push("ฟอร์ม: "+esc(f.form)); if(f.pos)fl.push("เครื่อง: "+esc(f.pos)); if(f.kplus)fl.push("K+: "+esc(f.kplus)); if(f.bank)fl.push("ธนาคาร: "+esc(f.bank));
   if(fl.length) h+='<div class="muted" style="font-size:12.5px;margin:6px 0 10px">📎 ไฟล์ที่อัป: '+fl.join(" · ")+'</div>';
@@ -641,6 +641,10 @@ function renderItems(det, edit, _deps){ det=det||{};
   h+='<div style="font-weight:700;margin:6px 0 4px">📋 ใบลดหนี้ (CN)'+(edit?' — แก้ไขได้':'')+'</div>';
   h+='<table id="edcn"><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(cns.length?cns.map(c=>cnRowHtml(c,edit,_deps)).join(""):(edit?"":'<tr><td colspan="8" class="muted">ไม่มีใบลดหนี้</td></tr>'))+'</tbody></table>';
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
+  (function(){ var _pp=(!edit && _pays)?_pays:[]; if(_pp.length){ var _pt=0;
+    h+='<div style="font-weight:700;margin:14px 0 4px;color:#15803d">💰 จ่ายหนี้ (ลูกหนี้จ่ายคืนหนี้เก่า — รับเข้าวันนี้)</div>';
+    h+='<table><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th></tr></thead><tbody>'+_pp.map(function(pp){ var bi=pp.rev_credit_bills||{}; _pt+=num(pp.amount); return '<tr><td>'+esc(bi.customer||"—")+'</td><td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td><td class="num" style="color:#15803d;font-weight:600">'+TH(pp.amount)+'</td><td>'+esc(pp.method||"")+'</td><td style="font-size:11px;color:#64748b">'+esc(pp.ref||"")+'</td></tr>'; }).join("")+'<tr class="tot"><td colspan="2">รวมจ่ายหนี้</td><td class="num" style="color:#15803d">'+TH(_pt)+'</td><td colspan="2"></td></tr></tbody></table>';
+  } })();
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';
   h+='<table id="edex"><thead><tr><th>ประเภท</th><th>อ้างอิง</th><th>ยอด</th>'+(edit?'<th></th>':'')+'</tr></thead><tbody>'+(ex.length?ex.map(e=>exRowHtml(e,edit)).join(""):(edit?"":'<tr><td colspan="3" class="muted">ไม่มีรายการ</td></tr>'))+'</tbody></table>';
@@ -656,9 +660,10 @@ async function renderDay(date, edit){
   window._openDay = edit ? null : date;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
   const _dShift=function(iso,n){ const p=String(iso).slice(0,10).split("-"); const dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
-  const [a,d,pq,dp]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)) ]);
+  const [a,d,pq,dp,pyq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)), sb.from("rev_credit_payments").select("amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",date) ]);
   const au=a.data, da=d.data;
   const _deps=(dp&&dp.data)?dp.data:[];
+  const _pays=(pyq&&pyq.data)?pyq.data:[];
   const _otherAcct=((pq&&pq.data)?pq.data:[]).filter(function(x){return x.source==="รับเข้าบัญชีอื่น"||/บัญชีอื่น|เกินรายงาน|เกินสเตทเมนต์/.test(x.ref||"");}); const _otherAcctSum=Math.round(_otherAcct.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
   const _kIn=(au&&au.kplus_today!=null)||(da&&da.kplus_total!=null); const _bIn=(au&&au.bank_dep_today!=null)||(da&&da.bank_dep_total!=null); const _need=[]; if(!_kIn)_need.push("K+"); if(!_bIn)_need.push("สเตทเมนต์"); const _waitBadge=(au&&au.status!=="วันหยุด"&&_need.length&&!(au.detail&&au.detail.recon_ok===false))?(' <span style="float:right;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:999px;padding:2px 11px;font-size:12px;font-weight:700">⏳ รออัป'+_need.join("/")+'</span>'):'';
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+_waitBadge+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
@@ -688,7 +693,7 @@ async function renderDay(date, edit){
       html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🔁 คืนเงินลูกค้า '+_ref.length+' ราย — ลูกค้าโอนเข้า แล้วร้านโอนคืน (เช็กว่าถูกต้อง)</b>'+_ref.map(function(x){ var net=Math.round(((+x.d.dep||0)-(+x.w.wd||0))*100)/100; var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +x.d.dep, 'any'); return '<div style="border-top:1px solid #fecaca;margin-top:6px;padding-top:6px"><div><b>'+esc(x.wn)+'</b>'+(_mb?(' <span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):'')+'</div><div class="kv"><span>โอนเข้า '+TH(x.d.dep)+' → ร้านโอนคืน '+TH(x.w.wd)+'</span><b style="color:#15803d">สุทธิเข้าจริง '+TH(net)+'</b></div></div>';}).join('')+'<div class="muted" style="margin-top:6px">ℹ️ ยอดบิลยังเป็นรายได้ตามจริง · เงินคืนนี้คือลูกค้าโอนเกิน/มีมัดจำอยู่แล้ว ร้านจึงโอนคืนส่วนเกิน — อธิบายว่าทำไมยอดฝากเข้าบัญชีสุทธิน้อยกว่ายอดโอนเข้า</div></div>';
     })();
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
-    html+=renderItems(au.detail, edit, _deps);
+    html+=renderItems(au.detail, edit, _deps, _pays);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
     else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ</div><div style="text-align:right;margin-top:10px"><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
@@ -855,5 +860,5 @@ const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISO
 const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);
 loadDeposits(); loadPending(); loadMonthStatus();
 </script>
-<script src="credit.js?v=20260704h"></script></body>
+<script src="credit.js?v=20260704i"></script></body>
 </html>

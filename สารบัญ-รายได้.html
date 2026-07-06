@@ -100,9 +100,9 @@ function quick(kind){
   load();
 }
 
-function chip(a, hasDaily){
+function chip(a, hasDaily, dd){
   if(a && a.status==="วันหยุด") return '<span class="badge" style="background:#dbeafe;color:#1d4ed8">🏖️ วันหยุด</span>';
-  if(a){ const full=(a.kplus_today!=null)&&(a.bank_dep_today!=null); return full ? '<span class="badge">✓ ตรวจครบ</span>' : '<span class="badge" style="background:#fef3c7;color:#b45309">⚠ ยืนยันแต่ข้อมูลไม่ครบ</span>'; }
+  if(a){ const full=((a.kplus_today!=null)||(dd&&dd.kplus_total!=null))&&((a.bank_dep_today!=null)||(dd&&dd.bank_dep_total!=null)); return full ? '<span class="badge">✓ ตรวจครบ</span>' : '<span class="badge" style="background:#fef3c7;color:#b45309">⚠ ยืนยันแต่ข้อมูลไม่ครบ</span>'; }
   if(hasDaily) return '<span class="badge" style="background:#f1f5f9;color:#64748b">⏳ มีข้อมูลยังไม่ยืนยัน</span>';
   return '<span class="muted">—</span>';
 }
@@ -142,7 +142,7 @@ async function load(){
     const diff=(mn!=null&&fm!=null)?(mn-fm):null;
     if(x&&x.status==="ตรวจแล้ว"){ totMachine+=(mn||0); totForm+=(fm||0); }
     const diffHtml=(diff==null)?"—":(Math.abs(diff)<=1?'<span class="ok">'+TH(diff)+'</span>':'<span class="warn">'+TH(diff)+' 🚩</span>');
-    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily)+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+diffHtml+'</td></tr>';
+    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily,dMap[dt])+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+diffHtml+'</td></tr>';
   }).join("");
   document.getElementById("tbl").innerHTML=
     '<table><thead><tr><th>วันที่</th><th>สถานะ</th><th>ยอดขายเครื่อง</th><th>ยอดฟอร์ม</th><th>ส่วนต่าง</th></tr></thead><tbody>'+

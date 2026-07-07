@@ -383,7 +383,7 @@ function renderPay(rows,all){
   var overdue=validWait.filter(function(o){return o.billed && daysSince(o.bill_date||o.order_date)>20;});
   if(overdue.length) h+='<div class="note">⚠ <b>'+overdue.length+' ออเดอร์ออกบิล/ส่งแล้วเกิน 20 วัน แต่ Shopee ยังไม่จ่าย</b>:<br>'+overdue.map(function(o){return esc(o.order_no)+" ("+daysSince(o.bill_date||o.order_date)+" วัน)";}).join(" · ")+'</div>';
   else h+='<div class="okbox">✓ ไม่มีออเดอร์ค้างจ่ายเกิน 20 วัน</div>';
-  var list=src.filter(function(o){ if(hidePaid&&o.paid) return false; if(unbilled&&o.billed) return false; return true; }).sort(function(a,b){ if(!!a.paid!==!!b.paid) return a.paid?1:-1; return String(a.order_date||a.bill_date).localeCompare(String(b.order_date||b.bill_date)); });
+  var list=src.filter(function(o){ if(hidePaid&&o.paid) return false; if(unbilled&&o.billed) return false; return true; }).sort(function(a,b){ if(!!a.paid!==!!b.paid) return a.paid?1:-1; var da=String(a.order_date||a.bill_date),db=String(b.order_date||b.bill_date); if(da!==db) return db.localeCompare(da); return String(b.order_no).localeCompare(String(a.order_no)); });
   h+='<div style="overflow:auto"><table><thead><tr><th>ออเดอร์</th><th>วันสั่ง</th><th>สถานะส่ง</th><th>ออกบิล/สถานะ</th><th class="n">ยอดขาย</th><th class="n">สถานะเงิน</th></tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="6" class="muted">— ไม่มีรายการ —</td></tr>';
   list.forEach(function(o){ var d=daysSince(o.order_date||o.bill_date), ret=o.return_status;
@@ -412,7 +412,7 @@ function renderFee(rows){
     if(over.length) h+='<div class="note" style="margin-top:8px">⚠ <b>'+over.length+' ออเดอร์ถูกหักเกิน '+(expPct+tol)+'%</b> (SPayLater ปกติสูงกว่า): '+over.map(function(x){return esc(x.o.order_no)+" ("+x.pct.toFixed(1)+"%)";}).join(" · ")+'</div>';
     else h+='<div class="okbox" style="margin-top:8px">✓ ค่าธรรมเนียมอยู่ในเกณฑ์ปกติ</div>';
   } else h+='<div class="muted">ยังไม่มีออเดอร์ที่ได้รับเงิน — อัปไฟล์รายรับเพื่อดูค่าธรรมเนียมจริง (ที่ยังไม่รับเงินโชว์เป็นประมาณการ ~)</div>';
-  var list=rows.filter(function(o){ if(hidePaid&&o.paid) return false; if(unbilled&&o.billed) return false; return true; }).sort(function(a,b){ if(!!a.paid!==!!b.paid) return a.paid?1:-1; return String(a.order_date||a.bill_date).localeCompare(String(b.order_date||b.bill_date)); });
+  var list=rows.filter(function(o){ if(hidePaid&&o.paid) return false; if(unbilled&&o.billed) return false; return true; }).sort(function(a,b){ if(!!a.paid!==!!b.paid) return a.paid?1:-1; var da=String(a.order_date||a.bill_date),db=String(b.order_date||b.bill_date); if(da!==db) return db.localeCompare(da); return String(b.order_no).localeCompare(String(a.order_no)); });
   h+='<div style="overflow:auto;margin-top:10px"><table><thead><tr><th>ออเดอร์</th><th class="n">ยอดขาย</th><th class="n">ค่าธรรมเนียม %</th><th class="n">เป็นเงิน</th><th class="n">เงินได้รับจริง</th></tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="5" class="muted">— ไม่มีรายการ —</td></tr>';
   list.forEach(function(o){ var sale=num(o.sale_amount), isP=o.paid;

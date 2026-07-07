@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>โปรแกรม Shopee — กิจมั่งมีโฮม</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#ee4d2d">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--o:#ee4d2d;--o2:#c93a1e;--g:#16a34a;--g2:#15803d;--bg:#f6f7f9;--bd:#e5e7eb;--mut:#6b7280;--red:#dc2626;--amb:#d97706;--blu:#2563eb}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Sarabun",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:#111827;font-size:15px}
+.wrap{max-width:1180px;margin:0 auto;padding:12px}
+header{background:linear-gradient(135deg,var(--o),var(--o2));color:#fff;padding:14px 16px;border-radius:0 0 14px 14px}
+header h1{margin:0;font-size:19px}
+header .sub{opacity:.92;font-size:13px;margin-top:2px}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+nav a{font-size:13px;text-decoration:none;color:var(--g2);background:#fff;border:1px solid var(--bd);padding:5px 10px;border-radius:999px}
+nav a.on{background:var(--o);color:#fff;border-color:var(--o)}
+.card{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:15.5px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+label{font-size:13px;color:var(--mut)}
+input,select{font-family:inherit;font-size:14px;padding:7px 9px;border:1px solid var(--bd);border-radius:8px;background:#fff}
+.btn{font-family:inherit;font-size:14px;cursor:pointer;border:none;background:var(--o);color:#fff;padding:8px 14px;border-radius:9px;font-weight:600}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn.gray{background:#6b7280}.btn.blu{background:var(--blu)}.btn.green{background:var(--g)}
+.btn.ghost{background:#fff;color:var(--o2);border:1px solid var(--bd)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.drops{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.drop{display:block;border:2px dashed #f0b8a8;border-radius:12px;padding:16px;text-align:center;cursor:pointer;background:#fff8f6}
+.drop.on{border-color:var(--g);background:#f0fdf4}
+.drop .ic{font-size:26px}.drop .nm{font-weight:700;margin-top:3px;font-size:14px}.drop .hint{font-size:12px;color:var(--mut)}.drop .fn{font-size:12px;color:var(--g2);margin-top:3px;word-break:break-all}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:#fafafa;border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
+.kpi .lb{font-size:12px;color:var(--mut)}.kpi .vl{font-size:18px;font-weight:800;margin-top:2px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 7px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:middle}
+th{background:#f9fafb;font-weight:700;color:#374151}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.muted{color:var(--mut);font-size:12.5px}
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;font-weight:700}
+.chip.info{background:#e0e7ff;color:#3730a3}.chip.warn{background:#fef2f2;color:#b91c1c}.chip.ok{background:#dcfce7;color:#166534}.chip.amb{background:#fef3c7;color:#92400e}.chip.gray{background:#f3f4f6;color:#4b5563}
+.note{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:13px;color:#92400e}
+.okbox{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px;font-size:13px;color:#166534}
+.errbox{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;font-size:13px;color:#b91c1c}
+.gate{position:fixed;inset:0;background:#0f172a;display:flex;align-items:center;justify-content:center;z-index:99}
+.gate .box{background:#fff;padding:24px;border-radius:14px;width:290px;text-align:center}
+.gate input{font-size:22px;letter-spacing:6px;text-align:center;width:170px;margin:12px 0 4px}
+.gate .perr{color:var(--red);font-size:13px;min-height:18px}
+.hide{display:none!important}.gated{display:none!important}
+.pnl{font-size:14px}.pnl td{padding:5px 4px}.pnl .tot{font-weight:800;border-top:2px solid #111}
+.pack{width:74px;text-align:right;padding:3px 6px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tab{padding:6px 12px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#374151}
+.tab.on{background:var(--o);color:#fff;border-color:var(--o)}
+</style>
+</head>
+<body>
+<div id="gate" class="gate">
+  <div class="box">
+    <div style="font-size:32px">🛒</div>
+    <h2 style="margin:6px 0 2px;font-size:18px">โปรแกรม Shopee</h2>
+    <div class="muted">ใส่ PIN</div>
+    <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
+    <div class="perr" id="pinErr"></div>
+    <button class="btn" style="width:100%;margin-top:6px" onclick="submitPin()">เข้าใช้งาน</button>
+  </div>
+</div>
+
+<header><div class="wrap" style="padding:0;position:relative">
+  <h1>🛒 โปรแกรม Shopee</h1>
+  <div class="sub">กิจมั่งมีโฮม · ตามเงิน Shopee · เช็คค่าธรรมเนียม · กำไร-ขาดทุนรายเดือน</div>
+  <button onclick="logout()" style="position:absolute;top:0;right:0;background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.55);padding:6px 12px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600">🔓 ออกจากระบบ</button>
+</div></header>
+
+<div class="wrap">
+  <nav>
+    <a class="on" href="shopee.html">🛒 โปรแกรม Shopee</a>
+  </nav>
+
+  <!-- อัปโหลด -->
+  <div class="card">
+    <h3>1) อัปโหลดข้อมูล (จับคู่อัตโนมัติด้วยเลขออเดอร์ — อัปกี่ครั้งก็ได้ ไม่ซ้ำ)</h3>
+    <div class="drops">
+      <label class="drop" id="d_acc"><input type="file" accept=".xlsx,.xls" class="hide" id="f_acc" multiple>
+        <div class="ic">🧾</div><div class="nm">บิลขาย acc-billing</div><div class="hint">อัปทุกวัน · เลือกหลายไฟล์ได้ (ตัวตั้ง=ตัดสต๊อกแล้ว)</div><div class="fn" id="fn_acc"></div></label>
+      <label class="drop" id="d_ord"><input type="file" accept=".xlsx,.xls" class="hide" id="f_ord">
+        <div class="ic">🚚</div><div class="nm">สินค้าอยู่ระหว่างจัดส่ง</div><div class="hint">สถานะ+ค่าธรรมเนียมประมาณการ</div><div class="fn" id="fn_ord"></div></label>
+      <label class="drop" id="d_pay"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pay">
+        <div class="ic">💰</div><div class="nm">รายรับ (โอนเงินสำเร็จ)</div><div class="hint">เงินเข้า+ค่าธรรมเนียมจริง</div><div class="fn" id="fn_pay"></div></label>
+    </div>
+    <div id="upMsg" class="muted" style="margin-top:10px"></div>
+  </div>
+
+  <div id="dash" class="hide">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">2) สรุป <select id="monthPick" onchange="render()" style="margin-left:6px"></select></h3>
+        <button class="btn ghost sm" onclick="reload()">↻ โหลดใหม่</button>
+      </div>
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi"><div class="lb">ออเดอร์</div><div class="vl" id="kOrd">–</div></div>
+        <div class="kpi r-fin"><div class="lb">ยอดขายรวม</div><div class="vl" id="kSale">–</div></div>
+        <div class="kpi r-fin"><div class="lb">Shopee จ่ายแล้ว</div><div class="vl" id="kPaid" style="color:var(--g2)">–</div></div>
+        <div class="kpi r-fin"><div class="lb">ยังรอ Shopee จ่าย</div><div class="vl" id="kWait" style="color:var(--amb)">–</div></div>
+        <div class="kpi r-fin"><div class="lb">ค่าธรรมเนียมจริง</div><div class="vl" id="kFee" style="color:var(--red)">–</div></div>
+        <div class="kpi r-fin"><div class="lb">ต้นทุนค่าแพ็ค/ค่าใช้จ่าย</div><div class="vl" id="kPack" style="color:var(--o2)">–</div></div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab on r-fin" data-t="pay" onclick="tab('pay')">① ออเดอร์ Shopee</div>
+      <div class="tab r-fin" data-t="fee" onclick="tab('fee')">② ค่าธรรมเนียม</div>
+      <div class="tab" data-t="pack" onclick="tab('pack')">③ ค่าแพ็ค</div>
+      <div class="tab r-owner" data-t="pnl" onclick="tab('pnl')">④ กำไร-ขาดทุน 🔒</div>
+      <div class="tab" data-t="rtn" onclick="tab('rtn')">↩ ตีกลับ/ยกเลิก</div>
+    </div>
+
+    <div class="card r-fin" id="tab_pay"><h3>① รายการออเดอร์ Shopee</h3>
+      <div class="row" style="margin-bottom:8px"><label><input type="checkbox" id="pay_hidePaid" onchange="render()"> ซ่อนที่รับเงินแล้ว</label> <label><input type="checkbox" id="pay_unbilled" onchange="render()"> เฉพาะที่ยังไม่ออกบิล</label></div>
+      <div id="payBox"></div></div>
+    <div class="card hide r-fin" id="tab_fee"><h3>② ค่าธรรมเนียม</h3>
+      <div class="row" style="margin-bottom:8px"><label>ค่าธรรมเนียมที่คาดไว้:</label>
+        <input id="expPct" type="number" step="0.1" value="27" style="max-width:70px" onchange="render()"> <span class="muted">%</span>
+        <label style="margin-left:10px"><input type="checkbox" id="fee_hidePaid" onchange="render()"> ซ่อนที่รับเงินแล้ว</label> <label><input type="checkbox" id="fee_unbilled" onchange="render()"> เฉพาะที่ยังไม่ออกบิล</label></div>
+      <div id="feeBox"></div></div>
+    <div class="card hide" id="tab_pack"><h3>③ ต้นทุน & ค่าใช้จ่าย Shopee (รายเดือน)</h3>
+      <div class="muted" style="margin-bottom:8px">บันทึกต้นทุนของ “เดือนที่เลือกด้านบน” — ระบบรวมแล้วหารเฉลี่ยต่อออเดอร์ให้</div>
+      <div class="row" style="gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap">
+        <div><div class="muted">ประเภท</div><select id="cCat" onchange="costLabels()"></select></div>
+        <div><div class="muted">รายการ</div><select id="cItem" onchange="onItemPick()" style="max-width:180px"></select></div>
+        <div id="cOtherWrap" style="display:none"><div class="muted">พิมพ์ชื่อเอง</div><input id="cItemOther" placeholder="ชื่อรายการ" style="max-width:150px"></div>
+        <div><div class="muted" id="cL1">ราคา/ม้วน</div><input id="cV1" type="number" style="max-width:110px" oninput="costPrev()"></div>
+        <div id="cWrap2"><div class="muted" id="cL2">จำนวน</div><input id="cV2" type="number" style="max-width:110px" oninput="costPrev()"></div>
+        <button class="btn" onclick="addCost()">+ เพิ่ม <span id="cPrev" style="opacity:.85"></span></button>
+      </div>
+      <div id="packBox"></div>
+    </div>
+    <div class="card hide r-owner" id="tab_pnl"><h3>④ กำไร-ขาดทุน (เฉพาะเจ้าของ)</h3><div id="pnlBox"></div></div>
+    <div class="card hide" id="tab_rtn"><h3>↩ จัดการสินค้าตีกลับ / ยกเลิก</h3>
+      <div class="row" style="margin-bottom:8px"><input id="rtnQ" placeholder="🔍 พิมพ์เลขออเดอร์" style="max-width:220px" oninput="renderRtn()"><span class="muted">ค้นเลขออเดอร์แล้วกดสถานะ</span></div>
+      <div id="rtnBox"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- PIN ---------- */
+var PINMAP={"2478":"finance","9989":"finance","0402":"owner"};
+var ROLE=null;
+function logout(){ location.reload(); }
+function submitPin(){
+  var el=document.getElementById("pinInput"),v=(el.value||"").trim(),r=PINMAP[v];
+  if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง"; el.value=""; el.focus(); return; }
+  ROLE=r; document.getElementById("gate").style.display="none";
+  document.querySelectorAll(".r-owner").forEach(function(e){e.classList.toggle("gated",ROLE!=="owner");});
+  document.querySelectorAll(".r-fin").forEach(function(e){e.classList.toggle("gated",!(ROLE==="finance"||ROLE==="owner"));});
+  CURTAB=(ROLE==="cashier")?"pack":"pay";
+  reload();
+}
+function canSee(t){ if(t==="pnl") return ROLE==="owner"; if(t==="pay"||t==="fee") return ROLE==="finance"||ROLE==="owner"; return true; }
+/* ---------- Supabase ---------- */
+var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY);}catch(e){}
+function sbReady(){ return !!sb; }
+/* ---------- helpers ---------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function num(v){ if(v==null) return 0; if(typeof v==="number") return isNaN(v)?0:v; var n=parseFloat(String(v).replace(/[, ฿]/g,"")); return isNaN(n)?0:n; }
+function r2(n){ return Math.round(num(n)*100)/100; }
+function fmt(n){ return r2(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function pad2(n){ return String(n).padStart(2,"0"); }
+function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function beDate(s){ if(!s) return "—"; var p=String(s).slice(0,10).split("-"); if(p.length<3) return s; return p[2]+"/"+p[1]+"/"+(parseInt(p[0],10)+543); }
+function daysSince(iso){ if(!iso) return 0; var a=new Date(iso+"T00:00:00"),b=new Date(); return Math.max(0,Math.floor((b-a)/86400000)); }
+function cellDate(v){
+  if(v==null||v==="") return null;
+  if(typeof v==="number"&&window.XLSX&&XLSX.SSF){ var dc=XLSX.SSF.parse_date_code(v); if(dc){ var y=dc.y; if(y>2400)y-=543; return y+"-"+pad2(dc.m)+"-"+pad2(dc.d);} }
+  if(v instanceof Date){ var y=v.getFullYear(); if(y>2400)y-=543; return y+"-"+pad2(v.getMonth()+1)+"-"+pad2(v.getDate()); }
+  var s=String(v).trim().slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  var m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if(m){ var yy=parseInt(m[3],10); if(yy<100)yy+=2000; if(yy>2400)yy-=543; return yy+"-"+pad2(m[2])+"-"+pad2(m[1]); }
+  return s;
+}
+function rowsOf(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
+function readWB(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(ev){ try{ res(XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:false}));}catch(e){rej(e);} }; r.onerror=rej; r.readAsArrayBuffer(file); }); }
+var ORDRE=/\(([0-9A-Z]{12,})\)/;
+
+/* ---------- PARSERS ---------- */
+// acc-billing: หลายไฟล์ได้; แต่ละชีตอาจมีหลายบิล
+function parseAcc(wb){
+  var out={};
+  wb.SheetNames.forEach(function(sn){
+    var rows=rowsOf(wb.Sheets[sn]);
+    var curBill=null,curDate=null,curOrder=null,inItems=false;
+    for(var i=0;i<rows.length;i++){
+      var row=rows[i]||[];
+      var joined=row.map(function(c){return String(c==null?"":c);}).join(" ");
+      // header fields
+      for(var c=0;c<row.length;c++){
+        var cell=String(row[c]==null?"":row[c]).trim();
+        if(cell==="เลขที่"){ for(var k=c+1;k<row.length;k++){ if(row[k]){ curBill=String(row[k]).trim(); break; } } }
+        if(cell==="วันที่"){ for(var k2=c+1;k2<row.length;k2++){ if(row[k2]!=null&&row[k2]!==""){ curDate=cellDate(row[k2]); break; } } }
+      }
+      if(joined.indexOf("รหัสสินค้า")>=0 && joined.indexOf("จำนวนเงิน")>=0){ inItems=true; continue; }
+      if(inItems){
+        if(joined.indexOf("รวม")>=0 || joined.indexOf("Total")>=0 || /^-{5,}/.test(String(row[5]||row[2]||""))){ inItems=false; curOrder=null; continue; }
+        var seq=row[0], desc=row[2], amt=row[8];
+        if(seq==null && desc==null) continue;
+        if(desc){ var m=String(desc).match(ORDRE); if(m) curOrder=m[1].toUpperCase(); }
+        if(curOrder){
+          if(!out[curOrder]) out[curOrder]={order_no:curOrder,billed:true,bill_no:curBill,bill_date:curDate,billed_amount:0};
+          out[curOrder].billed_amount=r2(num(out[curOrder].billed_amount)+num(amt));
+          if(!out[curOrder].bill_no) out[curOrder].bill_no=curBill;
+          if(!out[curOrder].bill_date) out[curOrder].bill_date=curDate;
+        }
+      }
+    }
+  });
+  return Object.values(out);
+}
+// payout (โอนเงินสำเร็จ)
+var P_FEE=["ค่าคอมมิชชั่น AMS","ค่าคอมมิชชั่น","ค่าบริการ","ค่าธรรมเนียมโครงสร้างพื้นฐานแพลตฟอร์ม","ค่าธรรมเนียม ของโปรแกรมประหยัดค่าจัดส่ง","ค่าธุรกรรมการชำระเงิน","ภาษี","ค่าธรรมเนียมเติมเงินโฆษณาจากเงิน Escrow"];
+function parsePayout(wb){
+  var ws=null,rows=null,hi=-1,hdr=null;
+  for(var s=0;s<wb.SheetNames.length;s++){ var w=wb.Sheets[wb.SheetNames[s]],rr=rowsOf(w);
+    for(var i=0;i<Math.min(rr.length,15);i++){ if((rr[i]||[]).some(function(c){return String(c).trim()==="หมายเลขคำสั่งซื้อ";})){ ws=w;rows=rr;hi=i;hdr=rr[i].map(function(c){return String(c==null?"":c).trim();}); break; } }
+    if(ws) break; }
+  if(!ws) throw new Error("ไฟล์รายรับ: ไม่พบหัวตาราง 'หมายเลขคำสั่งซื้อ'");
+  var io=hdr.indexOf("หมายเลขคำสั่งซื้อ"),it=hdr.indexOf("วันที่โอนชำระเงินสำเร็จ"),iod=hdr.indexOf("วันที่ทำการสั่งซื้อ"),inet=hdr.indexOf("จำนวนเงินทั้งหมดที่โอนแล้ว (฿)"),inorm=hdr.indexOf("สินค้าราคาปกติ");
+  var fi=P_FEE.map(function(n){return hdr.indexOf(n);}).filter(function(k){return k>=0;});
+  var out=[];
+  for(var r=hi+1;r<rows.length;r++){ var row=rows[r]||[],o=row[io]; if(!o||!/^[0-9A-Z]{10,}$/.test(String(o).trim())) continue;
+    var fee=fi.reduce(function(a,k){return a+num(row[k]);},0);
+    out.push({order_no:String(o).trim().toUpperCase(),paid:true,order_date:(iod>=0?cellDate(row[iod]):null),payout_date:cellDate(row[it]),payout_net:r2(num(row[inet])),payout_fee:r2(fee),sale_amount:r2(num(row[inorm]))});
+  }
+  return out;
+}
+// order file (สินค้าอยู่ระหว่างจัดส่ง)
+function parseOrder(wb){
+  var ws=wb.Sheets[wb.SheetNames.find(function(n){return n.toLowerCase()==="orders";})||wb.SheetNames[0]];
+  var rows=rowsOf(ws),hdr=(rows[0]||[]).map(function(c){return String(c==null?"":c).trim();});
+  var io=hdr.indexOf("หมายเลขคำสั่งซื้อ"),id=hdr.indexOf("วันที่ทำการสั่งซื้อ"),ist=hdr.indexOf("สถานะการสั่งซื้อ"),ib=hdr.indexOf("ชื่อผู้ใช้ (ผู้ซื้อ)"),i25=hdr.indexOf("ราคาขายสุทธิ"),i40=hdr.indexOf("ราคาสินค้าที่ชำระโดยผู้ซื้อ (THB)");
+  var ic=hdr.indexOf("ค่าคอมมิชชั่น"),ix=hdr.indexOf("Transaction Fee"),isv=hdr.indexOf("ค่าบริการ");
+  if(io<0) throw new Error("ไฟล์ order: ไม่พบ 'หมายเลขคำสั่งซื้อ'");
+  var m={};
+  for(var r=1;r<rows.length;r++){ var row=rows[r]||[],o=row[io]; if(!o) continue; o=String(o).trim().toUpperCase();
+    if(!m[o]) m[o]={order_no:o,order_date:cellDate(row[id]),ship_status:String(row[ist]||""),buyer:String(row[ib]||""),sale_amount:0,est_fee:0,_p:new Set()};
+    m[o].sale_amount=r2(num(m[o].sale_amount)+num(row[i25]));   // ราคาขายสุทธิ ต่อบรรทัด รวมทั้งออเดอร์
+    if(!m[o]._p.has("fee")){ m[o].est_fee=r2(-(num(row[ic])+num(row[ix])+num(row[isv]))); m[o]._p.add("fee"); } // ต่อออเดอร์ (ซ้ำทุกบรรทัด)
+  }
+  return Object.values(m).map(function(x){ delete x._p; return x; });
+}
+
+/* ---------- upsert (fetch-merge) ---------- */
+async function upsertOrders(list){
+  if(!list.length) return {n:0};
+  var nos=list.map(function(x){return x.order_no;});
+  var existing={};
+  for(var i=0;i<nos.length;i+=200){
+    var chunk=nos.slice(i,i+200);
+    var r=await sb.from("shopee_orders").select("*").in("order_no",chunk);
+    if(r.error) throw new Error(r.error.message);
+    (r.data||[]).forEach(function(x){ existing[x.order_no]=x; });
+  }
+  var merged=list.map(function(inc){
+    var base=existing[inc.order_no]||{};
+    var row=Object.assign({},base);
+    Object.keys(inc).forEach(function(k){
+      var v=inc[k];
+      if(v===null||v===undefined||v==="") return;
+      if((k==="bill_no"||k==="bill_date"||k==="note")&&base[k]) return; // ไม่ทับของเดิมที่มีแล้ว
+      row[k]=v;
+    });
+    row.order_no=inc.order_no;
+    if(inc.billed) row.billed=true;
+    if(inc.paid) row.paid=true;
+    // sale_amount: payout(สินค้าราคาปกติ) > billed_amount > order(ราคาขายสุทธิ)
+    if(inc.sale_amount && (inc.paid || !base.sale_amount)) row.sale_amount=inc.sale_amount;
+    else if(!row.sale_amount && inc.billed_amount) row.sale_amount=inc.billed_amount;
+    row.updated_at=new Date().toISOString();
+    return row;
+  });
+  for(var j=0;j<merged.length;j+=200){
+    var up=await sb.from("shopee_orders").upsert(merged.slice(j,j+200),{onConflict:"order_no"});
+    if(up.error) throw new Error(up.error.message);
+  }
+  return {n:merged.length};
+}
+
+/* ---------- file handlers ---------- */
+function setFn(id,txt){ document.getElementById(id).textContent=txt; document.getElementById(id).parentNode.classList.add("on"); }
+document.getElementById("f_acc").addEventListener("change",async function(e){
+  var files=Array.from(e.target.files||[]); if(!files.length) return;
+  setFn("fn_acc",files.length+" ไฟล์"); var msg=document.getElementById("upMsg"); msg.textContent="กำลังอ่านบิล acc-billing…";
+  try{ var all=[]; for(var i=0;i<files.length;i++){ var wb=await readWB(files[i]); all=all.concat(parseAcc(wb)); }
+    // รวมออเดอร์ซ้ำข้ามไฟล์
+    var mm={}; all.forEach(function(o){ if(!mm[o.order_no]) mm[o.order_no]=o; else { mm[o.order_no].billed_amount=r2(num(mm[o.order_no].billed_amount)+num(o.billed_amount)); } });
+    var r=await upsertOrders(Object.values(mm));
+    msg.innerHTML='<div class="okbox">✓ บิลขาย: จับได้ '+Object.keys(mm).length+' ออเดอร์ บันทึกแล้ว</div>'; reload();
+  }catch(err){ msg.innerHTML='<div class="errbox">บิล acc-billing: '+esc(err.message)+'</div>'; }
+});
+document.getElementById("f_pay").addEventListener("change",async function(e){
+  var f=e.target.files[0]; if(!f) return; setFn("fn_pay",f.name); var msg=document.getElementById("upMsg"); msg.textContent="กำลังอ่านไฟล์รายรับ…";
+  try{ var wb=await readWB(f); var list=parsePayout(wb); var r=await upsertOrders(list);
+    msg.innerHTML='<div class="okbox">✓ รายรับ: '+list.length+' ออเดอร์ (เงินเข้า+ค่าธรรมเนียมจริง) บันทึกแล้ว</div>'; reload();
+  }catch(err){ msg.innerHTML='<div class="errbox">ไฟล์รายรับ: '+esc(err.message)+'</div>'; }
+});
+document.getElementById("f_ord").addEventListener("change",async function(e){
+  var f=e.target.files[0]; if(!f) return; setFn("fn_ord",f.name); var msg=document.getElementById("upMsg"); msg.textContent="กำลังอ่านไฟล์ระหว่างจัดส่ง…";
+  try{ var wb=await readWB(f); var list=parseOrder(wb); var r=await upsertOrders(list);
+    msg.innerHTML='<div class="okbox">✓ ระหว่างจัดส่ง: '+list.length+' ออเดอร์ (สถานะ+ประมาณค่าธรรมเนียม) บันทึกแล้ว</div>'; reload();
+  }catch(err){ msg.innerHTML='<div class="errbox">ไฟล์ order: '+esc(err.message)+'</div>'; }
+});
+
+/* ---------- load + render ---------- */
+var ALL=[],COSTS=[],CURTAB="pay";
+async function reload(){
+  if(!sbReady()) return;
+  var r=await sb.from("shopee_orders").select("*").order("order_date",{ascending:false});
+  if(r.error){ document.getElementById("upMsg").innerHTML='<div class="errbox">โหลดข้อมูลไม่ได้: '+esc(r.error.message)+'</div>'; return; }
+  ALL=r.data||[];
+  var rc=await sb.from("shopee_costs").select("*"); COSTS=(rc&&rc.data)||[];
+  document.getElementById("dash").classList.toggle("hide",!ALL.length);
+  var months={};
+  ALL.forEach(function(o){ var d=o.order_date||o.bill_date||o.payout_date; if(d) months[String(d).slice(0,7)]=1; });
+  var mk=Object.keys(months).sort().reverse();
+  var sel=document.getElementById("monthPick"),cur=sel.value;
+  sel.innerHTML='<option value="ALL">ทุกเดือน</option>'+mk.map(function(m){ var p=m.split("-"); return '<option value="'+m+'">'+p[1]+"/"+(parseInt(p[0],10)+543)+"</option>"; }).join("");
+  if(cur&&(cur==="ALL"||mk.indexOf(cur)>=0)) sel.value=cur; else sel.value=mk[0]||"ALL";
+  render();
+  tab(CURTAB||"pack");
+}
+function inMonth(o,m){ if(m==="ALL") return true; var d=o.order_date||o.bill_date||o.payout_date; return d&&String(d).slice(0,7)===m; }
+function effFee(o){ return o.paid&&o.payout_fee!=null?o.payout_fee:(o.est_fee!=null?o.est_fee:r2(-num(o.sale_amount)*0.27)); }
+function effRevenue(o){ return o.paid&&o.payout_net!=null?num(o.payout_net):r2(num(o.sale_amount)+effFee(o)); }
+function render(){
+  var m=document.getElementById("monthPick").value||"ALL";
+  var all=ALL.filter(function(o){return inMonth(o,m);});
+  var rows=all.filter(function(o){return !o.return_status;});
+  var retRows=all.filter(function(o){return o.return_status;});
+  var retCount=all.filter(function(o){return o.return_status==="return_wait"||o.return_status==="resell"||o.return_status==="claim";}).length;
+  var sale=rows.reduce(function(s,o){return s+num(o.sale_amount);},0);
+  var paidRows=rows.filter(function(o){return o.paid;});
+  var paidNet=paidRows.reduce(function(s,o){return s+num(o.payout_net);},0);
+  var waitRows=rows.filter(function(o){return !o.paid;});
+  var feeReal=paidRows.reduce(function(s,o){return s+Math.abs(num(o.payout_fee));},0);
+  document.getElementById("kOrd").textContent=rows.length+(retRows.length?" (+"+retRows.length+" ตีกลับ)":"");
+  document.getElementById("kSale").textContent=fmt(sale);
+  document.getElementById("kPaid").textContent=fmt(paidNet)+" ("+paidRows.length+")";
+  document.getElementById("kWait").textContent=waitRows.length+" ออเดอร์";
+  document.getElementById("kFee").textContent=fmt(feeReal);
+  var _packed=rows.filter(function(o){return !o.no_pack_cost;}).length;
+  var _cost=COSTS.filter(function(c){return m==="ALL"||c.month===m;}).reduce(function(s,c){return s+costAmount(c,_packed,retCount);},0);
+  var _kp=document.getElementById("kPack"); if(_kp) _kp.textContent=fmt(_cost);
+  renderPay(rows,all); renderFee(rows); renderPack(rows,m,retCount); renderPnl(rows,m,retCount); renderRtn();
+}
+
+/* ① จ่ายครบไหม — เน้นว่าได้เงินหรือยัง (ไม่เทียบกับค่าประมาณ) */
+function renderPay(rows,all){
+  var src=all||rows;
+  var hp=document.getElementById("pay_hidePaid"), ub=document.getElementById("pay_unbilled");
+  var hidePaid=hp&&hp.checked, unbilled=ub&&ub.checked;
+  var paid=rows.filter(function(o){return o.paid;});
+  var got=paid.reduce(function(s,o){return s+num(o.payout_net);},0);
+  var validWait=rows.filter(function(o){return !o.paid;});
+  var pendEst=validWait.reduce(function(s,o){return s+(num(o.sale_amount)+(o.est_fee!=null?num(o.est_fee):-num(o.sale_amount)*0.27));},0);
+  var h='<div class="kpis" style="margin-bottom:10px">'+
+    '<div class="kpi"><div class="lb">รับเงินแล้ว</div><div class="vl" style="color:var(--g2)">'+fmt(got)+'</div><div class="muted">'+paid.length+' ออเดอร์</div></div>'+
+    '<div class="kpi"><div class="lb">ยังรอรับ (ประมาณ)</div><div class="vl" style="color:var(--amb)">'+fmt(pendEst)+'</div><div class="muted">'+validWait.length+' ออเดอร์</div></div></div>';
+  var overdue=validWait.filter(function(o){return o.billed && daysSince(o.bill_date||o.order_date)>20;});
+  if(overdue.length) h+='<div class="note">⚠ <b>'+overdue.length+' ออเดอร์ออกบิล/ส่งแล้วเกิน 20 วัน แต่ Shopee ยังไม่จ่าย</b>:<br>'+overdue.map(function(o){return esc(o.order_no)+" ("+daysSince(o.bill_date||o.order_date)+" วัน)";}).join(" · ")+'</div>';
+  else h+='<div class="okbox">✓ ไม่มีออเดอร์ค้างจ่ายเกิน 20 วัน</div>';
+  var list=src.filter(function(o){ if(hidePaid&&o.paid) return false; if(unbilled&&o.billed) return false; return true; }).sort(function(a,b){ if(!!a.paid!==!!b.paid) return a.paid?1:-1; return String(a.order_date||a.bill_date).localeCompare(String(b.order_date||b.bill_date)); });
+  h+='<div style="overflow:auto"><table><thead><tr><th>ออเดอร์</th><th>วันสั่ง</th><th>สถานะส่ง</th><th>ออกบิล/สถานะ</th><th class="n">ยอดขาย</th><th class="n">สถานะเงิน</th></tr></thead><tbody>';
+  if(!list.length) h+='<tr><td colspan="6" class="muted">— ไม่มีรายการ —</td></tr>';
+  list.forEach(function(o){ var d=daysSince(o.order_date||o.bill_date), ret=o.return_status;
+    var mark=o.paid?'💰 ':(ret?'↩ ':'');
+    var billCell=ret?('<span class="chip '+(ret==="claim"?"warn":"gray")+'">'+esc(RTN_LABEL[ret]||ret)+'</span>'):(o.billed?'<span class="chip ok">'+esc(o.bill_no||"บิลแล้ว")+'</span>':'<span class="chip warn">ยังไม่ออกบิล</span>');
+    var money=o.paid?'<span class="chip ok">💰 รับแล้ว</span>':(ret?'—':(d>20?'<span style="color:var(--red);font-weight:700">รอ '+d+' วัน</span>':'รอ '+d+' วัน'));
+    h+='<tr'+(ret?' style="opacity:.6"':'')+'><td>'+mark+esc(o.order_no)+'</td><td>'+beDate(o.order_date)+'</td><td>'+esc(o.ship_status||"—")+'</td><td>'+billCell+'</td><td class="n">'+fmt(o.sale_amount)+'</td><td class="n">'+money+'</td></tr>'; });
+  h+='</tbody></table></div><div class="muted" style="margin-top:6px">💰 = รับเงินแล้ว (ดูค่าธรรมเนียม/ยอดสุทธิที่แท็บ ② ค่าธรรมเนียม) · ↩ = ตีกลับ/ยกเลิก</div>';
+  document.getElementById("payBox").innerHTML=h;
+}
+
+/* ② ค่าธรรมเนียมเกินไหม — เทียบกับ % ที่ผู้ใช้ตั้งเอง */
+function renderFee(rows){
+  var hp=document.getElementById("fee_hidePaid"), ub=document.getElementById("fee_unbilled");
+  var hidePaid=hp&&hp.checked, unbilled=ub&&ub.checked;
+  var expPct=num((document.getElementById("expPct")||{}).value)||27, tol=3;
+  var paid=rows.filter(function(o){return o.paid;});
+  var tReal=0,tSale=0,over=[];
+  paid.forEach(function(o){ var real=Math.abs(num(o.payout_fee)),sale=num(o.sale_amount); tReal+=real; tSale+=sale; var pct=sale?real/sale*100:0; if(pct>expPct+tol) over.push({o:o,pct:pct}); });
+  var tExp=r2(tSale*expPct/100), realPct=tSale?tReal/tSale*100:0;
+  var h='';
+  if(paid.length){
+    h+='<div class="kpis"><div class="kpi"><div class="lb">ค่าธรรมเนียมจริงที่ Shopee หัก</div><div class="vl" style="color:var(--red)">'+fmt(tReal)+'</div><div class="muted">'+realPct.toFixed(1)+'% ของยอดขาย</div></div>'+
+      '<div class="kpi"><div class="lb">ถ้าคิดตามที่คาด ('+expPct+'%)</div><div class="vl">'+fmt(tExp)+'</div></div>'+
+      '<div class="kpi"><div class="lb">'+((tReal>tExp+1)?"หักเกินที่คาด ⚠":((tReal<tExp-1)?"หักน้อยกว่าที่คาด ✓":"ตรงตามที่คาด"))+'</div><div class="vl" style="color:'+(tReal>tExp+1?'var(--red)':'var(--g2)')+'">'+fmt(Math.abs(tReal-tExp))+'</div></div></div>';
+    if(over.length) h+='<div class="note" style="margin-top:8px">⚠ <b>'+over.length+' ออเดอร์ถูกหักเกิน '+(expPct+tol)+'%</b> (SPayLater ปกติสูงกว่า): '+over.map(function(x){return esc(x.o.order_no)+" ("+x.pct.toFixed(1)+"%)";}).join(" · ")+'</div>';
+    else h+='<div class="okbox" style="margin-top:8px">✓ ค่าธรรมเนียมอยู่ในเกณฑ์ปกติ</div>';
+  } else h+='<div class="muted">ยังไม่มีออเดอร์ที่ได้รับเงิน — อัปไฟล์รายรับเพื่อดูค่าธรรมเนียมจริง (ที่ยังไม่รับเงินโชว์เป็นประมาณการ ~)</div>';
+  var list=rows.filter(function(o){ if(hidePaid&&o.paid) return false; if(unbilled&&o.billed) return false; return true; }).sort(function(a,b){ if(!!a.paid!==!!b.paid) return a.paid?1:-1; return String(a.order_date||a.bill_date).localeCompare(String(b.order_date||b.bill_date)); });
+  h+='<div style="overflow:auto;margin-top:10px"><table><thead><tr><th>ออเดอร์</th><th class="n">ยอดขาย</th><th class="n">ค่าธรรมเนียม %</th><th class="n">เป็นเงิน</th><th class="n">เงินได้รับจริง</th></tr></thead><tbody>';
+  if(!list.length) h+='<tr><td colspan="5" class="muted">— ไม่มีรายการ —</td></tr>';
+  list.forEach(function(o){ var sale=num(o.sale_amount), isP=o.paid;
+    var fee=isP?num(o.payout_fee):(o.est_fee!=null?num(o.est_fee):-sale*0.27);
+    var net=isP?num(o.payout_net):r2(sale+fee);
+    var pct=sale?Math.abs(fee)/sale*100:0, hi=pct>expPct+tol;
+    h+='<tr><td>'+(isP?'💰 ':'')+esc(o.order_no)+'</td><td class="n">'+fmt(sale)+'</td><td class="n"'+(hi?' style="color:var(--red);font-weight:700"':'')+'>'+pct.toFixed(1)+'%'+(isP?'':' ~')+'</td><td class="n" style="color:var(--red)">'+fmt(fee)+'</td><td class="n" style="color:var(--g2);font-weight:700">'+fmt(net)+(isP?'':' ~')+'</td></tr>'; });
+  h+='</tbody></table></div><div class="muted" style="margin-top:6px">💰 = รับเงินแล้ว (ตัวเลขจริง) · ~ = ประมาณการ (ยังไม่ได้รับเงิน)</div>';
+  document.getElementById("feeBox").innerHTML=h;
+}
+
+/* ③ ต้นทุน & ค่าใช้จ่ายรายเดือน */
+var COST_CATS={
+  material:{n:"วัสดุ (นับม้วน/ชิ้น)",l1:"ราคา/ม้วน (฿)",l2:"จำนวนม้วนที่ใช้"},
+  per_order:{n:"ต่อออเดอร์ (สติ๊กเกอร์ ฯลฯ)",l1:"บาท/ออเดอร์",l2:""},
+  shared:{n:"ค่าใช้จ่ายร่วม (แบ่ง %)",l1:"ยอดทั้งเดือน (฿)",l2:"% ปันให้ Shopee"},
+  fuel:{n:"น้ำมันส่งคลัง",l1:"จำนวนเงิน (฿)",l2:""},
+  ret:{n:"เผื่อของตีกลับ/ยกเลิก (นับอัตโนมัติ)",l1:"บาท/ออเดอร์ตีกลับ",l2:""},
+  other:{n:"อื่นๆ",l1:"จำนวนเงิน (฿)",l2:""}
+};
+var COST_ITEMS=[
+  {n:"แอร์บับเบิ้ล (ม้วนใหญ่)",c:"material"},
+  {n:"เทปใส",c:"material"},
+  {n:"เทปกันแตก (สินค้าแตกง่าย)",c:"material"},
+  {n:"สายรัดพลาสติก",c:"material"},
+  {n:"พลาสติกใส (ห่อชั้นนอก)",c:"material"},
+  {n:"สติ๊กเกอร์ (แจ้งเสียหาย)",c:"per_order"},
+  {n:"ลังกระดาษ (ฟรี)",c:"other"},
+  {n:"หมึกปริ้นบาร์โค้ด",c:"shared"},
+  {n:"ค่าโทรศัพท์ (เครื่องออนไลน์)",c:"shared"},
+  {n:"น้ำมันส่งคลัง",c:"fuel"},
+  {n:"เผื่อของตีกลับ/ยกเลิก",c:"ret"}
+];
+function costAmount(c,orderCount,retCount){
+  var up=num(c.unit_price),q=num(c.qty);
+  if(c.category==="material") return r2(up*q);
+  if(c.category==="per_order") return r2(up*orderCount);
+  if(c.category==="shared") return r2(up*q/100);
+  if(c.category==="ret") return r2(up*(retCount!=null?retCount:q));
+  return r2(up);
+}
+function costDetail(c,orderCount,retCount){
+  var up=num(c.unit_price),q=num(c.qty);
+  if(c.category==="material") return fmt(up)+" × "+q+" ม้วน/ชิ้น";
+  if(c.category==="per_order") return fmt(up)+"/ออเดอร์ × "+orderCount+" ออเดอร์";
+  if(c.category==="shared") return fmt(up)+" × "+q+"%";
+  if(c.category==="ret") return fmt(up)+" × "+(retCount!=null?retCount:q)+" ตีกลับ (auto)";
+  return "—";
+}
+function curMonth(){ var m=(document.getElementById("monthPick")||{}).value; return (!m||m==="ALL")?todayISO().slice(0,7):m; }
+window.costLabels=function(){
+  var c=(document.getElementById("cCat")||{}).value, meta=COST_CATS[c]||COST_CATS.other;
+  document.getElementById("cL1").textContent=meta.l1;
+  document.getElementById("cWrap2").style.display=meta.l2?"":"none";
+  document.getElementById("cL2").textContent=meta.l2||"";
+  costPrev();
+};
+window.costPrev=function(){
+  var c=(document.getElementById("cCat")||{}).value, mm=curMonth();
+  var oc=ALL.filter(function(o){return inMonth(o,mm)&&!o.return_status;}).length||0;
+  var rc=ALL.filter(function(o){return inMonth(o,mm)&&(o.return_status==="return_wait"||o.return_status==="resell"||o.return_status==="claim");}).length;
+  var e={category:c,unit_price:num(document.getElementById("cV1").value),qty:num(document.getElementById("cV2").value)};
+  document.getElementById("cPrev").textContent="= "+fmt(costAmount(e,oc,rc))+" ฿";
+};
+function renderPack(rows,m,retCount){
+  var sel=document.getElementById("cCat");
+  if(sel && !sel.options.length){ sel.innerHTML=Object.keys(COST_CATS).map(function(k){return '<option value="'+k+'">'+COST_CATS[k].n+'</option>';}).join(""); costLabels(); }
+  var isel=document.getElementById("cItem");
+  if(isel && !isel.options.length){ isel.innerHTML=COST_ITEMS.map(function(it){return '<option value="'+esc(it.n)+'" data-cat="'+it.c+'">'+esc(it.n)+'</option>';}).join("")+'<option value="__other">อื่นๆ (พิมพ์เอง)</option>'; onItemPick(); }
+  var oc=rows.length, packed=rows.filter(function(o){return !o.no_pack_cost;}).length;
+  var list=COSTS.filter(function(c){ return m==="ALL"||c.month===m; });
+  var total=list.reduce(function(s,c){return s+costAmount(c,packed,retCount);},0);
+  var h='<div style="overflow:auto"><table><thead><tr><th>ประเภท</th><th>รายการ</th><th>วิธีคิด</th><th class="n">จำนวนเงิน</th><th></th></tr></thead><tbody>';
+  list.forEach(function(c){ h+='<tr><td>'+esc((COST_CATS[c.category]||{}).n||c.category)+'</td><td>'+esc(c.item||"—")+'</td><td class="muted">'+costDetail(c,packed,retCount)+'</td><td class="n">'+fmt(costAmount(c,packed,retCount))+'</td><td><a href="#" onclick="return delCost(\''+c.id+'\')" style="color:var(--red);text-decoration:none">✕</a></td></tr>'; });
+  if(!list.length) h+='<tr><td colspan="5" class="muted">— ยังไม่มีรายการต้นทุนของเดือนนี้ —</td></tr>';
+  h+='</tbody></table></div>';
+  h+='<div class="kpis" style="margin-top:10px"><div class="kpi"><div class="lb">รวมต้นทุน/ค่าใช้จ่ายเดือนนี้</div><div class="vl" style="color:var(--red)">'+fmt(total)+'</div></div>'+
+     '<div class="kpi"><div class="lb">ออเดอร์ขายจริง'+(retCount?' (ตีกลับ '+retCount+')':'')+'</div><div class="vl">'+oc+'</div></div>'+
+     '<div class="kpi"><div class="lb">เฉลี่ยต้นทุน/ออเดอร์</div><div class="vl" style="color:var(--o2)">'+fmt(oc?total/oc:0)+'</div></div></div>';
+  document.getElementById("packBox").innerHTML=h;
+}
+window.onItemPick=function(){
+  var sel=document.getElementById("cItem"), v=sel.value, other=(v==="__other");
+  document.getElementById("cOtherWrap").style.display=other?"":"none";
+  if(!other){ var cat=sel.options[sel.selectedIndex].getAttribute("data-cat"); if(cat){ document.getElementById("cCat").value=cat; costLabels(); } }
+  costPrev();
+};
+window.addCost=async function(){
+  var cat=(document.getElementById("cCat")||{}).value;
+  var isel=document.getElementById("cItem"), item=(isel.value==="__other"?(document.getElementById("cItemOther").value||""):isel.value).trim();
+  var v1=r2(num(document.getElementById("cV1").value)), v2=r2(num(document.getElementById("cV2").value));
+  if(v1<=0){ alert("ใส่ราคา/จำนวนเงินก่อน"); return; }
+  var ins=await sb.from("shopee_costs").insert({month:curMonth(),category:cat,item:item||null,unit_price:v1,qty:v2,created_by:(ROLE||"")});
+  if(ins.error){ alert("บันทึกไม่ได้: "+ins.error.message); return; }
+  isel.selectedIndex=0; document.getElementById("cItemOther").value=""; document.getElementById("cOtherWrap").style.display="none";
+  document.getElementById("cV1").value=""; document.getElementById("cV2").value="";
+  reload();
+};
+window.delCost=async function(id){
+  if(!confirm("ลบรายการต้นทุนนี้?")) return false;
+  await sb.from("shopee_costs").delete().eq("id",id); reload(); return false;
+};
+
+/* ⑤ ตีกลับ/ยกเลิก */
+var RTN_LABEL={cancel_preship:"ยกเลิกก่อนส่ง (ของยังดี)",return_wait:"ตีกลับ/ยกเลิกหลังส่ง — รอตรวจ",resell:"ของดี ขายต่อ (กลับสต๊อก)",claim:"ส่งเข้าคลังตำหนิแล้ว ✓"};
+function rtnActions(o){
+  var no=o.order_no.replace(/'/g,""), s=o.return_status;
+  if(!s) return '<button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'cancel_preship\')">ยกเลิกก่อนส่ง</button> <button class="btn sm" onclick="setReturn(\''+no+'\',\'return_wait\')">↩ ตีกลับ/หลังส่ง</button>';
+  if(s==="return_wait") return '<span class="chip amb">รอตรวจ</span> <button class="btn sm green" onclick="setReturn(\''+no+'\',\'resell\')">ของดี→ขายต่อ</button> <button class="btn sm red" onclick="setReturn(\''+no+'\',\'claim\')">เสีย→คลังตำหนิ</button> <button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'\')">↺ ยกเลิกเครื่องหมาย</button>';
+  return '<span class="chip '+(s==="claim"?"warn":(s==="resell"?"ok":"gray"))+'">'+esc(RTN_LABEL[s]||s)+'</span> <button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'\')">↺ ยกเลิกเครื่องหมาย</button>';
+}
+function renderRtn(){
+  var box=document.getElementById("rtnBox"); if(!box) return;
+  var q=((document.getElementById("rtnQ")||{}).value||"").trim().toUpperCase();
+  var m=(document.getElementById("monthPick")||{}).value||"ALL";
+  var pool=ALL.filter(function(o){return !o.return_status && (m==="ALL"||inMonth(o,m)) && (!q||o.order_no.toUpperCase().indexOf(q)>=0);}).sort(function(a,b){return String(b.order_date||b.bill_date).localeCompare(String(a.order_date||a.bill_date));}).slice(0,80);
+  var h='<div class="muted" style="margin:4px 0">ออเดอร์ที่ยังไม่ทำเครื่องหมาย '+(q?'(ค้นหา "'+esc(q)+'")':'(เดือนนี้)')+' — กดปุ่มเพื่อทำเครื่องหมาย:</div><div style="overflow:auto"><table><thead><tr><th>ออเดอร์</th><th>วันสั่ง</th><th>สถานะส่ง</th><th class="n">ยอดขาย</th><th>จัดการ</th></tr></thead><tbody>';
+  if(!pool.length) h+='<tr><td colspan="5" class="muted">— ไม่มี (ทำเครื่องหมายครบ หรือค้นไม่พบ) —</td></tr>';
+  pool.forEach(function(o){ h+='<tr><td>'+esc(o.order_no)+'</td><td>'+beDate(o.order_date)+'</td><td>'+esc(o.ship_status||"—")+'</td><td class="n">'+fmt(o.sale_amount)+'</td><td>'+rtnActions(o)+'</td></tr>'; });
+  h+='</tbody></table></div>';
+  var marked=ALL.filter(function(o){return o.return_status;}).sort(function(a,b){return String(b.return_date).localeCompare(String(a.return_date));});
+  h+='<div class="muted" style="margin:12px 0 4px">▼ ตีกลับ/ยกเลิกแล้ว ('+marked.length+') · ติ๊ก "ไม่คิดค่าแพ็ค" ถ้าใช้แพ็คเดิม:</div><div style="overflow:auto"><table><thead><tr><th>ออเดอร์</th><th>สถานะ</th><th>วันที่</th><th class="n">ยอดขาย</th><th>ไม่คิดค่าแพ็ค</th><th>จัดการ</th></tr></thead><tbody>';
+  if(!marked.length) h+='<tr><td colspan="6" class="muted">— ยังไม่มี —</td></tr>';
+  marked.forEach(function(o){ var no=o.order_no.replace(/'/g,""); h+='<tr><td>'+esc(o.order_no)+'</td><td>'+esc(RTN_LABEL[o.return_status]||o.return_status)+'</td><td>'+beDate(o.return_date)+'</td><td class="n">'+fmt(o.sale_amount)+'</td><td style="text-align:center"><input type="checkbox" '+(o.no_pack_cost?"checked":"")+' onchange="toggleNoPack(\''+no+'\',this.checked)"></td><td>'+rtnActions(o)+'</td></tr>'; });
+  h+='</tbody></table></div>';
+  box.innerHTML=h;
+}
+window.renderRtn=renderRtn;
+window.setReturn=async function(no,status){
+  var upd={return_status:status||null,return_date:status?todayISO():null};
+  if(status==="claim") upd.return_note="ตีกลับ Shopee → คลังตำหนิ (Phase 2 push line item)";
+  var r=await sb.from("shopee_orders").update(upd).eq("order_no",no).select();
+  if(r.error){ alert("บันทึกไม่ได้: "+r.error.message); return; }
+  if(!r.data||!r.data.length){ alert("บันทึกไม่สำเร็จ (อัปเดต 0 รายการ) — ลองรีเฟรชหน้าเว็บแรงๆ (Ctrl+Shift+R) แล้วลองใหม่"); return; }
+  reload();
+};
+window.toggleNoPack=async function(no,v){
+  await sb.from("shopee_orders").update({no_pack_cost:v}).eq("order_no",no); reload();
+};
+
+/* ④ กำไร-ขาดทุน (owner) */
+function renderPnl(rows,m,retCount){
+  if(ROLE!=="owner"){ document.getElementById("pnlBox").innerHTML='<div class="muted">เฉพาะเจ้าของ</div>'; return; }
+  var oc=rows.length, packed=rows.filter(function(o){return !o.no_pack_cost;}).length;
+  var sale=rows.reduce(function(s,o){return s+num(o.sale_amount);},0);
+  var fee=rows.reduce(function(s,o){return s+Math.abs(effFee(o));},0);
+  var cost=COSTS.filter(function(c){return m==="ALL"||c.month===m;}).reduce(function(s,c){return s+costAmount(c,packed,retCount);},0);
+  var net=sale-fee, profit=net-cost;
+  var paidN=rows.filter(function(o){return o.paid;}).length;
+  var h='<table class="pnl" style="max-width:460px">'+
+    '<tr><td>ยอดขายรวม (ไม่รวมตีกลับ)</td><td class="n">'+fmt(sale)+'</td></tr>'+
+    '<tr><td>− ค่าธรรมเนียม Shopee</td><td class="n" style="color:var(--red)">'+fmt(fee)+'</td></tr>'+
+    '<tr class="tot"><td>= เงินได้รับสุทธิ</td><td class="n">'+fmt(net)+'</td></tr>'+
+    '<tr><td>− ต้นทุน/ค่าใช้จ่าย (แท็บ ③)</td><td class="n" style="color:var(--red)">'+fmt(cost)+'</td></tr>'+
+    '<tr class="tot"><td>= กำไรขั้นต้น</td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+';font-size:18px">'+fmt(profit)+'</td></tr>'+
+    '</table>';
+  h+='<table class="pnl" style="max-width:460px;margin-top:8px"><tr><td class="muted" colspan="2">เฉลี่ยต่อออเดอร์ ('+oc+' ออเดอร์ขายจริง)</td></tr>'+
+    '<tr><td>ยอดขาย/ออเดอร์</td><td class="n">'+fmt(oc?sale/oc:0)+'</td></tr>'+
+    '<tr><td>ค่าธรรมเนียม/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?fee/oc:0)+'</td></tr>'+
+    '<tr><td>ต้นทุนแพ็ค/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?cost/oc:0)+'</td></tr>'+
+    '<tr class="tot"><td>กำไร/ออเดอร์</td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+'">'+fmt(oc?profit/oc:0)+'</td></tr>'+
+    '</table>';
+  h+='<div class="muted" style="margin-top:6px">* ยังไม่รวมต้นทุนสินค้า (COGS) · ค่าธรรมเนียมออเดอร์ที่ยังไม่ได้รับเงินใช้ประมาณการ ('+(oc-paidN)+' ออเดอร์)</div>';
+  if(profit>=0) h+='<div class="okbox" style="margin-top:10px">🟢 <b>มีกำไร '+fmt(profit)+' บาท</b> (เฉลี่ย '+fmt(oc?profit/oc:0)+'/ออเดอร์) — พิจารณาแบ่งโบนัส/ปรับปรุงอุปกรณ์ให้ทีมแพ็ค</div>';
+  else h+='<div class="errbox" style="margin-top:10px">🔴 <b>ขาดทุน '+fmt(-profit)+' บาท</b> — ควรทบทวน/เตรียมเปลี่ยนแพลตฟอร์ม</div>';
+  document.getElementById("pnlBox").innerHTML=h;
+}
+
+function tab(t){ if(!canSee(t)) t="pack"; CURTAB=t; document.querySelectorAll(".tab").forEach(function(e){e.classList.toggle("on",e.getAttribute("data-t")===t);});
+  ["pay","fee","pack","pnl","rtn"].forEach(function(x){ document.getElementById("tab_"+x).classList.toggle("hide",x!==t); }); }
+window.reload=reload; window.render=render; window.tab=tab;
+</script>
+</body>
+</html>

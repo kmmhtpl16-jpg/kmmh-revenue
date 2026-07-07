@@ -71,7 +71,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.6 (พิมพ์ A4)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.7 (+Shopee สิ้นเดือน)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -381,8 +381,8 @@ function renderExpense(){
   });
 
   // ตารางรายจ่ายที่บันทึกแล้ว
-  const exps=[...STATE.exp].sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
-  const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':'<span class="chip mn">กรอกมือ</span>';
+  const exps=[...STATE.exp].filter(x=>x.source!=="shopee_income").sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
+  const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':(s==="shopee_fee"||s==="shopee_income")?'<span class="chip ac">Shopee</span>':'<span class="chip mn">กรอกมือ</span>';
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
       <td>${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''}</td>
@@ -590,13 +590,14 @@ async function saveAcc(){
 let chartMon=null;
 function renderMonthly(){
   const el=document.getElementById("p_monthly");
-  const months=[...new Set(STATE.exp.map(x=>monthKey(x.exp_date)))].sort();
-  const cats=[...new Set(STATE.exp.map(x=>x.category))];
+  const EX=STATE.exp.filter(x=>x.source!=="shopee_income");
+  const months=[...new Set(EX.map(x=>monthKey(x.exp_date)))].sort();
+  const cats=[...new Set(EX.map(x=>x.category))];
   const grid={}; months.forEach(m=>{grid[m]={};cats.forEach(c=>grid[m][c]=0);});
-  STATE.exp.forEach(x=>{ const m=monthKey(x.exp_date); if(grid[m]) grid[m][x.category]=(grid[m][x.category]||0)+num(x.amount); });
-  const catTot={}; cats.forEach(c=>catTot[c]=STATE.exp.filter(x=>x.category===c).reduce((s,x)=>s+num(x.amount),0));
+  EX.forEach(x=>{ const m=monthKey(x.exp_date); if(grid[m]) grid[m][x.category]=(grid[m][x.category]||0)+num(x.amount); });
+  const catTot={}; cats.forEach(c=>catTot[c]=EX.filter(x=>x.category===c).reduce((s,x)=>s+num(x.amount),0));
   const monTot={}; months.forEach(m=>monTot[m]=cats.reduce((s,c)=>s+grid[m][c],0));
-  const grand=STATE.exp.reduce((s,x)=>s+num(x.amount),0);
+  const grand=EX.reduce((s,x)=>s+num(x.amount),0);
 
   let head=`<tr><th>หมวด</th>`+months.map(m=>`<th class="n">${beMonth(m)}</th>`).join("")+`<th class="n">รวม</th></tr>`;
   let body=cats.sort((a,b)=>catTot[b]-catTot[a]).map(c=>`<tr><td>${esc(c)}</td>`+months.map(m=>`<td class="n">${grid[m][c]?TH0(grid[m][c]):"—"}</td>`).join("")+`<td class="n">${TH0(catTot[c])}</td></tr>`).join("");
@@ -623,7 +624,8 @@ function renderCash(){
   const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].sort();
   const rev={},exp={}; months.forEach(m=>{rev[m]=0;exp[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
-  STATE.exp.forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
+  STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
+  STATE.exp.filter(x=>x.source!=="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
   let cum=0;
   let body=months.map(m=>{ const net=rev[m]-exp[m]; cum+=net;
     return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td><td class="n neg">${TH0(exp[m])}</td><td class="n ${net>=0?'pos':'neg'}">${TH0(net)}</td><td class="n">${TH0(cum)}</td></tr>`;
@@ -633,7 +635,7 @@ function renderCash(){
   el.innerHTML=`
   <div class="card">
     <h3>🔄 กระแสเงินสด (รายรับ − รายจ่าย)</h3>
-    <div class="note">รายรับ = ยอดขายที่ “ตรวจแล้ว” (จากตัวตรวจรายได้) · รายจ่าย = รายการที่บันทึกในหน้านี้ · ยอดสะสมเริ่มจาก 0 (ยังไม่รวมยอดยกมา/เงินคงเหลือต้นงวด)</div>
+    <div class="note">รายรับ = ยอดขายที่ “ตรวจแล้ว” (จากตัวตรวจรายได้) + ยอดขาย Shopee (ปุ่มสิ้นเดือน) · รายจ่าย = รายการที่บันทึกในหน้านี้ (รวมค่าธรรมเนียม Shopee) · ยอดสะสมเริ่มจาก 0 (ยังไม่รวมยอดยกมา/เงินคงเหลือต้นงวด)</div>
     ${months.length?`<div class="scroll"><table>
       <thead><tr><th>เดือน</th><th class="n">รายรับ</th><th class="n">รายจ่าย</th><th class="n">กระแสสุทธิ</th><th class="n">สะสม</th></tr></thead>
       <tbody>${body}</tbody>
@@ -659,6 +661,7 @@ function renderGross(){
   const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].sort();
   const rev={},cogs={}; months.forEach(m=>{rev[m]=0;cogs[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
+  STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
   STATE.exp.filter(x=>x.is_cogs).forEach(x=>{ const m=monthKey(x.exp_date); if(cogs[m]!=null) cogs[m]+=num(x.amount); });
   const estPct=r2(document.getElementById("gp_est")?document.getElementById("gp_est").value:0);
   const useEst=estPct>0;

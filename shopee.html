@@ -216,10 +216,13 @@ function parseAcc(wb){
         if(seq==null && desc==null) continue;
         if(desc){ var m=String(desc).match(ORDRE); if(m) curOrder=m[1].toUpperCase(); }
         if(curOrder){
-          if(!out[curOrder]) out[curOrder]={order_no:curOrder,billed:true,bill_no:curBill,bill_date:curDate,billed_amount:0};
+          if(!out[curOrder]) out[curOrder]={order_no:curOrder,billed:true,bill_no:curBill,bill_date:curDate,billed_amount:0,products:[]};
           out[curOrder].billed_amount=r2(num(out[curOrder].billed_amount)+num(amt));
           if(!out[curOrder].bill_no) out[curOrder].bill_no=curBill;
           if(!out[curOrder].bill_date) out[curOrder].bill_date=curDate;
+          var pcode=String(row[1]==null?"":row[1]).trim();
+          var pname=String(desc==null?"":desc).replace(ORDRE,"").replace(/\s+/g," ").trim();
+          if(pcode||pname) out[curOrder].products.push({code:pcode||null,name:pname||pcode,qty:num(row[3])||1});
         }
       }
     }
@@ -383,7 +386,7 @@ function renderPay(rows,all){
   if(!list.length) h+='<tr><td colspan="6" class="muted">— ไม่มีรายการ —</td></tr>';
   list.forEach(function(o){ var d=daysSince(o.order_date||o.bill_date), ret=o.return_status;
     var mark=o.paid?'💰 ':(ret?'↩ ':'');
-    var billCell=ret?('<span class="chip '+(ret==="claim"?"warn":"gray")+'">'+esc(RTN_LABEL[ret]||ret)+'</span>'):(o.billed?'<span class="chip ok">'+esc(o.bill_no||"บิลแล้ว")+'</span>':'<span class="chip warn">ยังไม่ออกบิล</span>');
+    var billCell=ret?('<span class="chip '+(ret==="claim"?"warn":"gray")+'">'+esc(retLabel(o))+'</span>'):(o.billed?'<span class="chip ok">'+esc(o.bill_no||"บิลแล้ว")+'</span>':'<span class="chip warn">ยังไม่ออกบิล</span>');
     var money=o.paid?'<span class="chip ok">💰 รับแล้ว</span>':(ret?'—':(d>20?'<span style="color:var(--red);font-weight:700">รอ '+d+' วัน</span>':'รอ '+d+' วัน'));
     h+='<tr'+(ret?' style="opacity:.6"':'')+'><td>'+mark+esc(o.order_no)+'</td><td>'+beDate(o.order_date)+'</td><td>'+esc(o.ship_status||"—")+'</td><td>'+billCell+'</td><td class="n">'+fmt(o.sale_amount)+'</td><td class="n">'+money+'</td></tr>'; });
   h+='</tbody></table></div><div class="muted" style="margin-top:6px">💰 = รับเงินแล้ว (ดูค่าธรรมเนียม/ยอดสุทธิที่แท็บ ② ค่าธรรมเนียม) · ↩ = ตีกลับ/ยกเลิก</div>';
@@ -513,11 +516,12 @@ window.delCost=async function(id){
 
 /* ⑤ ตีกลับ/ยกเลิก */
 var RTN_LABEL={cancel_preship:"ยกเลิกก่อนส่ง (ของยังดี)",return_wait:"ตีกลับ/ยกเลิกหลังส่ง — รอตรวจ",resell:"ของดี ขายต่อ (กลับสต๊อก)",claim:"ส่งเข้าคลังตำหนิแล้ว ✓"};
+function retLabel(o){ if(o.return_status==="claim") return o.claim_pushed?"ส่งเข้าคลังตำหนิแล้ว ✓":"เสีย — รอส่งคลัง (ยังไม่มีสินค้าจากบิล)"; return RTN_LABEL[o.return_status]||o.return_status; }
 function rtnActions(o){
   var no=o.order_no.replace(/'/g,""), s=o.return_status;
   if(!s) return '<button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'cancel_preship\')">ยกเลิกก่อนส่ง</button> <button class="btn sm" onclick="setReturn(\''+no+'\',\'return_wait\')">↩ ตีกลับ/หลังส่ง</button>';
   if(s==="return_wait") return '<span class="chip amb">รอตรวจ</span> <button class="btn sm green" onclick="setReturn(\''+no+'\',\'resell\')">ของดี→ขายต่อ</button> <button class="btn sm red" onclick="setReturn(\''+no+'\',\'claim\')">เสีย→คลังตำหนิ</button> <button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'\')">↺ ยกเลิกเครื่องหมาย</button>';
-  return '<span class="chip '+(s==="claim"?"warn":(s==="resell"?"ok":"gray"))+'">'+esc(RTN_LABEL[s]||s)+'</span> <button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'\')">↺ ยกเลิกเครื่องหมาย</button>';
+  return '<span class="chip '+(s==="claim"?"warn":(s==="resell"?"ok":"gray"))+'">'+esc(retLabel(o))+'</span> <button class="btn sm ghost" onclick="setReturn(\''+no+'\',\'\')">↺ ยกเลิกเครื่องหมาย</button>';
 }
 function renderRtn(){
   var box=document.getElementById("rtnBox"); if(!box) return;
@@ -531,19 +535,33 @@ function renderRtn(){
   var marked=ALL.filter(function(o){return o.return_status;}).sort(function(a,b){return String(b.return_date).localeCompare(String(a.return_date));});
   h+='<div class="muted" style="margin:12px 0 4px">▼ ตีกลับ/ยกเลิกแล้ว ('+marked.length+') · ติ๊ก "ไม่คิดค่าแพ็ค" ถ้าใช้แพ็คเดิม:</div><div style="overflow:auto"><table><thead><tr><th>ออเดอร์</th><th>สถานะ</th><th>วันที่</th><th class="n">ยอดขาย</th><th>ไม่คิดค่าแพ็ค</th><th>จัดการ</th></tr></thead><tbody>';
   if(!marked.length) h+='<tr><td colspan="6" class="muted">— ยังไม่มี —</td></tr>';
-  marked.forEach(function(o){ var no=o.order_no.replace(/'/g,""); h+='<tr><td>'+esc(o.order_no)+'</td><td>'+esc(RTN_LABEL[o.return_status]||o.return_status)+'</td><td>'+beDate(o.return_date)+'</td><td class="n">'+fmt(o.sale_amount)+'</td><td style="text-align:center"><input type="checkbox" '+(o.no_pack_cost?"checked":"")+' onchange="toggleNoPack(\''+no+'\',this.checked)"></td><td>'+rtnActions(o)+'</td></tr>'; });
+  marked.forEach(function(o){ var no=o.order_no.replace(/'/g,""); h+='<tr><td>'+esc(o.order_no)+'</td><td>'+esc(retLabel(o))+'</td><td>'+beDate(o.return_date)+'</td><td class="n">'+fmt(o.sale_amount)+'</td><td style="text-align:center"><input type="checkbox" '+(o.no_pack_cost?"checked":"")+' onchange="toggleNoPack(\''+no+'\',this.checked)"></td><td>'+rtnActions(o)+'</td></tr>'; });
   h+='</tbody></table></div>';
   box.innerHTML=h;
 }
 window.renderRtn=renderRtn;
 window.setReturn=async function(no,status){
   var upd={return_status:status||null,return_date:status?todayISO():null};
-  if(status==="claim") upd.return_note="ตีกลับ Shopee → คลังตำหนิ (Phase 2 push line item)";
+  if(status==="claim") upd.return_note="ตีกลับ Shopee → คลังตำหนิ";
   var r=await sb.from("shopee_orders").update(upd).eq("order_no",no).select();
   if(r.error){ alert("บันทึกไม่ได้: "+r.error.message); return; }
   if(!r.data||!r.data.length){ alert("บันทึกไม่สำเร็จ (อัปเดต 0 รายการ) — ลองรีเฟรชหน้าเว็บแรงๆ (Ctrl+Shift+R) แล้วลองใหม่"); return; }
+  if(status==="claim"){ await pushToClaim(no); }
   reload();
 };
+async function pushToClaim(no){
+  var o=ALL.find(function(x){return x.order_no===no;});
+  if(!o || o.claim_pushed) return;
+  var prods=(o.products||[]).filter(function(p){return (p.name||p.code);});
+  if(!prods.length){ alert("ทำเครื่องหมายเสียแล้ว แต่ยังไม่ส่งเข้าคลังตำหนิ — ออเดอร์นี้ยังไม่มีรายการสินค้า (อัปบิล acc-billing ของออเดอร์นี้ก่อน แล้วกดเสีย→คลังตำหนิอีกครั้ง)"); return; }
+  var recs=[];
+  prods.forEach(function(p){ var q=Math.max(1,Math.round(num(p.qty)||1)); for(var i=0;i<q;i++){ recs.push({name:(p.name||p.code||"สินค้า Shopee"),photo_urls:[],status:"claim_pending",is_factory_claim:true,original_ref:"Shopee "+no,location:"ตีกลับ Shopee"}); } });
+  var ins=await sb.from("stock_items").insert(recs);
+  if(ins.error){ alert("ส่งเข้าคลังตำหนิไม่สำเร็จ: "+ins.error.message+"\n(สถานะบันทึกแล้ว กดเสีย→คลังตำหนิใหม่อีกครั้งได้)"); return; }
+  await sb.from("shopee_orders").update({claim_pushed:true}).eq("order_no",no);
+  o.claim_pushed=true;
+  alert("✅ ส่งเข้าคลังตำหนิแล้ว "+recs.length+" รายการ — ไปทำคืนโรงงาน/ตั้งราคาต่อในโปรแกรมคลังตำหนิได้เลย");
+}
 window.toggleNoPack=async function(no,v){
   await sb.from("shopee_orders").update({no_pack_cost:v}).eq("order_no",no); reload();
 };

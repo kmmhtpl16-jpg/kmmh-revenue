@@ -107,7 +107,7 @@
       '<h2>📒 บิลลงบัญชี (ลูกหนี้ค้างชำระ) <span class="badge info" id="creditcount">…</span></h2>',
       '<div class="rowflex" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">',
         '<span class="muted" style="font-size:13px" id="cb_daylabel">📅 บิลลงบัญชีของวันที่เปิดดู</span>',
-        '<a class="btn" href="'+REGISTER_URL+'" style="margin-left:auto;text-decoration:none">📒 เปิดทะเบียนลูกหนี้เต็ม (จัดกลุ่ม/รับชำระ/เลือกวัน) →</a>',
+        '<a class="btn" href="'+REGISTER_URL+'" style="margin-left:auto;text-decoration:none">📒 ทะเบียนลูกหนี้ / ใบวางบิล →</a>',
       '</div>',
       '<div class="muted" style="margin-bottom:8px;font-size:12px">แสดงเฉพาะบิลลงบัญชีของ<b>วันที่กำลังเปิดดูด้านบน</b> (อ่านอย่างเดียว) · เลือกวันอื่น/จัดการ/รับชำระ ที่ทะเบียนลูกหนี้เต็ม · ดูดอัตโนมัติจากชีต “ลงบัญชี” เมื่ออัปไฟล์ฟอร์ม</div>',
       '<div id="creditmsg" class="muted" style="margin-bottom:8px"></div>',

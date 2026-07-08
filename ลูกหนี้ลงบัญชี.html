@@ -129,6 +129,21 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
     <div class="muted" style="margin-top:6px">บิลจากชีต “ลงบัญชี” จะถูกดูดเข้าอัตโนมัติเมื่ออัปไฟล์ฟอร์มในหน้าตรวจรายได้</div>
   </div>
+
+  <!-- ใบวางบิล (ACC-Billing) -->
+  <div class="card">
+    <h3>📄 ใบวางบิล (ACC-Billing)</h3>
+    <div class="muted" style="margin-bottom:8px">ออกจากบิลค้าง: เลือกบิลของลูกค้าในทะเบียนด้านบน แล้วกด “📄 ออกใบวางบิล” ในแถบล่าง · หรือสร้างเองด้านล่าง (กรณีไม่มีบิลในระบบ เช่น หนี้เก่า)</div>
+    <div class="row" style="border-top:1px dashed var(--bd);padding-top:10px">
+      <b style="font-size:13px">สร้างเอง (ไม่มีบิล):</b>
+      <input id="bn_no" placeholder="เลขที่ใบวางบิล (ACC-Billing)" style="max-width:210px">
+      <input id="bn_cust" placeholder="ชื่อลูกค้า" style="max-width:180px">
+      <input id="bn_amt" type="number" placeholder="ยอดเงิน" style="max-width:120px">
+      <input id="bn_note" placeholder="หมายเหตุ (ถ้ามี)" style="max-width:180px">
+      <button class="btn amb" onclick="createManualNote()">+ สร้างใบวางบิลเอง</button>
+    </div>
+    <div id="notesList" style="margin-top:12px" class="muted">กำลังโหลด…</div>
+  </div>
 </div>
 
 <script>
@@ -245,7 +260,7 @@ function billsTable(g){
     out+='<tr>'+
       '<td>'+(rem>0.01?'<input type="checkbox" class="billchk" data-id="'+b.id+'" onclick="toggleSel(this)" data-cust="'+esc(b.customer||"")+'" data-key="'+esc(g.key)+'" data-rem="'+rem+'" data-date="'+esc(b.bill_date||"")+'" data-no="'+esc(b.bill_no||"")+'">':"")+'</td>'+
       '<td>'+beDate(b.bill_date)+'</td>'+
-      '<td>'+esc(b.bill_no||"—")+(b.source==="auto-form"?' <span class="chip info" style="font-size:10px">ดูดจากฟอร์ม</span>':"")+'</td>'+
+      '<td>'+esc(b.bill_no||"—")+(b.source==="auto-form"?' <span class="chip info" style="font-size:10px">ดูดจากฟอร์ม</span>':"")+((b.billing_note_id&&NOTEMAP[b.billing_note_id]&&NOTEMAP[b.billing_note_id].status!=="cancelled")?' <span class="chip ok" style="font-size:10px">BI '+esc(NOTEMAP[b.billing_note_id].note_no)+'</span>':"")+'</td>'+
       '<td class="n">'+fmt(tot)+'</td>'+
       '<td class="n" style="color:var(--g2)">'+fmt(paid)+'</td>'+
       '<td class="n" style="font-weight:700;color:'+(rem>0.01?"var(--red)":"var(--g2)")+'">'+fmt(rem)+'</td>'+
@@ -290,6 +305,7 @@ function renderSelBar(){
   bar.classList.remove("hide");
   bar.innerHTML='<span style="font-weight:700">🧾 เลือก '+ids.length+' บิล · '+esc(cust)+' · รวมคงเหลือ '+fmt(tot)+' บาท</span>'+
     '<button class="btn" style="margin-left:auto" onclick="payCombined()">💰 รับชำระรวม (บิลเก่าก่อน)</button>'+
+    '<button class="btn blu" onclick="issueNoteFromSel()">📄 ออกใบวางบิล</button>'+
     '<button class="btn ghost" onclick="clearSel()">ล้างการเลือก</button>';
 }
 
@@ -423,10 +439,100 @@ window.renderDayView=async function(){
 };
 window.clearDayView=function(){ var dp=document.getElementById("dayPick"); if(dp) dp.value=""; renderDayView(); };
 
+/* ---------- ใบวางบิล (BI จาก ACC-Billing) ---------- */
+var NOTES=[], NOTEMAP={};
+window.loadNotes=async function(){
+  var box=document.getElementById("notesList"); if(!box) return;
+  if(!sbReady()){ box.innerHTML='<span style="color:var(--red)">เชื่อม Supabase ไม่ได้</span>'; return; }
+  var r=await sb.from("rev_billing_notes").select("*").order("created_at",{ascending:false});
+  if(r.error){ box.innerHTML='<span style="color:var(--red)">โหลดใบวางบิลไม่ได้: '+esc(r.error.message)+'</span>'; return; }
+  NOTES=r.data||[]; NOTEMAP={}; NOTES.forEach(function(n){ NOTEMAP[n.id]=n; });
+  var act=NOTES.filter(function(n){return n.status!=="cancelled";});
+  if(!act.length){ box.innerHTML='<div class="muted">ยังไม่มีใบวางบิล</div>'; return; }
+  var canFin=(ROLE==="finance"||ROLE==="owner");
+  var html='<table><thead><tr><th>เลขที่ BI</th><th>ลูกค้า</th><th class="n">ยอดรวม</th><th class="n">รับแล้ว</th><th>สถานะ</th><th></th></tr></thead><tbody>';
+  act.forEach(function(n){
+    var pc=n.status==="paid"?"ok":(n.status==="partial"?"warn":"info");
+    var pt=n.status==="paid"?"ชำระครบ":(n.status==="partial"?"ชำระบางส่วน":"รอชำระ");
+    html+='<tr><td><b>'+esc(n.note_no)+'</b>'+(n.is_manual?' <span class="chip warn" style="font-size:10px">สร้างเอง</span>':"")+'</td>'+
+      '<td>'+esc(n.customer)+(n.note?'<br><span class="muted">'+esc(n.note)+'</span>':"")+'</td>'+
+      '<td class="n">'+fmt(n.total_amount)+'</td>'+
+      '<td class="n" style="color:var(--g2)">'+fmt(n.paid_amount)+'</td>'+
+      '<td><span class="chip '+pc+'">'+pt+'</span></td>'+
+      '<td style="white-space:nowrap"><button class="btn sm ghost" onclick="printNote(\''+n.id+'\')">🖨️ ปริ้น</button>'+
+        (n.status==="open"?(canFin?' <button class="btn sm red r-fin" onclick="cancelBillingNote(\''+n.id+'\')">ยกเลิก</button>':' <span class="muted">🔒 การเงิน+</span>'):"")+
+      '</td></tr>';
+  });
+  html+='</tbody></table>';
+  box.innerHTML=html; if(window.applyGating) applyGating();
+};
+window.issueNoteFromSel=async function(){
+  var ids=Object.keys(SEL); if(!ids.length){ alert("เลือกบิลของลูกค้าในทะเบียนก่อน"); return; }
+  var items=ids.map(function(id){return SEL[id];});
+  var cust=items[0].cust;
+  var dup=[];
+  ids.forEach(function(id){ var b=BILLS.find(function(x){return x.id===id;}); if(b&&b.billing_note_id&&NOTEMAP[b.billing_note_id]&&NOTEMAP[b.billing_note_id].status!=="cancelled") dup.push(b.bill_no||id); });
+  if(dup.length){ alert("บางบิลอยู่ในใบวางบิลอื่นแล้ว: "+dup.join(", ")+"\nยกเลิกใบเดิมก่อน"); return; }
+  var tot=Math.round(items.reduce(function(s,o){return s+num(o.rem);},0)*100)/100;
+  var noteNo=prompt("ออกใบวางบิล — "+cust+"\n"+items.length+" บิล · รวมคงเหลือ "+fmt(tot)+" บาท\nใส่เลขที่ใบวางบิล (ACC-Billing):","");
+  if(noteNo===null) return; noteNo=noteNo.trim(); if(!noteNo){ alert("ต้องใส่เลขที่ใบวางบิล"); return; }
+  var by=prompt("ผู้ออกใบวางบิล:","")||"";
+  var ins=await sb.from("rev_billing_notes").insert({note_no:noteNo,customer:cust,is_manual:false,total_amount:tot,paid_amount:0,status:"open",created_by:by.trim()||null}).select("id").single();
+  if(ins.error){ alert("ออกใบไม่สำเร็จ (เลขซ้ำ?): "+ins.error.message); return; }
+  var nid=ins.data.id;
+  var upd=await sb.from("rev_credit_bills").update({billing_note_id:nid}).in("id",ids);
+  if(upd.error){ alert("ผูกบิลไม่สำเร็จ: "+upd.error.message); return; }
+  SEL={};
+  alert("ออกใบวางบิล "+noteNo+" ("+items.length+" บิล) เรียบร้อย");
+  await loadNotes(); loadRegister();
+};
+window.createManualNote=async function(){
+  var no=(document.getElementById("bn_no").value||"").trim();
+  var cust=(document.getElementById("bn_cust").value||"").trim();
+  var amt=num(document.getElementById("bn_amt").value);
+  var note=(document.getElementById("bn_note").value||"").trim();
+  if(!no){ alert("ใส่เลขที่ใบวางบิล (ACC-Billing)"); return; }
+  if(!cust){ alert("ใส่ชื่อลูกค้า"); return; }
+  if(amt<=0){ alert("ใส่ยอดเงิน"); return; }
+  var by=prompt("ผู้สร้างใบวางบิล:","")||"";
+  var ins=await sb.from("rev_billing_notes").insert({note_no:no,customer:cust,is_manual:true,total_amount:amt,paid_amount:0,status:"open",note:note||null,created_by:by.trim()||null});
+  if(ins.error){ alert("สร้างไม่สำเร็จ (เลขซ้ำ?): "+ins.error.message); return; }
+  document.getElementById("bn_no").value=""; document.getElementById("bn_cust").value=""; document.getElementById("bn_amt").value=""; document.getElementById("bn_note").value="";
+  await loadNotes();
+};
+window.printNote=async function(id){
+  var n=NOTEMAP[id]; if(!n) return;
+  var w=window.open("","_blank");
+  var bills=[];
+  if(!n.is_manual){ var r=await sb.from("rev_credit_bills").select("bill_no,bill_date,total_amount").eq("billing_note_id",id).order("bill_date",{ascending:true}); bills=r.data||[]; }
+  if(!w){ alert("เปิดหน้าต่างพิมพ์ไม่ได้ (ป็อปอัปถูกบล็อก)"); return; }
+  var rows= n.is_manual
+    ? '<tr><td>1</td><td>—</td><td>'+beDate(n.issue_date)+'</td><td style="text-align:right">'+fmt(n.total_amount)+'</td></tr>'
+    : bills.map(function(b,i){ return '<tr><td>'+(i+1)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+beDate(b.bill_date)+'</td><td style="text-align:right">'+fmt(b.total_amount)+'</td></tr>'; }).join("");
+  w.document.write('<html><head><meta charset="utf-8"><title>'+esc(n.note_no)+'</title><style>body{font-family:Sarabun,sans-serif;padding:30px;color:#111}h2{margin:0}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #999;padding:7px}.r{text-align:right}.tot{font-size:18px;font-weight:700;text-align:right;margin-top:10px}.sign{margin-top:50px;display:flex;justify-content:space-between}</style></head><body>'+
+    '<h2>กิจมั่งมีโฮม — ใบวางบิล</h2>'+
+    '<div>เลขที่ (ACC-Billing) <b>'+esc(n.note_no)+'</b> · วันที่ '+beDate(n.issue_date)+(n.due_date?' · ครบกำหนด '+beDate(n.due_date):"")+'</div>'+
+    '<div style="margin-top:6px">ลูกค้า: <b>'+esc(n.customer)+'</b>'+(n.is_manual?' (สร้างเอง)':"")+'</div>'+
+    '<table><tr><th>ลำดับ</th><th>เลขบิล</th><th>วันที่</th><th class="r">ยอด (บาท)</th></tr>'+rows+'</table>'+
+    '<div class="tot">รวมทั้งสิ้น '+fmt(n.total_amount)+' บาท</div>'+
+    '<div class="sign"><div>ผู้วางบิล ______________</div><div>ผู้รับวางบิล ______________</div></div></body></html>');
+  w.document.close();
+};
+window.cancelBillingNote=async function(id){
+  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ยกเลิกใบวางบิลได้เฉพาะสิทธิ์การเงินขึ้นไป"); return; }
+  var n=NOTEMAP[id]; if(!n) return;
+  if(!confirm("ยกเลิกใบวางบิล "+n.note_no+" ?\nบิลที่ผูกจะถูกปลดออก (กลับเป็นค้าง)")) return;
+  var u1=await sb.from("rev_credit_bills").update({billing_note_id:null}).eq("billing_note_id",id);
+  if(u1.error){ alert("ปลดบิลไม่สำเร็จ: "+u1.error.message); return; }
+  var u2=await sb.from("rev_billing_notes").update({status:"cancelled"}).eq("id",id);
+  if(u2.error){ alert("ยกเลิกไม่สำเร็จ: "+u2.error.message); return; }
+  await loadNotes(); loadRegister();
+};
+
 /* ---------- boot ---------- */
 function boot(){
   document.getElementById("cb_date").value=todayISO();
-  loadRegister();
+  loadNotes(); loadRegister();
 }
 </script>
 </body>

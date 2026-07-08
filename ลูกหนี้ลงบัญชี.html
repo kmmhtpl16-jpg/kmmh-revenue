@@ -77,6 +77,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     <a class="on" href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
     <a class="r-fin" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
     <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
+    <a href="#" onclick="revLogout();return false;" style="margin-left:auto;color:#b91c1c">🚪 ออก</a>
   </nav>
 
   <!-- สรุปยอด -->
@@ -155,7 +156,7 @@ function submitPin(){
   var el=document.getElementById("pinInput"), v=(el.value||"").trim();
   var r=PINMAP[v];
   if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง ลองใหม่"; el.value=""; el.focus(); return; }
-  ROLE=r; document.getElementById("gate").style.display="none";
+  ROLE=r; document.getElementById("gate").style.display="none"; try{localStorage.setItem("rev_role",r);}catch(e){}
   applyGating();
   boot();
 }
@@ -534,6 +535,8 @@ function boot(){
   document.getElementById("cb_date").value=todayISO();
   loadNotes(); loadRegister();
 }
+window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
+(function(){ try{ var _r=localStorage.getItem("rev_role"); if(_r&&["cashier","finance","owner"].indexOf(_r)>=0){ ROLE=_r; var _g=document.getElementById("gate"); if(_g)_g.style.display="none"; applyGating(); boot(); } }catch(e){} })();
 </script>
 </body>
 </html>

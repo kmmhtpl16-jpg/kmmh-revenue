@@ -69,7 +69,7 @@
 </style>
 </head>
 <body>
-<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?'))location.reload()">👤 <span id="roleBarTxt"></span> · ออก</div>
+<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?')){try{localStorage.removeItem('rev_role');}catch(e){}location.reload();}">👤 <span id="roleBarTxt"></span> · ออก</div>
 <div id="pinGate"><div class="box">
   <div style="font-size:34px">🔒</div>
   <h2 style="margin:8px 0 2px;font-size:19px">ตรวจรายได้ KMMH</h2>
@@ -152,6 +152,7 @@ function submitPin(){
   ROLE=r; document.body.classList.add("role-"+r);
   document.getElementById("pinGate").style.display="none";
   const rb=document.getElementById("roleBar"); if(rb){ document.getElementById("roleBarTxt").textContent=ROLE_LABEL[r]; rb.style.display="block"; }
+  try{localStorage.setItem("rev_role",r);}catch(e){}
   applyGating();
 }
 function applyGating(){
@@ -160,6 +161,7 @@ function applyGating(){
   document.querySelectorAll(".r-owner").forEach(e=>e.classList.toggle("gated",!showOwner));
 }
 try{ new MutationObserver(function(){ if(ROLE) applyGating(); }).observe(document.body,{childList:true,subtree:true}); }catch(e){}
+(function(){try{var _r=localStorage.getItem("rev_role");if(_r&&ROLE_LABEL[_r]){ROLE=_r;document.body.classList.add("role-"+_r);var _g=document.getElementById("pinGate");if(_g)_g.style.display="none";var _rb=document.getElementById("roleBar");if(_rb){var _t=document.getElementById("roleBarTxt");if(_t)_t.textContent=ROLE_LABEL[_r];_rb.style.display="block";}applyGating();}}catch(e){}})();
 const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
 const num = v => (typeof v==="number") ? v : (parseFloat(String(v).replace(/,/g,""))||0);

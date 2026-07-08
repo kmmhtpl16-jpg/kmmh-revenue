@@ -189,6 +189,7 @@ function fmt(n){ return r2(n).toLocaleString("th-TH",{minimumFractionDigits:2,ma
 function pad2(n){ return String(n).padStart(2,"0"); }
 function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
 function beDate(s){ if(!s) return "—"; var p=String(s).slice(0,10).split("-"); if(p.length<3) return s; return p[2]+"/"+p[1]+"/"+(parseInt(p[0],10)+543); }
+function beStamp(s){ if(!s) return "—"; var d=new Date(s); if(isNaN(d.getTime())) return beDate(s); return pad2(d.getDate())+"/"+pad2(d.getMonth()+1)+"/"+(d.getFullYear()+543); }
 function daysSince(iso){ if(!iso) return 0; var a=new Date(iso+"T00:00:00"),b=new Date(); return Math.max(0,Math.floor((b-a)/86400000)); }
 function cellDate(v){
   if(v==null||v==="") return null;
@@ -494,9 +495,9 @@ function renderPack(rows,m,retCount){
   var oc=rows.length, packed=rows.filter(function(o){return !o.no_pack_cost;}).length;
   var list=COSTS.filter(function(c){ return m==="ALL"||c.month===m; });
   var total=list.reduce(function(s,c){return s+costAmount(c,packed,retCount);},0);
-  var h='<div style="overflow:auto"><table><thead><tr><th>ประเภท</th><th>รายการ</th><th>วิธีคิด</th><th class="n">จำนวนเงิน</th><th></th></tr></thead><tbody>';
-  list.forEach(function(c){ h+='<tr><td>'+esc((COST_CATS[c.category]||{}).n||c.category)+'</td><td>'+esc(c.item||"—")+'</td><td class="muted">'+costDetail(c,packed,retCount)+'</td><td class="n">'+fmt(costAmount(c,packed,retCount))+'</td><td><a href="#" onclick="return delCost(\''+c.id+'\')" style="color:var(--red);text-decoration:none">✕</a></td></tr>'; });
-  if(!list.length) h+='<tr><td colspan="5" class="muted">— ยังไม่มีรายการต้นทุนของเดือนนี้ —</td></tr>';
+  var h='<div style="overflow:auto"><table><thead><tr><th>ประเภท</th><th>รายการ</th><th>วันที่บันทึก</th><th>วิธีคิด</th><th class="n">จำนวนเงิน</th><th></th></tr></thead><tbody>';
+  list.forEach(function(c){ h+='<tr><td>'+esc((COST_CATS[c.category]||{}).n||c.category)+'</td><td>'+esc(c.item||"—")+'</td><td class="muted" style="white-space:nowrap">'+beStamp(c.created_at)+'</td><td class="muted">'+costDetail(c,packed,retCount)+'</td><td class="n">'+fmt(costAmount(c,packed,retCount))+'</td><td><a href="#" onclick="return delCost(\''+c.id+'\')" style="color:var(--red);text-decoration:none">✕</a></td></tr>'; });
+  if(!list.length) h+='<tr><td colspan="6" class="muted">— ยังไม่มีรายการต้นทุนของเดือนนี้ —</td></tr>';
   h+='</tbody></table></div>';
   h+='<div class="kpis" style="margin-top:10px"><div class="kpi"><div class="lb">รวมต้นทุน/ค่าใช้จ่ายเดือนนี้</div><div class="vl" style="color:var(--red)">'+fmt(total)+'</div></div>'+
      '<div class="kpi"><div class="lb">ออเดอร์ขายจริง'+(retCount?' (ตีกลับ '+retCount+')':'')+'</div><div class="vl">'+oc+'</div></div>'+

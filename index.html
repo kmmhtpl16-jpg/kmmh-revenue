@@ -57,6 +57,15 @@
 #pinGate .box{background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:30px 32px;max-width:340px;width:90%;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.10)}
 #pinGate input{font-size:24px;letter-spacing:8px;text-align:center;padding:10px;width:170px;border:1.5px solid #d6d3d1;border-radius:8px;margin:14px 0 4px}
 #pinGate .perr{color:#b91c1c;font-size:13px;min-height:18px}
+.mpov{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:14px}
+.mpov.on{display:flex}
+.mpbox{background:#fff;border-radius:14px;width:560px;max-width:100%;max-height:88vh;overflow:auto;padding:16px}
+.mpbox h3{margin:0 0 2px;font-size:16px}
+.mpmut{color:#64748b;font-size:12.5px}
+.mpbar{display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border-radius:8px;padding:8px 12px;margin-top:8px;font-weight:700}
+.mprow{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eef2f7;cursor:pointer}
+.mprow:hover{background:#f8fafc}.mprow.hit{background:#f0fdf4}
+.mpfoot{margin-top:12px;text-align:right;display:flex;gap:6px;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -750,7 +759,7 @@ async function loadPending(){
   const _Q=String.fromCharCode(39);
   function _sg(P){ var amt=parseFloat(P.amount)||0; var c=_bills.filter(function(b){ return b.date>=P.date && (Math.abs(b.ksk-amt)<=1||Math.abs(b.knv-amt)<=1); }); if(!c.length) return ''; var nm=P.from_name||''; c.sort(function(a,b){ var an=nameMatch(nm,a.cust)?0:1, bn=nameMatch(nm,b.cust)?0:1; if(an!==bn) return an-bn; return a.date<b.date?-1:1; }); var sgb=c[0]; var ok=nameMatch(nm,sgb.cust); return '<div class="sugg" style="margin-top:4px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:4px 7px;font-size:12px">💡 น่าจะตรงบิล <b>'+esc(sgb.bill)+'</b> ('+beDate(sgb.date)+(sgb.cust?(' · '+esc(sgb.cust)+(ok?' ✓ชื่อตรง':'')):'')+') <button class="btn" style="padding:1px 9px;margin:0 3px" onclick="confirmSuggest('+_Q+P.id+_Q+','+_Q+esc(sgb.bill)+_Q+')">ใช่</button><button class="btn sec" style="padding:1px 9px;margin:0" onclick="this.closest('+_Q+'.sugg'+_Q+').style.display='+_Q+'none'+_Q+'">ไม่</button></div>'; }
   list.innerHTML='<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th>ยอด</th><th></th></tr></thead><tbody>'+
-    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 9px;margin:0" onclick="matchPending(\''+d.id+'\')">ออกบิลแล้ว/จับคู่</button>'+_sg(d)+'</td></tr>').join("")+
+    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td>'+beDate(d.date)+'</td><td>'+(d.source||'—')+'</td><td>'+(d.from_name||'—')+'</td><td>'+(d.ref||'—')+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchKM(\''+d.id+'\')">🧾 บิลขาย KM</button> <button class="btn sec" style="padding:3px 7px;margin:2px 0 0" onclick="matchBI(\''+d.id+'\')">📄 ใบวางบิล BI</button>'+_sg(d)+'</td></tr>').join("")+
     '<tr class="tot"><td colspan="5">รวมรอจับคู่ (ไม่รวมบัญชีอื่น)</td><td class="num">'+TH(_mainSum)+'</td><td></td></tr>'+(_othSum>0?'<tr class="tot" style="background:#eff6ff"><td colspan="5">🏷️ แยกหมวด: รับเข้าบัญชีอื่น</td><td class="num">'+TH(_othSum)+'</td><td></td></tr>':'')+'</tbody></table>';
 }
 function xferBill(xf, amt, col){ if(!xf||!xf.length) return null; for(var i=0;i<xf.length;i++){ var x=xf[i]; if((col==='knv'||col==='any')&&(x.knv||0)>0&&Math.abs((x.knv||0)-amt)<=1) return x.bill; if((col==='ksk'||col==='any')&&(x.ksk||0)>0&&Math.abs((x.ksk||0)-amt)<=1) return x.bill; } return null; }
@@ -848,6 +857,128 @@ async function addPending(){
   document.getElementById("np_amt").value=""; document.getElementById("np_from").value=""; document.getElementById("np_ref").value=""; if(fileEl)fileEl.value=""; loadPending(); if(rec.date) _annotateFlags(rec.date);
 }
 async function openSlip(path){ if(!sb||!path) return; const r=await sb.storage.from("revenue-slips").createSignedUrl(path,3600); if(r.error||!r.data){ alert("เปิดสลิปไม่ได้: "+((r.error&&r.error.message)||"")); return; } window.open(r.data.signedUrl,"_blank"); }
+/* ===== เฟส B: จับคู่เงินรอจับคู่ กับ บิลขาย KM / ใบวางบิล BI ===== */
+var MP_PID=null, MP_P=null;
+function mpToday(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function mpBatch(){ return "MP"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase(); }
+function mpOpen(html){ document.getElementById("mpBody").innerHTML=html; document.getElementById("mpOv").classList.add("on"); if(window.applyGating)applyGating(); }
+function mpClose(){ document.getElementById("mpOv").classList.remove("on"); }
+async function mpLoadPend(id){ var r=await sb.from("rev_pending").select("*").eq("id",id).single(); return r.data; }
+function mpShortHtml(diff){
+  return '<div style="margin-top:10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px">'+
+    '<div style="font-weight:600;color:#b45309;font-size:13px;margin-bottom:4px">โอนขาด '+TH(diff)+' บาท — ลงส่วนต่างเป็น</div>'+
+    '<select id="mpShortType" style="font-size:13px;padding:5px 9px;border-radius:6px;border:1px solid #cbd5e1;width:100%">'+
+      '<option value="fee">ค่าธรรมเนียมธนาคาร — ปิดครบ (ลงรายจ่าย)</option>'+
+      '<option value="disc">ส่วนลด — ปิดครบ (ไม่ลงรายจ่าย)</option>'+
+      '<option value="part">แบ่งชำระ — ปิดเท่าที่เงินถึง (ที่เหลือค้าง)</option>'+
+    '</select></div>';
+}
+async function mpRecompute(id){
+  var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
+  var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
+  var b=await sb.from("rev_credit_bills").select("total_amount").eq("id",id).single();
+  var tot=num(b.data&&b.data.total_amount);
+  var status=paid>=tot-0.01?"paid":(paid>0.01?"partial":"open");
+  await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100,status:status}).eq("id",id);
+}
+
+/* ---------- บิลขาย KM ---------- */
+window.matchKM=async function(id){
+  if(!sb) return; MP_PID=id; MP_P=await mpLoadPend(id); if(!MP_P){ alert("ไม่พบรายการ"); return; }
+  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount").neq("status","paid").order("bill_date",{ascending:true});
+  if(r.error){ alert("โหลดบิลไม่ได้: "+r.error.message); return; }
+  var rows=(r.data||[]).map(function(b){ var rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; if(rem<=0.01) return ""; return '<tr><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
+  mpOpen('<h3>จับคู่ '+TH(MP_P.amount)+' ฿ — เลือกบิลขาย (เก่าสุดบน)</h3>'+
+    '<div class="mpmut">จาก '+esc(MP_P.from_name||"")+' · ติ๊กบิลที่เงินก้อนนี้ปิด</div>'+
+    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="mpbar"><span id="mpKMmsg">เลือก 0 บิล</span><b id="mpKMsum" style="color:#2563eb">0.00 ฿</b></div>'+
+    '<div id="mpKMshort"></div>'+
+    '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button><button class="btn" id="mpKMdo" disabled onclick="mpDoKM()">✓ จับคู่ &amp; ปิดบิล</button></div>');
+};
+window.mpSumKM=function(){
+  var ck=[].slice.call(document.querySelectorAll(".mpkb:checked"));
+  var sum=Math.round(ck.reduce(function(s,c){return s+num(c.getAttribute("data-rem"));},0)*100)/100;
+  document.getElementById("mpKMsum").textContent=TH(sum)+" ฿";
+  var amt=num(MP_P.amount), diff=Math.round((sum-amt)*100)/100;
+  var m="เลือก "+ck.length+" บิล";
+  if(ck.length){ if(Math.abs(diff)<0.01) m+=" · ✓ ยอดตรง"; else if(diff>0) m+=" · เกินเงินเข้า "+TH(diff); else m+=" · น้อยกว่าบิล "+TH(-diff); }
+  document.getElementById("mpKMmsg").textContent=m;
+  var sh=document.getElementById("mpKMshort");
+  sh.innerHTML=(ck.length && diff>0.009)? mpShortHtml(diff) : "";
+  document.getElementById("mpKMdo").disabled=!ck.length;
+};
+window.mpDoKM=async function(){
+  var ck=[].slice.call(document.querySelectorAll(".mpkb:checked")); if(!ck.length) return;
+  var nos=ck.map(function(c){return c.getAttribute("data-no")||"";});
+  var sum=Math.round(ck.reduce(function(s,c){return s+num(c.getAttribute("data-rem"));},0)*100)/100;
+  var amt=num(MP_P.amount), diff=Math.round((sum-amt)*100)/100;
+  var mode="full";
+  if(diff>0.009){ mode=(document.getElementById("mpShortType")||{}).value||"fee"; }
+  var by=prompt("ผู้ยืนยัน:",""); if(by===null) return; by=(by||"").trim();
+  var pdate=(MP_P.date||mpToday()), batch=mpBatch();
+  var payments=[], closedNos=[];
+  if(mode==="part"){
+    var cash=amt;
+    for(var i=0;i<ck.length;i++){ if(cash<=0.005) break; var rem=num(ck[i].getAttribute("data-rem")); var give=Math.round(Math.min(rem,cash)*100)/100; if(give>0.005){ payments.push({bill_id:ck[i].getAttribute("data-id"),pay_date:pdate,amount:give,method:MP_P.source||"โอน",ref:"จับคู่ตรวจรายได้ (แบ่งชำระ)",batch_ref:batch,confirmed_by:by||null}); if(give>=rem-0.005) closedNos.push(nos[i]); cash=Math.round((cash-give)*100)/100; } }
+  } else {
+    for(var j=0;j<ck.length;j++){ var rem2=num(ck[j].getAttribute("data-rem")); payments.push({bill_id:ck[j].getAttribute("data-id"),pay_date:pdate,amount:rem2,method:MP_P.source||"โอน",ref:"จับคู่ตรวจรายได้"+(mode==="fee"?" (หักค่าธรรมเนียม)":mode==="disc"?" (ส่วนลด)":""),batch_ref:batch,confirmed_by:by||null}); closedNos.push(nos[j]); }
+  }
+  if(!payments.length){ alert("ไม่มีบิลให้ปิด"); return; }
+  var ins=await sb.from("rev_credit_payments").insert(payments);
+  if(ins.error){ alert("บันทึกไม่สำเร็จ: "+ins.error.message); return; }
+  var bset={}; payments.forEach(function(p){bset[p.bill_id]=1;});
+  for(var k in bset){ await mpRecompute(k); }
+  if(mode==="fee" && diff>0.009){ await sb.from("rev_expenses").insert([{exp_date:pdate,category:"ค่าธรรมเนียมธนาคาร",description:"ส่วนต่างรับชำระ "+(MP_P.from_name||""),amount:diff,source:"credit-match",ref:"จับคู่ KM "+nos.filter(Boolean).join(","),is_cogs:false,created_by:by||null}]); }
+  await sb.from("rev_pending").update({status:"matched",matched_bill_no:(closedNos.filter(Boolean).join(", ")||nos.filter(Boolean).join(", ")),matched_date:mpToday(),confirmed_by:by||null}).eq("id",MP_PID);
+  mpClose(); alert("ปิด "+closedNos.length+" บิล"+(mode==="fee"?" · ลงค่าธรรมเนียม "+TH(diff):mode==="disc"?" · ส่วนลด "+TH(diff):mode==="part"?" · แบ่งชำระ":"")); loadPending();
+};
+
+/* ---------- ใบวางบิล BI ---------- */
+window.matchBI=async function(id){
+  if(!sb) return; MP_PID=id; MP_P=await mpLoadPend(id); if(!MP_P){ alert("ไม่พบรายการ"); return; }
+  var r=await sb.from("rev_billing_notes").select("*").in("status",["open","partial"]).order("created_at",{ascending:false});
+  if(r.error){ alert("โหลดใบวางบิลไม่ได้: "+r.error.message); return; }
+  var amt=num(MP_P.amount);
+  var notes=(r.data||[]).sort(function(a,b){ var ra=num(a.total_amount)-num(a.paid_amount), rb=num(b.total_amount)-num(b.paid_amount); var ha=Math.abs(ra-amt)<0.01?0:1, hb=Math.abs(rb-amt)<0.01?0:1; return ha-hb; });
+  var list=notes.length? notes.map(function(n){ var rem=Math.round((num(n.total_amount)-num(n.paid_amount))*100)/100; var hit=Math.abs(rem-amt)<0.01; return '<div class="mprow'+(hit?" hit":"")+'" onclick="mpPickBI(\''+n.id+'\')"><div><b>BI '+esc(n.note_no)+'</b>'+(n.is_manual?' <span class="badge info" style="font-size:10px">สร้างเอง</span>':"")+'<div class="mpmut">'+esc(n.customer)+' · '+(n.is_manual?"ไม่มีบิล":"ผูกบิล")+'</div></div><div style="text-align:right"><b>'+TH(rem)+'</b>'+(hit?'<div class="mpmut" style="color:#15803d">✓ ยอดตรง</div>':"")+'</div></div>'; }).join("") : '<div class="mpmut" style="padding:10px 0">ยังไม่มีใบวางบิลที่เปิดอยู่ — ไปออกที่หน้าลูกหนี้ก่อน</div>';
+  mpOpen('<h3>จับคู่ '+TH(MP_P.amount)+' ฿ — เลือกใบวางบิล (BI)</h3>'+
+    '<div class="mpmut">จาก '+esc(MP_P.from_name||"")+' · ใบที่ยอดตรงอยู่บนสุด</div>'+
+    '<div style="max-height:340px;overflow:auto;margin-top:8px">'+list+'</div>'+
+    '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button></div>');
+};
+window.mpPickBI=async function(nid){
+  var r=await sb.from("rev_billing_notes").select("*").eq("id",nid).single(); var n=r.data; if(!n) return;
+  var rem=Math.round((num(n.total_amount)-num(n.paid_amount))*100)/100;
+  var amt=num(MP_P.amount), diff=Math.round((rem-amt)*100)/100;
+  if(diff>0.009){
+    mpOpen('<h3>โอนขาด '+TH(diff)+' บาท</h3>'+
+      '<div class="mpmut">เงินเข้า '+TH(amt)+' · คงเหลือใบ BI '+esc(n.note_no)+' '+TH(rem)+'</div>'+
+      mpShortHtml(diff)+
+      '<div class="mpfoot"><button class="btn sec" onclick="matchBI(MP_PID)">‹ กลับ</button><button class="btn" onclick="mpDoBI(\''+nid+'\')">ยืนยัน</button></div>');
+  } else { mpDoBI(nid); }
+};
+window.mpDoBI=async function(nid){
+  var r=await sb.from("rev_billing_notes").select("*").eq("id",nid).single(); var n=r.data; if(!n) return;
+  var rem=Math.round((num(n.total_amount)-num(n.paid_amount))*100)/100;
+  var amt=num(MP_P.amount), diff=Math.round((rem-amt)*100)/100;
+  var mode="full";
+  if(diff>0.009){ mode=(document.getElementById("mpShortType")||{}).value||"fee"; }
+  var by=prompt("ผู้ยืนยัน:",""); if(by===null) return; by=(by||"").trim();
+  var pdate=(MP_P.date||mpToday()), batch=mpBatch();
+  if(!n.is_manual){
+    var br=await sb.from("rev_credit_bills").select("id,total_amount,paid_amount,bill_date").eq("billing_note_id",nid).neq("status","paid").order("bill_date",{ascending:true});
+    var bills=br.data||[], cash=(mode==="part")?amt:rem, payments=[];
+    for(var i=0;i<bills.length;i++){ if(cash<=0.005) break; var brem=Math.round((num(bills[i].total_amount)-num(bills[i].paid_amount))*100)/100; var give=Math.round(Math.min(brem,cash)*100)/100; if(give>0.005){ payments.push({bill_id:bills[i].id,pay_date:pdate,amount:give,method:MP_P.source||"โอน",ref:"จับคู่ใบวางบิล BI "+n.note_no+(mode==="fee"?" (หักค่าธรรมเนียม)":mode==="disc"?" (ส่วนลด)":mode==="part"?" (แบ่งชำระ)":""),billing_note_no:n.note_no,batch_ref:batch,confirmed_by:by||null}); cash=Math.round((cash-give)*100)/100; } }
+    if(payments.length){ var ins=await sb.from("rev_credit_payments").insert(payments); if(ins.error){ alert("บันทึกไม่สำเร็จ: "+ins.error.message); return; } var bset={}; payments.forEach(function(p){bset[p.bill_id]=1;}); for(var k in bset){ await mpRecompute(k); } }
+  }
+  var addPaid=(mode==="part")?amt:rem;
+  var newPaid=Math.round((num(n.paid_amount)+addPaid)*100)/100; if(newPaid>num(n.total_amount)) newPaid=num(n.total_amount);
+  var nstatus=(newPaid>=num(n.total_amount)-0.01)?"paid":(newPaid>0.01?"partial":"open");
+  await sb.from("rev_billing_notes").update({paid_amount:newPaid,status:nstatus}).eq("id",nid);
+  if(mode==="fee" && diff>0.009){ await sb.from("rev_expenses").insert([{exp_date:pdate,category:"ค่าธรรมเนียมธนาคาร",description:"ส่วนต่างรับชำระใบ BI "+n.note_no,amount:diff,source:"credit-match",ref:"BI "+n.note_no,is_cogs:false,created_by:by||null}]); }
+  await sb.from("rev_pending").update({status:"matched",matched_bill_no:"BI "+n.note_no,matched_date:mpToday(),confirmed_by:by||null}).eq("id",MP_PID);
+  mpClose(); alert("จับคู่ใบวางบิล BI "+n.note_no+(mode==="fee"?" · ค่าธรรมเนียม "+TH(diff):mode==="disc"?" · ส่วนลด "+TH(diff):mode==="part"?" · แบ่งชำระ":"")); loadPending();
+};
 async function matchPending(id){
   if(!sb) return; const bill=prompt("ออกบิลแล้ว — เลขที่บิล:"); if(bill===null) return; const by=prompt("ผู้ยืนยัน:"); if(by===null) return;
   const {error}=await sb.from("rev_pending").update({status:"matched",matched_bill_no:bill.trim(),matched_date:new Date().toISOString().slice(0,10),confirmed_by:(by||"").trim()}).eq("id",id);
@@ -861,5 +992,6 @@ const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISO
 const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);
 loadDeposits(); loadPending(); loadMonthStatus();
 </script>
-<script src="credit.js?v=20260704j"></script></body>
+<script src="credit.js?v=20260704j"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+</body>
 </html>

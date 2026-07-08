@@ -69,7 +69,7 @@
 </style>
 </head>
 <body>
-<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?')){try{localStorage.removeItem('rev_role');}catch(e){}location.reload();}">👤 <span id="roleBarTxt"></span> · ออก</div>
+<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?')){try{localStorage.removeItem('rev_role');}catch(e){}try{sessionStorage.removeItem('rev_dash_ok');sessionStorage.removeItem('rev_role');}catch(e){}location.reload();}">👤 <span id="roleBarTxt"></span> · ออก</div>
 <div id="pinGate"><div class="box">
   <div style="font-size:34px">🔒</div>
   <h2 style="margin:8px 0 2px;font-size:19px">ตรวจรายได้ KMMH</h2>

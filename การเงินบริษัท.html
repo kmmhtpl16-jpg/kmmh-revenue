@@ -80,6 +80,7 @@ canvas{max-height:320px}
     <a href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
     <a class="on r-fin" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
     <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
+    <a href="#" onclick="revLogout();return false;" style="margin-left:auto;color:#b91c1c">🚪 ออก</a>
   </nav>
 
   <!-- ช่วงเวลา -->
@@ -145,6 +146,7 @@ const CATS=["ค่าซื้อสินค้า","ค่าแรง/เง
 const catOptions=(sel)=>CATS.map(c=>`<option${c===sel?" selected":""}>${c}</option>`).join("");
 
 /* ================= GATE ================= */
+window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
 async function doGate(){
   const v=document.getElementById("pin").value.trim();
   const role=ROLE_PINS[v];
@@ -154,7 +156,7 @@ async function doGate(){
   const ok=await ensureRevSession(v);   // 0402=เจ้าของ / 9989(pin_price)=พนักงาน — ทั้งคู่มินต์ session ผ่าน RLS ได้
   if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
   sessionStorage.setItem("rev_dash_ok","1");
-  sessionStorage.setItem("rev_role",role);
+  sessionStorage.setItem("rev_role",role); try{localStorage.setItem("rev_role",role);}catch(e){}
   document.getElementById("gate").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
   applyGating();
@@ -708,7 +710,7 @@ function renderGross(){
   // ถ้าเคยผ่าน gate ในเซสชันนี้ + มี session อยู่แล้ว ให้เข้าเลย
   if(sessionStorage.getItem("rev_dash_ok")==="1" && sb){
     const {data:{session}}=await sb.auth.getSession();
-    if(session){ ROLE=sessionStorage.getItem("rev_role")||"owner"; document.getElementById("gate").classList.add("hide"); document.getElementById("app").classList.remove("hide"); applyGating(); quick("m"); reloadAll(); return; }
+    if(session){ ROLE=localStorage.getItem("rev_role")||sessionStorage.getItem("rev_role")||"finance"; document.getElementById("gate").classList.add("hide"); document.getElementById("app").classList.remove("hide"); applyGating(); quick("m"); reloadAll(); return; }
   }
   document.getElementById("pin").focus();
 })();

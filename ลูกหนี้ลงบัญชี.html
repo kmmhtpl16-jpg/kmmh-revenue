@@ -535,7 +535,7 @@ function boot(){
   document.getElementById("cb_date").value=todayISO();
   loadNotes(); loadRegister();
 }
-window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
+window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
 (function(){ try{ var _r=localStorage.getItem("rev_role"); if(_r&&["cashier","finance","owner"].indexOf(_r)>=0){ ROLE=_r; var _g=document.getElementById("gate"); if(_g)_g.style.display="none"; applyGating(); boot(); } }catch(e){} })();
 </script>
 </body>

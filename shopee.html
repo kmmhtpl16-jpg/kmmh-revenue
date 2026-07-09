@@ -104,6 +104,15 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
         <div class="ic">💰</div><div class="nm">รายรับ (โอนเงินสำเร็จ)</div><div class="hint">เงินเข้า+ค่าธรรมเนียมจริง</div><div class="fn" id="fn_pay"></div></label>
     </div>
     <div id="upMsg" class="muted" style="margin-top:10px"></div>
+    <div id="creditMsg" style="margin-top:8px"></div>
+  </div>
+
+  <div id="creditCard" class="card r-fin hide">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h3 style="margin:0">🔗 เชื่อมกับหน้าลูกหนี้ลงบัญชี (SHOPEE)</h3>
+      <button class="btn ghost sm" onclick="creditSync(true)">↻ ตรวจ/ตัดชำระเดี๋ยวนี้</button>
+    </div>
+    <div id="creditBox" class="muted" style="margin-top:8px">–</div>
   </div>
 
   <div id="dash" class="hide">
@@ -319,13 +328,13 @@ document.getElementById("f_acc").addEventListener("change",async function(e){
     // รวมออเดอร์ซ้ำข้ามไฟล์
     var mm={}; all.forEach(function(o){ if(!mm[o.order_no]) mm[o.order_no]=o; else { mm[o.order_no].billed_amount=r2(num(mm[o.order_no].billed_amount)+num(o.billed_amount)); } });
     var r=await upsertOrders(Object.values(mm));
-    msg.innerHTML='<div class="okbox">✓ บิลขาย: จับได้ '+Object.keys(mm).length+' ออเดอร์ บันทึกแล้ว</div>'; reload();
+    msg.innerHTML='<div class="okbox">✓ บิลขาย: จับได้ '+Object.keys(mm).length+' ออเดอร์ บันทึกแล้ว</div>'; await creditSync(false);
   }catch(err){ msg.innerHTML='<div class="errbox">บิล acc-billing: '+esc(err.message)+'</div>'; }
 });
 document.getElementById("f_pay").addEventListener("change",async function(e){
   var f=e.target.files[0]; if(!f) return; setFn("fn_pay",f.name); var msg=document.getElementById("upMsg"); msg.textContent="กำลังอ่านไฟล์รายรับ…";
   try{ var wb=await readWB(f); var list=parsePayout(wb); var r=await upsertOrders(list);
-    msg.innerHTML='<div class="okbox">✓ รายรับ: '+list.length+' ออเดอร์ (เงินเข้า+ค่าธรรมเนียมจริง) บันทึกแล้ว</div>'; reload();
+    msg.innerHTML='<div class="okbox">✓ รายรับ: '+list.length+' ออเดอร์ (เงินเข้า+ค่าธรรมเนียมจริง) บันทึกแล้ว</div>'; await creditSync(false);
   }catch(err){ msg.innerHTML='<div class="errbox">ไฟล์รายรับ: '+esc(err.message)+'</div>'; }
 });
 document.getElementById("f_ord").addEventListener("change",async function(e){
@@ -334,6 +343,169 @@ document.getElementById("f_ord").addEventListener("change",async function(e){
     msg.innerHTML='<div class="okbox">✓ ระหว่างจัดส่ง: '+list.length+' ออเดอร์ (สถานะ+ประมาณค่าธรรมเนียม) บันทึกแล้ว</div>'; reload();
   }catch(err){ msg.innerHTML='<div class="errbox">ไฟล์ order: '+esc(err.message)+'</div>'; }
 });
+
+/* ================= เชื่อมลูกหนี้ SHOPEE (ตัดชำระอัตโนมัติ) =================
+   หลักการ:
+   - ออเดอร์ที่ Shopee จ่ายแล้ว (paid) และรู้เลขบิล (bill_no) → ตัดชำระบิลนั้นในหน้าลูกหนี้
+   - ยอดตัด = billed_amount ของออเดอร์ที่จ่ายแล้ว (ยอดตามบิล ไม่ใช่เงินสุทธิที่เข้าบัญชี)
+     * ถ้าออเดอร์ในบิล "จ่ายครบทุกตัว" → ตัดยอดคงเหลือทั้งหมด บิลปิดพอดีเสมอ (กันเศษค้าง)
+     * ถ้าจ่ายบางส่วน → ตัดตาม billed_amount แต่ไม่เกินยอดคงเหลือ
+   - ค่าธรรมเนียมจริง (payout_fee) ลงเป็นรายจ่าย rev_expenses หมวด "ค่าธรรมเนียม Shopee" (is_cogs=true)
+   - แท็กเงินรับจริง (payout_net) ไว้ใน ref ของ payment
+   - กันลงซ้ำด้วย shopee_orders.credit_posted
+========================================================================= */
+var CREDIT_METHOD="โอนกสิกร (Shopee)";
+async function _billsByNo(nos){
+  var out={};
+  for(var i=0;i<nos.length;i+=100){
+    var r=await sb.from("rev_credit_bills").select("*").in("bill_no",nos.slice(i,i+100)).ilike("customer","%shop%");
+    if(r.error) throw new Error("อ่านบิลลูกหนี้ไม่ได้: "+r.error.message);
+    (r.data||[]).forEach(function(b){ out[b.bill_no]=b; });
+  }
+  return out;
+}
+async function _recomputeBill(id){
+  var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
+  var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
+  var b=await sb.from("rev_credit_bills").select("total_amount").eq("id",id).single();
+  var tot=num(b.data&&b.data.total_amount);
+  var st= paid>=tot-0.01 ? "paid" : (paid>0.01?"partial":"open");
+  await sb.from("rev_credit_bills").update({paid_amount:r2(paid),status:st}).eq("id",id);
+  return {paid:r2(paid),total:r2(tot),status:st};
+}
+/* ตัดชำระอัตโนมัติ — คืน {posted:[], waiting:[], nobill:[], skipped:[]} */
+async function autoPostCredit(){
+  if(!sbReady()) return null;
+  var r=await sb.from("shopee_orders").select("*").eq("paid",true).eq("credit_posted",false);
+  if(r.error) throw new Error(r.error.message);
+  var pend=r.data||[];
+  var nobill=pend.filter(function(o){ return !o.bill_no; });
+  var work=pend.filter(function(o){ return !!o.bill_no; });
+  var res={posted:[],waiting:[],nobill:nobill,skipped:[]};
+  if(!work.length) return res;
+
+  // จัดกลุ่มตามเลขบิล
+  var g={}; work.forEach(function(o){ (g[o.bill_no]=g[o.bill_no]||[]).push(o); });
+  var nos=Object.keys(g);
+  var bills=await _billsByNo(nos);
+
+  // ต้องรู้ว่าบิลนั้นมีออเดอร์ทั้งหมดกี่ตัว/จ่ายครบยัง
+  var ra=await sb.from("shopee_orders").select("order_no,bill_no,paid,billed_amount").in("bill_no",nos);
+  if(ra.error) throw new Error(ra.error.message);
+  var allByBill={}; (ra.data||[]).forEach(function(o){ (allByBill[o.bill_no]=allByBill[o.bill_no]||[]).push(o); });
+
+  for(var i=0;i<nos.length;i++){
+    var bno=nos[i], orders=g[bno], bill=bills[bno];
+    if(!bill){ res.waiting.push({bill_no:bno,n:orders.length,why:"ยังไม่มีบิลนี้ในหน้าลูกหนี้"}); continue; }
+
+    var rem=r2(num(bill.total_amount)-num(bill.paid_amount));
+    if(rem<=0.01){ // บิลปิดแล้ว — ติ๊กออเดอร์ให้จบ ไม่ตัดซ้ำ
+      await _markPosted(orders,"already-paid");
+      res.skipped.push({bill_no:bno,why:"บิลชำระครบอยู่แล้ว"}); continue;
+    }
+    var all=allByBill[bno]||[];
+    var allPaid=all.length>0 && all.every(function(o){ return !!o.paid; });
+    var billedPaid=r2(orders.reduce(function(s,o){ return s+num(o.billed_amount); },0));
+    var give = allPaid ? rem : r2(Math.min(billedPaid,rem));
+    if(give<=0.01){ res.waiting.push({bill_no:bno,n:orders.length,why:"ยอดตัดเป็นศูนย์ (ตรวจ billed_amount)"}); continue; }
+
+    var netRecv=r2(orders.reduce(function(s,o){ return s+num(o.payout_net); },0));
+    var feeAmt =r2(Math.abs(orders.reduce(function(s,o){ return s+num(o.payout_fee); },0)));
+    var payDate=orders.map(function(o){return o.payout_date;}).filter(Boolean).sort().pop()||todayISO();
+    var batch="SHOPEE-"+bno+"-"+payDate;
+
+    // กันซ้ำระดับ batch (เผื่อ credit_posted ไม่ถูกติ๊กเพราะ error กลางทาง)
+    var dup=await sb.from("rev_credit_payments").select("id").eq("batch_ref",batch).limit(1);
+    if(dup.data&&dup.data.length){ await _markPosted(orders,batch); res.skipped.push({bill_no:bno,why:"ลงรอบนี้ไปแล้ว"}); continue; }
+
+    var ins=await sb.from("rev_credit_payments").insert([{
+      bill_id:bill.id, pay_date:payDate, amount:give, method:CREDIT_METHOD,
+      ref:"Shopee payout "+beDate(payDate)+" · "+orders.length+" ออเดอร์ · รับจริง "+fmt(netRecv)+" · ค่าธรรมเนียม "+fmt(feeAmt),
+      batch_ref:batch, confirmed_by:"shopee-auto"
+    }]);
+    if(ins.error) throw new Error("ตัดบิล "+bno+" ไม่ได้: "+ins.error.message);
+
+    if(feeAmt>0.01){
+      var fref="shopee-fee-"+bno+"-"+payDate;
+      var fd=await sb.from("rev_expenses").select("id").eq("ref",fref).limit(1);
+      if(!(fd.data&&fd.data.length)){
+        var ex=await sb.from("rev_expenses").insert([{
+          exp_date:payDate, category:"ค่าธรรมเนียม Shopee",
+          description:"ค่าธรรมเนียม Shopee บิล "+bno+" ("+orders.length+" ออเดอร์) · รับจริง "+fmt(netRecv),
+          amount:feeAmt, source:"shopee-auto", ref:fref, is_cogs:true, created_by:"shopee-auto"
+        }]);
+        if(ex.error) throw new Error("ลงค่าธรรมเนียมบิล "+bno+" ไม่ได้: "+ex.error.message);
+      }
+    }
+    var after=await _recomputeBill(bill.id);
+    await _markPosted(orders,batch);
+    res.posted.push({bill_no:bno,n:orders.length,give:give,fee:feeAmt,net:netRecv,status:after.status,rem:r2(after.total-after.paid)});
+  }
+  return res;
+}
+async function _markPosted(orders,batch){
+  var nos=orders.map(function(o){return o.order_no;});
+  for(var i=0;i<nos.length;i+=100){
+    await sb.from("shopee_orders").update({credit_posted:true,credit_batch:batch,credit_posted_at:new Date().toISOString()}).in("order_no",nos.slice(i,i+100));
+  }
+}
+/* ตรวจว่ายอด 2 โปรแกรมตรงกันไหม */
+async function creditCheck(){
+  var rb=await sb.from("rev_credit_bills").select("bill_no,total_amount,paid_amount,status").ilike("customer","%shop%");
+  if(rb.error) throw new Error(rb.error.message);
+  var bills=rb.data||[];
+  var ro=await sb.from("shopee_orders").select("bill_no,paid,billed_amount").not("bill_no","is",null);
+  if(ro.error) throw new Error(ro.error.message);
+  var unpaidByBill={}; (ro.data||[]).forEach(function(o){ if(!o.paid) unpaidByBill[o.bill_no]=r2((unpaidByBill[o.bill_no]||0)+num(o.billed_amount)); });
+  var credRem=r2(bills.reduce(function(s,b){ return s+(num(b.total_amount)-num(b.paid_amount)); },0));
+  var shopRem=r2(bills.reduce(function(s,b){ return s+(unpaidByBill[b.bill_no]||0); },0));
+  var rows=bills.map(function(b){
+    var cr=r2(num(b.total_amount)-num(b.paid_amount)), sr=r2(unpaidByBill[b.bill_no]||0);
+    return {bill_no:b.bill_no,cred:cr,shop:sr,diff:r2(cr-sr),noOrders:!(b.bill_no in unpaidByBill) && cr>0.01};
+  }).filter(function(x){ return x.cred>0.01||x.shop>0.01; });
+  return {credRem:credRem,shopRem:shopRem,diff:r2(credRem-shopRem),rows:rows};
+}
+/* เรียกอัตโนมัติหลังนำเข้าไฟล์ (และปุ่มตรวจเดี๋ยวนี้) */
+async function creditSync(manual){
+  var box=document.getElementById("creditBox"), msg=document.getElementById("creditMsg");
+  document.getElementById("creditCard").classList.remove("hide");
+  if(box) box.innerHTML='<span class="muted">กำลังตรวจ…</span>';
+  try{
+    var res=await autoPostCredit();
+    if(res && res.posted.length){
+      var t=res.posted.reduce(function(s,p){return s+p.give;},0), f=res.posted.reduce(function(s,p){return s+p.fee;},0);
+      msg.innerHTML='<div class="okbox">💰 ตัดชำระลูกหนี้ SHOPEE อัตโนมัติ '+res.posted.length+' บิล รวม '+fmt(t)+' บาท · ลงค่าธรรมเนียม '+fmt(f)+' บาท (ต้นทุนขาย)</div>';
+    } else if(manual){ msg.innerHTML='<div class="muted">ไม่มีรายการใหม่ให้ตัดชำระ</div>'; }
+    await creditRender(res);
+    reload();
+  }catch(err){
+    console.error(err);
+    msg.innerHTML='<div class="errbox">❌ ตัดชำระลูกหนี้ไม่สำเร็จ: '+esc(err.message)+'</div>';
+    if(box) box.innerHTML='';
+  }
+}
+async function creditRender(res){
+  var box=document.getElementById("creditBox"); if(!box) return;
+  var chk=await creditCheck();
+  var ok=Math.abs(chk.diff)<=0.01;
+  var h='<div class="kpis" style="margin:0 0 8px">'+
+    '<div class="kpi"><div class="lb">หนี้คงเหลือ (หน้าลูกหนี้)</div><div class="vl">'+fmt(chk.credRem)+'</div></div>'+
+    '<div class="kpi"><div class="lb">ยอดที่ Shopee ยังไม่จ่าย</div><div class="vl">'+fmt(chk.shopRem)+'</div></div>'+
+    '<div class="kpi"><div class="lb">ผลต่าง</div><div class="vl" style="color:'+(ok?"var(--g2)":"var(--red)")+'">'+fmt(chk.diff)+'</div></div></div>';
+  h+= ok ? '<div class="okbox">✅ ยอด 2 โปรแกรมตรงกัน</div>'
+         : '<div class="note">⚠ ยอดไม่ตรงกัน '+fmt(chk.diff)+' บาท — ดูรายบิลด้านล่าง (บิลที่ไม่มีออเดอร์ = ยังไม่ได้นำเข้าไฟล์บิล/ออเดอร์ของวันนั้น)</div>';
+  var bad=chk.rows.filter(function(x){ return Math.abs(x.diff)>0.01; });
+  if(bad.length){
+    h+='<table style="margin-top:8px"><thead><tr><th>เลขบิล</th><th class="n">หนี้คงเหลือ</th><th class="n">Shopee ยังไม่จ่าย</th><th class="n">ต่าง</th><th>หมายเหตุ</th></tr></thead><tbody>'+
+      bad.map(function(x){ return '<tr><td>'+esc(x.bill_no||"—")+'</td><td class="n">'+fmt(x.cred)+'</td><td class="n">'+fmt(x.shop)+'</td><td class="n" style="color:var(--red)">'+fmt(x.diff)+'</td><td>'+(x.noOrders?"ไม่พบออเดอร์ของบิลนี้":"")+'</td></tr>'; }).join("")+
+      '</tbody></table>';
+  }
+  if(res){
+    if(res.nobill.length) h+='<div class="note" style="margin-top:8px">⏳ '+res.nobill.length+' ออเดอร์ Shopee จ่ายแล้วแต่<b>ยังไม่มีเลขบิล</b> — จะตัดให้อัตโนมัติเมื่อนำเข้าไฟล์บิล acc-billing ของออเดอร์เหล่านี้</div>';
+    if(res.waiting.length) h+='<div class="note" style="margin-top:8px">⏳ รอบิลในหน้าลูกหนี้: '+res.waiting.map(function(w){return esc(w.bill_no)+" ("+w.why+")";}).join(" · ")+'</div>';
+  }
+  box.innerHTML=h;
+}
 
 /* ---------- load + render ---------- */
 var ALL=[],COSTS=[],CURTAB="pay";
@@ -376,7 +548,9 @@ function render(){
   var _cost=COSTS.filter(function(c){return m==="ALL"||c.month===m;}).reduce(function(s,c){return s+costAmount(c,_packed,retCount);},0);
   var _kp=document.getElementById("kPack"); if(_kp) _kp.textContent=fmt(_cost);
   renderPay(rows,all); renderFee(rows); renderPack(rows,m,retCount); renderPnl(rows,m,retCount); renderRtn();
+  if(!_creditBoot && (ROLE==="finance"||ROLE==="owner")){ _creditBoot=true; setTimeout(function(){ creditSync(false); },300); }
 }
+var _creditBoot=false;
 
 /* ① จ่ายครบไหม — เน้นว่าได้เงินหรือยัง (ไม่เทียบกับค่าประมาณ) */
 function renderPay(rows,all){

@@ -142,8 +142,36 @@ function isoFromExcel(v){
 }
 
 /* หมวดรายจ่ายมาตรฐาน (COGS = ต้นทุนสินค้า) */
-const CATS=["ค่าซื้อสินค้า","ค่าแรง/เงินเดือน","ค่าขนส่ง","ค่าน้ำ-ไฟ-โทรศัพท์","ค่าเช่า","ค่าธรรมเนียม/ดอกเบี้ย","ภาษี","ซ่อมบำรุง","ของใช้สำนักงาน","การตลาด","อื่นๆ"];
-const catOptions=(sel)=>CATS.map(c=>`<option${c===sel?" selected":""}>${c}</option>`).join("");
+const CATS_DEFAULT=["ค่าซื้อสินค้า","ค่าแรง/เงินเดือน","ค่าขนส่ง","ค่าน้ำ-ไฟ-โทรศัพท์","ค่าเช่า","ค่าธรรมเนียม/ดอกเบี้ย","ภาษี","ซ่อมบำรุง","ของใช้สำนักงาน","การตลาด","อื่นๆ"];
+function loadCustomCats(){ try{ const a=JSON.parse(localStorage.getItem("rev_custom_cats")||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function saveCustomCats(a){ try{ localStorage.setItem("rev_custom_cats",JSON.stringify(a)); }catch(e){} }
+/* รวมหมวดมาตรฐาน + หมวดที่ผู้ใช้เพิ่มเอง โดยให้ "อื่นๆ" อยู่ท้ายสุดเสมอ */
+function allCats(){
+  const merged=CATS_DEFAULT.filter(c=>c!=="อื่นๆ");
+  loadCustomCats().forEach(c=>{ if(!merged.includes(c)) merged.push(c); });
+  merged.push("อื่นๆ");
+  return merged;
+}
+const catOptions=(sel)=>allCats().map(c=>`<option${c===sel?" selected":""}>${esc(c)}</option>`).join("");
+/* ใช้ในหน้าแก้ไข: ถ้าหมวดเดิมไม่มีในลิสต์ (เช่นหมวดเก่า/หมวดที่ลบไปแล้ว) ให้คงไว้ กันเปลี่ยนหมวดเงียบๆ */
+const catOptionsWith=(sel)=>{
+  const list=allCats().slice();
+  if(sel && !list.includes(sel)) list.unshift(sel);
+  return list.map(c=>`<option${c===sel?" selected":""}>${esc(c)}</option>`).join("");
+};
+window.addCustomCat=function(){
+  const name=(prompt("ชื่อหมวดรายจ่ายใหม่:")||"").trim();
+  if(!name) return;
+  if(allCats().includes(name)){ alert("มีหมวด \""+name+"\" อยู่แล้ว"); return; }
+  const cc=loadCustomCats(); cc.push(name); saveCustomCats(cc);
+  renderExpense();
+  alert("เพิ่มหมวด \""+name+"\" เรียบร้อย");
+};
+window.delCustomCat=function(name){
+  if(!confirm("ลบหมวด \""+name+"\" ?\n(รายการที่บันทึกไว้แล้วยังคงเดิม)")) return;
+  saveCustomCats(loadCustomCats().filter(c=>c!==name));
+  renderExpense();
+};
 
 /* ================= GATE ================= */
 window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
@@ -366,30 +394,51 @@ function printIncome(){
 
 /* ================= TAB 2: รายจ่าย ================= */
 let _accRows=null; // แคชแถวไฟล์ ACC-BILLING ที่อัป
+let EXPF={cat:"",pay:""};   // ตัวกรองตารางรายจ่าย (หมวด / การชำระ)
+window.setExpFilter=function(){
+  const c=document.getElementById("f_cat"), p=document.getElementById("f_pay");
+  EXPF.cat=c?c.value:""; EXPF.pay=p?p.value:"";
+  renderExpense();
+};
+window.clearExpFilter=function(){ EXPF={cat:"",pay:""}; renderExpense(); };
 function renderExpense(){
   const el=document.getElementById("p_expense");
   // เงินออกจากสเตทเมนต์ที่ยังไม่ได้บันทึก
-  const recorded=new Set(STATE.exp.filter(x=>x.source==="statement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
+  const recorded=new Set(STATE.exp.filter(x=>x.source==="statement"||x.source==="settlement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
   let wdHtml="", wdCount=0;
   STATE.daily.forEach(d=>{
     (d.bank_rows||[]).filter(r=>num(r.wd)>0).forEach((r,i)=>{
       const amt=r2(r.wd), ref=String(r.detail||""), key=d.date+"|"+amt+"|"+ref, done=recorded.has(key);
+      if(done) return;   // ซ่อนรายการที่ลงบันทึกแล้ว เพื่อดันรายการที่ยังไม่ลงขึ้นมา
       wdCount++;
       wdHtml+=`<tr><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}</td><td class="n">${TH(amt)}</td>
-        <td>${done?'<span class="chip mn">บันทึกแล้ว</span>':
-        `<select id="wc_${d.date}_${i}" class="sm">${catOptions("อื่นๆ")}</select>
-         <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>`}</td></tr>`;
+        <td><select id="wc_${d.date}_${i}" class="sm">${catOptions("อื่นๆ")}</select>
+         <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
+         <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button></td></tr>`;
     });
   });
 
   // ตารางรายจ่ายที่บันทึกแล้ว
-  const exps=[...STATE.exp].filter(x=>x.source!=="shopee_income").sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
+  const expsAll=[...STATE.exp].filter(x=>x.source!=="shopee_income"&&x.source!=="settlement").sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
+  /* สถานะชำระ: บิลซื้อ = paid/credit · รายการอื่น = nonbill */
+  const payKey=x=>x.source!=="acc_billing"?"nonbill":(x.pay_status==="paid"?"paid":"credit");
+  const exps=expsAll.filter(x=>(!EXPF.cat||x.category===EXPF.cat)&&(!EXPF.pay||payKey(x)===EXPF.pay));
+  const catsInData=[...new Set(expsAll.map(x=>x.category))].sort();
+  const grandTot=expsAll.reduce((s,x)=>s+num(x.amount),0);
+  const creditTot=expsAll.filter(x=>payKey(x)==="credit").reduce((s,x)=>s+num(x.amount),0);
+  const filtered=(EXPF.cat||EXPF.pay);
   const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':(s==="shopee_fee"||s==="shopee_income")?'<span class="chip ac">Shopee</span>':'<span class="chip mn">กรอกมือ</span>';
+  const payBadge=x=>x.source!=="acc_billing"?"":(x.pay_status==="paid"
+      ?`<span class="chip" style="background:#16a34a;color:#fff">🟢 จ่ายแล้ว${x.paid_date?" "+beDate(x.paid_date):""}</span>`
+      :`<span class="chip" style="background:#dc2626;color:#fff">🔴 ค้างเครดิต</span>`);
+  const payBtn=x=>x.source!=="acc_billing"?"":(x.pay_status==="paid"
+      ?`<button class="btn sm gray" onclick="unpayBill('${x.id}')">↩︎ คืนค้าง</button>`
+      :`<button class="btn sm" style="background:#16a34a;color:#fff" onclick="markBillPaidCash('${x.id}')">✓ จ่ายสด</button>`);
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
-      <td>${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''}</td>
+      <td>${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${payBadge(x)}</td>
       <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
-      <td><button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+      <td>${payBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
           <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button></td></tr>`).join("");
   const expTot=exps.reduce((s,x)=>s+num(x.amount),0);
 
@@ -399,11 +448,13 @@ function renderExpense(){
     <div class="row">
       <input type="date" id="m_date">
       <select id="m_cat">${catOptions("อื่นๆ")}</select>
+      <button class="btn sm gray" onclick="addCustomCat()">🏷️ เพิ่มหมวด</button>
       <input id="m_desc" placeholder="รายละเอียด" style="min-width:180px">
       <input id="m_amt" type="number" step="0.01" placeholder="จำนวนเงิน" style="width:130px">
       <label><input type="checkbox" id="m_cogs"> เป็นต้นทุนสินค้า (COGS)</label>
       <button class="btn" onclick="addManualExp()">บันทึก</button>
     </div>
+    ${loadCustomCats().length?`<div class="muted" style="margin-top:8px">หมวดที่เพิ่มเอง: ${loadCustomCats().map(c=>`<span class="chip mn" style="margin:2px">${esc(c)} <a href="#" onclick="delCustomCat('${esc(c).replace(/'/g,"\\'")}');return false" style="color:#c00;text-decoration:none">✕</a></span>`).join(" ")}</div>`:""}
   </div>
 
   <div class="card">
@@ -415,19 +466,37 @@ function renderExpense(){
 
   <div class="card">
     <h3>🏦 เงินออกจากสเตทเมนต์ (จัดหมวดเป็นรายจ่าย)</h3>
-    <div class="muted" style="margin-bottom:6px">เลือกหมวดแล้วกด “ลงรายจ่าย” ทีละรายการ · รายการที่ลงแล้วจะขึ้น “บันทึกแล้ว”</div>
+    <div class="muted" style="margin-bottom:6px">เงินออกที่เป็นรายจ่ายทั่วไป → เลือกหมวดแล้วกด “ลงรายจ่าย” · เงินออกที่จ่ายค่าซื้อของ (มีบิลใน ACC-BILLING อยู่แล้ว) → กด “🔗 จ่ายบิลซื้อ” เพื่อจับคู่ ระบบจะไม่นับซ้ำ · รายการที่จัดการแล้วจะถูกซ่อนอัตโนมัติ</div>
     ${wdCount?`<div class="scroll"><table>
       <thead><tr><th>วันที่</th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th><th>จัดหมวด</th></tr></thead>
-      <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">ไม่มีรายการเงินออกในช่วงนี้</div>`}
+      <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">✓ จัดหมวดครบทุกรายการแล้ว (ไม่มีเงินออกที่ยังไม่ได้ลงรายจ่าย)</div>`}
   </div>
 
   <div class="card">
-    <h3>📋 รายจ่ายที่บันทึก (${exps.length} รายการ)</h3>
+    <h3>📋 รายจ่ายที่บันทึก (${filtered?`${exps.length} จาก ${expsAll.length}`:`${expsAll.length}`} รายการ)</h3>
+    <div class="row" style="margin-bottom:8px;align-items:center">
+      <label>🏷️ หมวด</label>
+      <select id="f_cat" onchange="setExpFilter()">
+        <option value=""${EXPF.cat?"":" selected"}>— ทุกหมวด —</option>
+        ${catsInData.map(c=>`<option value="${esc(c)}"${c===EXPF.cat?" selected":""}>${esc(c)}</option>`).join("")}
+      </select>
+      <label>💳 การชำระ</label>
+      <select id="f_pay" onchange="setExpFilter()">
+        <option value=""${EXPF.pay?"":" selected"}>— ทั้งหมด —</option>
+        <option value="credit"${EXPF.pay==="credit"?" selected":""}>🔴 ค้างเครดิต</option>
+        <option value="paid"${EXPF.pay==="paid"?" selected":""}>🟢 จ่ายแล้ว</option>
+        <option value="nonbill"${EXPF.pay==="nonbill"?" selected":""}>⚪ ไม่ใช่บิลซื้อ</option>
+      </select>
+      ${filtered?`<button class="btn sm gray" onclick="clearExpFilter()">✖ ล้างตัวกรอง</button>`:""}
+      <span class="muted" style="margin-left:auto">ยอดค้างเครดิตรวม: <b style="color:#dc2626">${TH(creditTot)}</b></span>
+    </div>
     ${exps.length?`<div class="scroll"><table>
       <thead><tr><th>วันที่</th><th>หมวด</th><th>รายละเอียด</th><th>แหล่ง</th><th class="n">จำนวน</th><th></th></tr></thead>
       <tbody>${expHtml}</tbody>
-      <tfoot><tr class="tot"><td colspan="4">รวมรายจ่ายในช่วง</td><td class="n">${TH(expTot)}</td><td></td></tr></tfoot>
-    </table></div>`:`<div class="muted">ยังไม่มีรายจ่ายบันทึกในช่วงนี้</div>`}
+      <tfoot><tr class="tot"><td colspan="4">${filtered?"รวมเฉพาะที่กรอง":"รวมรายจ่ายในช่วง"}</td><td class="n">${TH(expTot)}</td><td></td></tr>
+      ${filtered?`<tr class="tot"><td colspan="4" style="opacity:.7">รวมรายจ่ายทั้งช่วง (ไม่กรอง)</td><td class="n" style="opacity:.7">${TH(grandTot)}</td><td></td></tr>`:""}
+      </tfoot>
+    </table></div>`:`<div class="muted">${filtered?"ไม่มีรายการที่ตรงกับตัวกรอง":"ยังไม่มีรายจ่ายบันทึกในช่วงนี้"}</div>`}
   </div>`;
   const md=document.getElementById("m_date"); if(md&&!md.value) md.value=gTo();
   if(_accRows) renderAccMap();
@@ -441,6 +510,53 @@ async function addStmtExp(date,amt,btn,selId,ref){
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); btn.disabled=false; btn.textContent="➕ ลงรายจ่าย"; return; }
   await reloadAll(); tab("expense");
 }
+/* ===== จับคู่บิลซื้อ (ACC-BILLING) กับเงินออกจริง — กันนับซ้ำ ===== */
+function unpaidBills(){
+  return STATE.exp.filter(x=>x.source==="acc_billing"&&x.pay_status!=="paid");
+}
+window.closeMatchModal=function(){ const m=document.getElementById("matchModal"); if(m) m.remove(); };
+window.openMatchBill=function(date,amt,ref){
+  const bills=unpaidBills().slice().sort((a,b)=>Math.abs(num(a.amount)-amt)-Math.abs(num(b.amount)-amt));
+  const rows=bills.length?bills.map(b=>`<tr>
+      <td>${beDate(b.exp_date)}</td><td>${esc(b.category)}</td>
+      <td>${esc(b.description||b.ref||"")}</td>
+      <td class="n">${TH(b.amount)}</td>
+      <td>${num(b.amount)===amt?'<span class="chip cogs">ยอดตรง</span>':''}</td>
+      <td><button class="btn sm blu" onclick="linkPayment('${b.id}','${date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">เลือกบิลนี้</button></td>
+    </tr>`).join(""):`<tr><td colspan="6" class="muted">ไม่มีบิลซื้อ (ACC-BILLING) ที่ค้างจ่ายในช่วงนี้</td></tr>`;
+  const html=`<div id="matchModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeMatchModal()">
+    <div style="background:#fff;border-radius:10px;max-width:760px;width:92%;max-height:82vh;overflow:auto;padding:16px">
+      <h3 style="margin:0 0 6px">🔗 จ่ายบิลซื้อด้วยเงินออกก้อนนี้</h3>
+      <div class="muted" style="margin-bottom:10px">เงินออก ${beDate(date)} · ${TH(amt)} บาท · “${esc(ref)}”<br>เลือกบิล ACC-BILLING ที่เงินก้อนนี้จ่าย — บิลจะขึ้นสถานะ “จ่ายแล้ว” และเงินออกก้อนนี้จะถูกซ่อน ไม่นับซ้ำเป็นรายจ่าย (เพราะต้นทุนถูกนับที่บิลซื้ออยู่แล้ว)</div>
+      <div class="scroll"><table>
+        <thead><tr><th>วันที่บิล</th><th>หมวด</th><th>รายละเอียด</th><th class="n">ยอดบิล</th><th></th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div style="text-align:right;margin-top:12px"><button class="btn gray" onclick="closeMatchModal()">ปิด</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML("beforeend",html);
+};
+window.linkPayment=async function(billId,date,amt,ref){
+  const bill=STATE.exp.find(x=>x.id===billId); if(!bill) return;
+  const u=await sb.from("rev_expenses").update({pay_status:"paid",paid_date:date}).eq("id",billId);
+  if(u.error){ alert("อัปเดตบิลไม่สำเร็จ: "+u.error.message); return; }
+  const ins=await sb.from("rev_expenses").insert([{exp_date:date,category:"ชำระเจ้าหนี้ (ACC-BILLING)",description:ref||bill.description||"",amount:amt,source:"settlement",ref:ref,is_cogs:false,settles_id:billId,created_by:"owner"}]);
+  if(ins.error){ alert("บันทึกการชำระไม่สำเร็จ: "+ins.error.message); return; }
+  closeMatchModal(); await reloadAll(); tab("expense");
+};
+window.markBillPaidCash=async function(id){
+  if(!confirm("ทำเครื่องหมายว่าบิลนี้จ่ายแล้ว (จ่ายสด / ไม่ได้ออกจากสเตทเมนต์)?")) return;
+  const {error}=await sb.from("rev_expenses").update({pay_status:"paid",paid_date:gTo()}).eq("id",id);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
+window.unpayBill=async function(id){
+  if(!confirm("คืนสถานะบิลนี้เป็น “ค้างเครดิต”?\n(ถ้ามีรายการชำระที่จับคู่ไว้ จะถูกลบออกด้วย)")) return;
+  const d=await sb.from("rev_expenses").delete().eq("source","settlement").eq("settles_id",id);
+  if(d.error){ alert("ลบรายการชำระไม่สำเร็จ: "+d.error.message); return; }
+  const {error}=await sb.from("rev_expenses").update({pay_status:"credit",paid_date:null}).eq("id",id);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
 async function addManualExp(){
   const date=document.getElementById("m_date").value, cat=document.getElementById("m_cat").value;
   const desc=document.getElementById("m_desc").value.trim(), amt=r2(document.getElementById("m_amt").value);
@@ -450,14 +566,43 @@ async function addManualExp(){
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   await reloadAll(); tab("expense");
 }
-async function editExp(id){
+/* แก้ไขรายการ: แก้ "หมวด/รายละเอียด/COGS" ได้ — ยอดเงินดึงจากฐานข้อมูล ห้ามแก้ */
+window.closeEditModal=function(){ const m=document.getElementById("editModal"); if(m) m.remove(); };
+window.editExp=function(id){
   const x=STATE.exp.find(e=>e.id===id); if(!x) return;
-  const amt=prompt("แก้จำนวนเงิน:",x.amount); if(amt===null) return;
-  const desc=prompt("แก้รายละเอียด:",x.description||x.ref||""); if(desc===null) return;
-  const {error}=await sb.from("rev_expenses").update({amount:r2(amt),description:desc}).eq("id",id);
+  closeEditModal();
+  const html=`<div id="editModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeEditModal()">
+    <div style="background:#fff;border-radius:10px;max-width:560px;width:92%;max-height:82vh;overflow:auto;padding:16px">
+      <h3 style="margin:0 0 6px">✏️ แก้ไขรายการรายจ่าย</h3>
+      <div class="muted" style="margin-bottom:10px">${beDate(x.exp_date)} · <b>${TH(x.amount)} บาท</b> · แหล่ง: ${esc(x.source)}<br>🔒 ยอดเงินดึงจากฐานข้อมูล แก้ไขไม่ได้ — แก้ได้เฉพาะหมวด / รายละเอียด / ธงต้นทุน</div>
+      <div class="row" style="margin-bottom:8px"><label>หมวด</label>
+        <select id="ed_cat">${catOptionsWith(x.category)}</select>
+        <button class="btn sm gray" onclick="addCustomCatFromEdit()">🏷️ เพิ่มหมวด</button></div>
+      <div class="row" style="margin-bottom:8px"><label>รายละเอียด</label>
+        <input id="ed_desc" value="${esc(x.description||x.ref||"")}" style="min-width:300px"></div>
+      <div class="row" style="margin-bottom:12px">
+        <label><input type="checkbox" id="ed_cogs" ${x.is_cogs?"checked":""}> เป็นต้นทุนสินค้า (COGS)</label></div>
+      <div style="text-align:right">
+        <button class="btn gray" onclick="closeEditModal()">ยกเลิก</button>
+        <button class="btn" onclick="saveEditExp('${x.id}')">บันทึก</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML("beforeend",html);
+};
+window.addCustomCatFromEdit=function(){
+  const name=(prompt("ชื่อหมวดรายจ่ายใหม่:")||"").trim();
+  if(!name) return;
+  if(allCats().includes(name)){ alert("มีหมวด \""+name+"\" อยู่แล้ว"); return; }
+  const cc=loadCustomCats(); cc.push(name); saveCustomCats(cc);
+  const sel=document.getElementById("ed_cat"); if(sel) sel.innerHTML=catOptionsWith(name);
+};
+window.saveEditExp=async function(id){
+  const cat=document.getElementById("ed_cat").value;
+  const desc=document.getElementById("ed_desc").value.trim();
+  const cogs=document.getElementById("ed_cogs").checked;
+  const {error}=await sb.from("rev_expenses").update({category:cat,description:desc,is_cogs:cogs}).eq("id",id);
   if(error){ alert("แก้ไม่สำเร็จ: "+error.message); return; }
-  await reloadAll(); tab("expense");
-}
+  closeEditModal(); await reloadAll(); tab("expense");
+};
 async function delExp(id){
   if(!confirm("ลบรายการนี้?")) return;
   const {error}=await sb.from("rev_expenses").delete().eq("id",id);
@@ -592,7 +737,7 @@ async function saveAcc(){
 let chartMon=null;
 function renderMonthly(){
   const el=document.getElementById("p_monthly");
-  const EX=STATE.exp.filter(x=>x.source!=="shopee_income");
+  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement");
   const months=[...new Set(EX.map(x=>monthKey(x.exp_date)))].sort();
   const cats=[...new Set(EX.map(x=>x.category))];
   const grid={}; months.forEach(m=>{grid[m]={};cats.forEach(c=>grid[m][c]=0);});
@@ -627,7 +772,7 @@ function renderCash(){
   const rev={},exp={}; months.forEach(m=>{rev[m]=0;exp[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
   STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
-  STATE.exp.filter(x=>x.source!=="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
+  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
   let cum=0;
   let body=months.map(m=>{ const net=rev[m]-exp[m]; cum+=net;
     return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td><td class="n neg">${TH0(exp[m])}</td><td class="n ${net>=0?'pos':'neg'}">${TH0(net)}</td><td class="n">${TH0(cum)}</td></tr>`;
@@ -661,47 +806,86 @@ let chartGross=null;
 function renderGross(){
   const el=document.getElementById("p_gross");
   const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].sort();
-  const rev={},cogs={}; months.forEach(m=>{rev[m]=0;cogs[m]=0;});
-  STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
+  const rev={},buy={},aud={},hol={},rngD={};
+  months.forEach(m=>{rev[m]=0;buy[m]=0;aud[m]=0;hol[m]=0;rngD[m]=0;});
+  STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null){ rev[m]+=num(a.machine_net); aud[m]++; } });
+  STATE.audit.filter(a=>a.status==="วันหยุด").forEach(a=>{ const m=monthKey(a.date); if(hol[m]!=null) hol[m]++; });
   STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
-  STATE.exp.filter(x=>x.is_cogs).forEach(x=>{ const m=monthKey(x.exp_date); if(cogs[m]!=null) cogs[m]+=num(x.amount); });
+  /* "ซื้อในงวด" = รายจ่ายติดธงต้นทุน — ยังไม่ใช่ต้นทุนขาย */
+  STATE.exp.filter(x=>x.is_cogs&&x.source!=="settlement").forEach(x=>{ const m=monthKey(x.exp_date); if(buy[m]!=null) buy[m]+=num(x.amount); });
+
+  /* จำนวนวันของเดือนนั้น ที่อยู่ในช่วงวันที่ที่เลือก (ใช้เช็คความครบของข้อมูล) */
+  const from=gFrom(), to=gTo();
+  months.forEach(m=>{
+    const y=+m.slice(0,4), mo=+m.slice(5,7);
+    const mStart=y+"-"+pad2(mo)+"-01";
+    const mEnd=y+"-"+pad2(mo)+"-"+pad2(new Date(y,mo,0).getDate());
+    const a=(from>mStart?from:mStart), b=(to<mEnd?to:mEnd);
+    rngD[m]=a>b?0:Math.round((new Date(b)-new Date(a))/86400000)+1;
+  });
+
   const estPct=r2(document.getElementById("gp_est")?document.getElementById("gp_est").value:0);
   const useEst=estPct>0;
+  /* ต้นทุนขาย: ใช้ % ประมาณกับ "ทุกเดือน" — ถ้าไม่ใส่ % = คำนวณไม่ได้ (null) ไม่เดาให้ */
+  const cogsOf=m=>useEst?rev[m]*estPct/100:null;
+
+  const incomplete=months.filter(m=>(aud[m]+hol[m])<rngD[m]);
+  let warn="";
+  if(incomplete.length){
+    warn=`<div class="note" style="background:#fef2f2;border-color:#fca5a5">⚠️ <b>ข้อมูลยอดขายยังไม่ครบ</b> — `+
+      incomplete.map(m=>`${beMonth(m)}: ตรวจแล้ว ${aud[m]} วัน${hol[m]?" (+วันหยุด "+hol[m]+")":""} จาก ${rngD[m]} วันในช่วงที่เลือก`).join(" · ")+
+      `<br>ยอดขายที่เห็นจึงต่ำกว่าจริง อย่าเพิ่งใช้ตัดสินใจ</div>`;
+  }
+  const basisNote=useEst
+    ? `<div class="note" style="background:#ecfdf5;border-color:#6ee7b7">✅ ต้นทุนขายคำนวณจาก <b>ยอดขาย × ${estPct}%</b> (ค่าประมาณ ใช้กับทุกเดือน)</div>`
+    : `<div class="note" style="background:#fffbeb;border-color:#fcd34d">⚠️ <b>ยังคำนวณกำไรขั้นต้นไม่ได้</b> — “ซื้อในงวด” ไม่ใช่ “ต้นทุนขาย” (ของที่ซื้อมายังอยู่ในสต๊อก ยังไม่ได้ขาย)<br>
+       สูตรจริง: <b>ต้นทุนขาย = สต๊อกต้นงวด + ซื้อในงวด − สต๊อกปลายงวด</b><br>
+       ตอนนี้ยังไม่มีมูลค่าสต๊อกในระบบ → ใส่ “% ต้นทุนโดยประมาณ” ด้านล่างเพื่อดูกำไรคร่าวๆ ได้</div>`;
 
   let body=months.map(m=>{
-    let cg=cogs[m], estFlag=false;
-    if(useEst && !(cg>0)){ cg=rev[m]*estPct/100; estFlag=true; }
-    const gp=rev[m]-cg, mg=rev[m]>0?(gp/rev[m]*100):null;
-    return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td>
-      <td class="n neg">${cg>0?TH0(cg):"—"}${estFlag?' <span class="chip kp">ประมาณ</span>':''}</td>
-      <td class="n ${gp>=0?'pos':'neg'}">${TH0(gp)}</td><td class="n">${mg==null?"—":mg.toFixed(1)+"%"}</td></tr>`;
+    const cg=cogsOf(m);
+    const gp=cg==null?null:rev[m]-cg, mg=(gp==null||rev[m]<=0)?null:(gp/rev[m]*100);
+    const part=(aud[m]+hol[m])<rngD[m];
+    return `<tr><td>${beMonth(m)} ${part?'<span class="chip" style="background:#dc2626;color:#fff">ข้อมูลไม่ครบ</span>':''}</td>
+      <td class="n pos">${TH0(rev[m])}</td>
+      <td class="n" style="color:#a16207">${buy[m]>0?TH0(buy[m]):"—"}</td>
+      <td class="n neg">${cg==null?"—":TH0(cg)}${cg!=null?' <span class="chip kp">ประมาณ</span>':''}</td>
+      <td class="n ${gp==null?'':(gp>=0?'pos':'neg')}">${gp==null?"—":TH0(gp)}</td>
+      <td class="n">${mg==null?"—":mg.toFixed(1)+"%"}</td></tr>`;
   }).join("");
+
   const tR=months.reduce((s,m)=>s+rev[m],0);
-  let tC=0; months.forEach(m=>{ let cg=cogs[m]; if(useEst&&!(cg>0))cg=rev[m]*estPct/100; tC+=cg; });
-  const tGP=tR-tC, tMg=tR>0?(tGP/tR*100):null;
+  const tB=months.reduce((s,m)=>s+buy[m],0);
+  const tC=useEst?months.reduce((s,m)=>s+cogsOf(m),0):null;
+  const tGP=tC==null?null:tR-tC, tMg=(tGP==null||tR<=0)?null:(tGP/tR*100);
 
   el.innerHTML=`
   <div class="card">
-    <h3>📈 กำไรขั้นต้น (ยอดขาย − ต้นทุนสินค้า)</h3>
-    <div class="note">ต้นทุนสินค้า (COGS) = รายจ่ายที่ติดธง “ต้นทุน” (ส่วนใหญ่มาจากรายงานซื้อ ACC-BILLING) · เป็นค่าประมาณจาก “ยอดซื้อในงวด” ไม่ได้ปรับสต๊อกคงเหลือ · ถ้ายังไม่มีข้อมูลซื้อ ใส่ % ต้นทุนโดยประมาณด้านล่างเพื่อคำนวณคร่าวๆ ได้</div>
+    <h3>📈 กำไรขั้นต้น (ยอดขาย − ต้นทุนขาย)</h3>
+    ${warn}
+    ${basisNote}
     <div class="row" style="margin-bottom:8px">
-      <label>ประมาณต้นทุน % ของยอดขาย (เว้นว่าง=ใช้ข้อมูลจริงเท่านั้น)</label>
-      <input type="number" id="gp_est" step="1" style="width:90px" value="${estPct||''}" oninput="renderGross()"> %
+      <label>ประมาณต้นทุน % ของยอดขาย (เว้นว่าง = ไม่คำนวณกำไร)</label>
+      <input type="number" id="gp_est" step="1" min="0" max="100" style="width:90px" value="${estPct||''}" oninput="renderGross()"> %
     </div>
     ${months.length?`<div class="scroll"><table>
-      <thead><tr><th>เดือน</th><th class="n">ยอดขาย</th><th class="n">ต้นทุนสินค้า</th><th class="n">กำไรขั้นต้น</th><th class="n">% กำไร</th></tr></thead>
+      <thead><tr><th>เดือน</th><th class="n">ยอดขาย</th><th class="n">ซื้อในงวด</th><th class="n">ต้นทุนขาย</th><th class="n">กำไรขั้นต้น</th><th class="n">% กำไร</th></tr></thead>
       <tbody>${body}</tbody>
-      <tfoot><tr class="tot"><td>รวม</td><td class="n">${TH0(tR)}</td><td class="n">${TH0(tC)}</td><td class="n">${TH0(tGP)}</td><td class="n">${tMg==null?"—":tMg.toFixed(1)+"%"}</td></tr></tfoot>
+      <tfoot><tr class="tot"><td>รวม</td><td class="n">${TH0(tR)}</td><td class="n">${TH0(tB)}</td>
+        <td class="n">${tC==null?"—":TH0(tC)}</td><td class="n">${tGP==null?"—":TH0(tGP)}</td>
+        <td class="n">${tMg==null?"—":tMg.toFixed(1)+"%"}</td></tr></tfoot>
     </table></div>
+    <div class="muted" style="margin-top:6px">“ซื้อในงวด” = เงินที่จ่ายซื้อของเข้าสต๊อก · “ต้นทุนขาย” = ต้นทุนเฉพาะของที่ขายออกไปจริง · สองอันนี้ไม่เท่ากัน เดือนที่สั่งของเยอะ “ซื้อ” จะสูงแต่ไม่ได้แปลว่าขาดทุน</div>
     <canvas id="cGross" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีข้อมูลยอดขายในช่วงนี้</div>`}
   </div>`;
   if(months.length){
     const ctx=document.getElementById("cGross"); if(chartGross) chartGross.destroy();
-    const gpArr=months.map(m=>{ let cg=cogs[m]; if(useEst&&!(cg>0))cg=rev[m]*estPct/100; return rev[m]-cg; });
-    chartGross=new Chart(ctx,{data:{labels:months.map(beMonth),datasets:[
+    const ds=[
       {type:"bar",label:"ยอดขาย",data:months.map(m=>rev[m]),backgroundColor:"#bbf7d0"},
-      {type:"line",label:"กำไรขั้นต้น",data:gpArr,borderColor:"#16a34a",backgroundColor:"#16a34a",tension:.2}
-    ]},options:{scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
+      {type:"bar",label:"ซื้อในงวด",data:months.map(m=>buy[m]),backgroundColor:"#fde68a"}
+    ];
+    if(useEst) ds.push({type:"line",label:"กำไรขั้นต้น (ประมาณ)",data:months.map(m=>rev[m]-cogsOf(m)),borderColor:"#16a34a",backgroundColor:"#16a34a",tension:.2});
+    chartGross=new Chart(ctx,{data:{labels:months.map(beMonth),datasets:ds},options:{scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
   }
 }
 

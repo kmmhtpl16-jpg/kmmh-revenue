@@ -434,11 +434,14 @@ function renderExpense(){
   const payBtn=x=>x.source!=="acc_billing"?"":(x.pay_status==="paid"
       ?`<button class="btn sm gray" onclick="unpayBill('${x.id}')">↩︎ คืนค้าง</button>`
       :`<button class="btn sm" style="background:#16a34a;color:#fff" onclick="markBillPaidCash('${x.id}')">✓ จ่ายสด</button>`);
+  /* แถวเงินออกจากสเตทเมนต์ที่เป็นค่าซื้อของ → จับคู่บิลซื้อได้ (กันนับซ้ำย้อนหลัง) */
+  const stmtBtn=x=>(x.source==="statement"&&x.is_cogs)
+      ?`<button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${x.exp_date}',${num(x.amount)},${JSON.stringify(x.description||x.ref||"").replace(/"/g,'&quot;')},'${x.id}')">🔗 จ่ายบิลซื้อ</button>`:"";
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
       <td>${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${payBadge(x)}</td>
       <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
-      <td>${payBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+      <td>${payBtn(x)}${stmtBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
           <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button></td></tr>`).join("");
   const expTot=exps.reduce((s,x)=>s+num(x.amount),0);
 
@@ -515,19 +518,20 @@ function unpaidBills(){
   return STATE.exp.filter(x=>x.source==="acc_billing"&&x.pay_status!=="paid");
 }
 window.closeMatchModal=function(){ const m=document.getElementById("matchModal"); if(m) m.remove(); };
-window.openMatchBill=function(date,amt,ref){
+window.openMatchBill=function(date,amt,ref,rowId){
   const bills=unpaidBills().slice().sort((a,b)=>Math.abs(num(a.amount)-amt)-Math.abs(num(b.amount)-amt));
+  const act=rowId?`convertToSettlement('${rowId}',`:`linkPayment(`;
   const rows=bills.length?bills.map(b=>`<tr>
       <td>${beDate(b.exp_date)}</td><td>${esc(b.category)}</td>
       <td>${esc(b.description||b.ref||"")}</td>
       <td class="n">${TH(b.amount)}</td>
       <td>${num(b.amount)===amt?'<span class="chip cogs">ยอดตรง</span>':''}</td>
-      <td><button class="btn sm blu" onclick="linkPayment('${b.id}','${date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">เลือกบิลนี้</button></td>
+      <td><button class="btn sm blu" onclick="${act}'${b.id}','${date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">เลือกบิลนี้</button></td>
     </tr>`).join(""):`<tr><td colspan="6" class="muted">ไม่มีบิลซื้อ (ACC-BILLING) ที่ค้างจ่ายในช่วงนี้</td></tr>`;
   const html=`<div id="matchModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeMatchModal()">
     <div style="background:#fff;border-radius:10px;max-width:760px;width:92%;max-height:82vh;overflow:auto;padding:16px">
       <h3 style="margin:0 0 6px">🔗 จ่ายบิลซื้อด้วยเงินออกก้อนนี้</h3>
-      <div class="muted" style="margin-bottom:10px">เงินออก ${beDate(date)} · ${TH(amt)} บาท · “${esc(ref)}”<br>เลือกบิล ACC-BILLING ที่เงินก้อนนี้จ่าย — บิลจะขึ้นสถานะ “จ่ายแล้ว” และเงินออกก้อนนี้จะถูกซ่อน ไม่นับซ้ำเป็นรายจ่าย (เพราะต้นทุนถูกนับที่บิลซื้ออยู่แล้ว)</div>
+      <div class="muted" style="margin-bottom:10px">เงินออก ${beDate(date)} · ${TH(amt)} บาท · “${esc(ref)}”<br>เลือกบิล ACC-BILLING ที่เงินก้อนนี้จ่าย — บิลจะขึ้นสถานะ “จ่ายแล้ว” และเงินออกก้อนนี้จะถูกตัดออกจากยอดรวม ไม่นับซ้ำ (ต้นทุนถูกนับที่บิลซื้ออยู่แล้ว)${rowId?"<br><b>รายการนี้ลงรายจ่ายไปแล้ว</b> — จับคู่แล้วยอดรวมรายจ่ายจะลดลง "+TH(amt)+" บาท":""}</div>
       <div class="scroll"><table>
         <thead><tr><th>วันที่บิล</th><th>หมวด</th><th>รายละเอียด</th><th class="n">ยอดบิล</th><th></th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>
@@ -543,6 +547,17 @@ window.linkPayment=async function(billId,date,amt,ref){
   if(ins.error){ alert("บันทึกการชำระไม่สำเร็จ: "+ins.error.message); return; }
   closeMatchModal(); await reloadAll(); tab("expense");
 };
+/* แปลงแถวเงินออกที่ "ลงรายจ่ายไปแล้ว" ให้เป็นรายการชำระหนี้ (ตัดออกจากยอดรวม กันนับซ้ำ) */
+window.convertToSettlement=async function(rowId,billId,date,amt,ref){
+  const row=STATE.exp.find(x=>x.id===rowId); if(!row) return;
+  const bill=STATE.exp.find(x=>x.id===billId); if(!bill) return;
+  if(!confirm(`จับคู่เงินออก ${TH(amt)} บาท กับบิล “${bill.description||bill.ref||""}” (${TH(bill.amount)} บาท)?\n\nยอดรวมรายจ่ายจะลดลง ${TH(amt)} บาท เพราะต้นทุนถูกนับที่บิลซื้อแล้ว`)) return;
+  const u1=await sb.from("rev_expenses").update({pay_status:"paid",paid_date:date}).eq("id",billId);
+  if(u1.error){ alert("อัปเดตบิลไม่สำเร็จ: "+u1.error.message); return; }
+  const u2=await sb.from("rev_expenses").update({source:"settlement",settles_id:billId,is_cogs:false,orig_source:row.source}).eq("id",rowId);
+  if(u2.error){ alert("แปลงรายการไม่สำเร็จ: "+u2.error.message); return; }
+  closeMatchModal(); await reloadAll(); tab("expense");
+};
 window.markBillPaidCash=async function(id){
   if(!confirm("ทำเครื่องหมายว่าบิลนี้จ่ายแล้ว (จ่ายสด / ไม่ได้ออกจากสเตทเมนต์)?")) return;
   const {error}=await sb.from("rev_expenses").update({pay_status:"paid",paid_date:gTo()}).eq("id",id);
@@ -550,9 +565,18 @@ window.markBillPaidCash=async function(id){
   await reloadAll(); tab("expense");
 };
 window.unpayBill=async function(id){
-  if(!confirm("คืนสถานะบิลนี้เป็น “ค้างเครดิต”?\n(ถ้ามีรายการชำระที่จับคู่ไว้ จะถูกลบออกด้วย)")) return;
-  const d=await sb.from("rev_expenses").delete().eq("source","settlement").eq("settles_id",id);
-  if(d.error){ alert("ลบรายการชำระไม่สำเร็จ: "+d.error.message); return; }
+  if(!confirm("คืนสถานะบิลนี้เป็น “ค้างเครดิต”?\n(รายการชำระที่จับคู่ไว้จะถูกคืนกลับเป็นรายจ่ายเดิม หรือลบทิ้งถ้าสร้างใหม่ตอนจับคู่)")) return;
+  const q=await sb.from("rev_expenses").select("id,orig_source,category").eq("source","settlement").eq("settles_id",id);
+  if(q.error){ alert("อ่านรายการชำระไม่สำเร็จ: "+q.error.message); return; }
+  for(const r of (q.data||[])){
+    if(r.orig_source){  // เคยเป็นรายจ่ายจริง → คืนกลับ ไม่ลบ
+      const e=await sb.from("rev_expenses").update({source:r.orig_source,settles_id:null,orig_source:null,is_cogs:r.category==="ค่าซื้อสินค้า"}).eq("id",r.id);
+      if(e.error){ alert("คืนรายการไม่สำเร็จ: "+e.error.message); return; }
+    }else{              // แถวที่ระบบสร้างตอนจับคู่ → ลบได้
+      const e=await sb.from("rev_expenses").delete().eq("id",r.id);
+      if(e.error){ alert("ลบรายการชำระไม่สำเร็จ: "+e.error.message); return; }
+    }
+  }
   const {error}=await sb.from("rev_expenses").update({pay_status:"credit",paid_date:null}).eq("id",id);
   if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
   await reloadAll(); tab("expense");

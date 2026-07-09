@@ -134,7 +134,7 @@ function pad2(n){return String(n).padStart(2,"0");}
 function isoFromExcel(v){
   if(v==null) return null;
   if(typeof v==="number" && window.XLSX && XLSX.SSF){ const dc=XLSX.SSF.parse_date_code(v); if(dc){ let y=dc.y; if(y>2400)y-=543; return y+"-"+pad2(dc.m)+"-"+pad2(dc.d); } }
-  if(v instanceof Date && !isNaN(v)){ let y=v.getUTCFullYear(); if(y>2400)y-=543; return y+"-"+pad2(v.getUTCMonth()+1)+"-"+pad2(v.getUTCDate()); }
+  if(v instanceof Date && !isNaN(v)){ let y=v.getFullYear(); if(y>2400)y-=543; return y+"-"+pad2(v.getMonth()+1)+"-"+pad2(v.getDate()); }   // local ไม่ใช่ UTC
   const s=String(v).trim();
   let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m){ let y=+m[1]; if(y>2400)y-=543; return y+"-"+m[2]+"-"+m[3]; }
   m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); if(m){ let d=+m[1],mo=+m[2],y=+m[3]; if(y<100)y+=(y>50?2500:2000); if(y>2400)y-=543; return y+"-"+pad2(mo)+"-"+pad2(d); }
@@ -640,7 +640,7 @@ function loadAcc(input){
   const rd=new FileReader();
   rd.onload=ev=>{
     try{
-      const wb=XLSX.read(ev.target.result,{type:"binary",cellDates:true});
+      const wb=XLSX.read(ev.target.result,{type:"binary"});   // ห้ามใส่ cellDates:true — ทำให้วันที่เพี้ยน -1 วัน
       const ws=wb.Sheets[wb.SheetNames[0]];
       const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
       // ตรวจว่าเป็นฟอร์แมต "รายงานซื้อ แยกตามวันที่" ของ ACC-BILLING หรือไม่
@@ -743,11 +743,16 @@ async function saveAcc(){
   if(_accRows.mode==="accbill"){ items=_accRows.items||[]; }
   else { items=accParse().map(r=>({exp_date:r.exp_date,amount:r.amount,description:r.description,ref:"ACC-BILLING"})); }
   if(!items.length){ alert("ไม่พบรายการ"); return; }
-  // กันซ้ำ: ตัดรายการที่มี วันที่+ยอด+อ้างอิง ตรงกับที่บันทึกไว้แล้ว (source=acc_billing)
-  const dates=items.map(i=>i.exp_date).sort(); const lo=dates[0], hi=dates[dates.length-1];
-  const {data:ex}=await sb.from("rev_expenses").select("exp_date,amount,ref").eq("source","acc_billing").gte("exp_date",lo).lte("exp_date",hi);
-  const seen=new Set((ex||[]).map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
-  const fresh=items.filter(i=>!seen.has(i.exp_date+"|"+r2(i.amount)+"|"+(i.ref||"")));
+  /* กันซ้ำ: ถ้ามี "เลขที่บิล" จริง ใช้เลขบิลเป็นกุญแจ (ไม่ผูกวันที่/ยอด — กันเคสวันที่เพี้ยนหรือแก้ยอดแล้วเข้าซ้ำ)
+     ถ้าไม่มีเลขบิล (ไฟล์รูปแบบอื่น ref="ACC-BILLING") ค่อยใช้ วันที่+ยอด+อ้างอิง */
+  const hasRef=i=>!!i.ref && i.ref!=="ACC-BILLING";
+  const {data:ex}=await sb.from("rev_expenses").select("exp_date,amount,ref").eq("source","acc_billing");
+  const seen=new Set();
+  (ex||[]).forEach(x=>{
+    seen.add(x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||""));
+    if(x.ref && x.ref!=="ACC-BILLING") seen.add("REF|"+x.ref);
+  });
+  const fresh=items.filter(i=>hasRef(i)?!seen.has("REF|"+i.ref):!seen.has(i.exp_date+"|"+r2(i.amount)+"|"+(i.ref||"")));
   if(!fresh.length){ alert("รายการทั้งหมดถูกบันทึกไว้แล้ว (กันซ้ำ)"); return; }
   const recs=fresh.map(i=>({exp_date:i.exp_date,category:cat,description:i.description,amount:i.amount,source:"acc_billing",ref:i.ref,is_cogs:cogs,created_by:"owner"}));
   const {error}=await sb.from("rev_expenses").insert(recs);

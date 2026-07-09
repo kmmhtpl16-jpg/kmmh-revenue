@@ -763,7 +763,7 @@ async function loadPending(){
   function _srcS(v){ v=(v||'').trim(); if(!v) return '—'; if(v==='รับเข้าบัญชีอื่น') return 'บัญชีอื่น'; return v.length>3 && v.indexOf('โอน')===0 ? v.slice(3) : v; }
   function _refS(v){ v=(v||'').trim(); if(!v) return '—'; var m=v.match(/\(([^)]*)\)\s*$/); return m?m[1]:v; }
   var openHtml=_openEmpty?'<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>':('<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th style="width:1%;white-space:nowrap;padding-right:6px">ยอด</th><th style="width:1%;padding-left:6px"></th></tr></thead><tbody>'+
-    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td style="white-space:nowrap">'+beDate(d.date)+'</td><td style="white-space:nowrap">'+_srcS(d.source)+'</td><td>'+(d.from_name||'—')+'</td><td style="white-space:nowrap">'+_refS(d.ref)+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num" style="width:1%;white-space:nowrap;padding-right:6px">'+TH(d.amount)+'</td><td style="width:1%;padding-left:6px"><span style="display:inline-flex;gap:6px;white-space:nowrap"><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchKM(\''+d.id+'\')">🧾 บิลขาย KM</button><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchBI(\''+d.id+'\')">📄 ใบวางบิล BI</button></span>'+_sg(d)+'</td></tr>').join("")+
+    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':'')+'><td style="white-space:nowrap">'+beDate(d.date)+'</td><td style="white-space:nowrap">'+_srcS(d.source)+'</td><td>'+(d.from_name||'—')+'</td><td style="white-space:nowrap">'+_refS(d.ref)+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num" style="width:1%;white-space:nowrap;padding-right:6px">'+TH(d.amount)+'</td><td style="width:1%;padding-left:6px"><span style="display:inline-flex;gap:6px;white-space:nowrap"><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchKM(\''+d.id+'\')">🧾 บิลขาย KM</button><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchBI(\''+d.id+'\')">📄 ใบวางบิล BI</button><button class="btn sec r-fin" title="ลบรายการเงินรอจับคู่ (รายการซ้ำ/ลงผิด)" style="padding:3px 8px;margin:0;border-color:#fca5a5;color:#b91c1c" onclick="deletePending(\''+d.id+'\')">✕</button></span>'+_sg(d)+'</td></tr>').join("")+
     '<tr class="tot"><td colspan="5">รวมรอจับคู่ (ไม่รวมบัญชีอื่น)</td><td class="num" style="white-space:nowrap;padding-right:6px">'+TH(_mainSum)+'</td><td></td></tr>'+(_othSum>0?'<tr class="tot" style="background:#eff6ff"><td colspan="5">🏷️ แยกหมวด: รับเข้าบัญชีอื่น</td><td class="num" style="white-space:nowrap;padding-right:6px">'+TH(_othSum)+'</td><td></td></tr>':'')+'</tbody></table>');
   list.innerHTML=openHtml+(await _matchedHtml());
 }
@@ -782,6 +782,20 @@ async function _matchedHtml(){
       '<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>จับกับ</th><th>ยอด</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div>';
   }catch(e){ return ''; }
 }
+window.deletePending=async function(id){
+  if(!sb) return;
+  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ลบรายการรอจับคู่ได้เฉพาะสิทธิ์การเงินขึ้นไป"); return; }
+  var pr=await sb.from("rev_pending").select("*").eq("id",id).single(); var p=pr.data;
+  if(!p){ alert("ไม่พบรายการ"); return; }
+  if(p.status!=="open"){ alert("รายการนี้จับคู่แล้ว — ใช้ปุ่ม \u21a9 ยกเลิกจับคู่ ก่อน"); return; }
+  if(!confirm("ลบรายการเงินรอจับคู่นี้?\n\n"+beDate(p.date)+" · "+(p.source||"")+" · "+(p.from_name||"")+" · "+TH(p.amount)+" บาท\n\nใช้เฉพาะกรณีรายการซ้ำ/ลงผิด — เงินก้อนนี้จะหายจากยอดรอจับคู่ถาวร")) return;
+  var by=prompt("ผู้ลบ (ชื่อผู้ยืนยัน):"); if(by===null) return;
+  var why=prompt("เหตุผลที่ลบ (เช่น รายการซ้ำ):"); if(why===null) return;
+  var del=await sb.from("rev_pending").delete().eq("id",id).eq("status","open");
+  if(del.error){ alert("ลบไม่สำเร็จ: "+del.error.message); return; }
+  console.log("deleted pending",p,by,why);
+  loadPending();
+};
 window.unmatchPending=async function(id){
   if(!sb) return;
   if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ยกเลิกจับคู่ได้เฉพาะสิทธิ์การเงินขึ้นไป"); return; }

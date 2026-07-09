@@ -248,6 +248,40 @@
     var status= paid>=tot-0.01?"paid":(paid>0.01?"partial":"open");
     await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100, status:status}).eq("id",id);
   }
+  /* ปิดรายการ "รอจับคู่" (rev_pending) ที่ตรงกับเงินโอนซึ่งเพิ่งถูกตัดหนี้จากชีตบิลเก่า */
+  async function closePendingForOldBills(plan, payDate, batch){
+    try{
+      var res={closed:0, skipped:0};
+      var pr=await sb.from("rev_pending").select("id,date,amount,source,from_name,status").eq("status","open");
+      var pend=(pr.data||[]);
+      if(!pend.length) return res;
+      var used={};
+      for(var i=0;i<plan.length;i++){
+        var e=plan[i].e;
+        if(e.method==="เงินสด") continue;               // เงินสดไม่เข้าสเตทเมนต์
+        var cand=pend.filter(function(x){
+          return !used[x.id] && Math.abs(num(x.amount)-num(e.amount))<0.01
+                 && String(x.source||"")===String(e.method||"");
+        });
+        if(cand.length>1){
+          var same=cand.filter(function(x){ return x.date===payDate; });
+          if(same.length) cand=same;
+        }
+        if(cand.length!==1){ res.skipped++; continue; }   // ไม่ชัวร์ → ไม่แตะ ปล่อยให้จับคู่มือ
+        var billNo=plan[i].allocs.map(function(a){return a.bill.bill_no;}).filter(Boolean).join(", ");
+        var up=await sb.from("rev_pending").update({
+          status:"matched",
+          matched_bill_no:billNo||null,
+          matched_date:todayISO(),
+          confirmed_by:"ระบบ-บิลเก่า",
+          match_batch:batch
+        }).eq("id",cand[0].id).eq("status","open");
+        if(!up.error){ used[cand[0].id]=1; res.closed++; }
+      }
+      return res;
+    }catch(err){ console.warn("closePending",err); return {closed:0,skipped:0}; }
+  }
+
   window.__creditOldBills=async function(wb, formDate){
     try{
       if(!sbReady()) return;
@@ -283,7 +317,10 @@
       if(ins.error){ alert("บันทึกตัดหนี้ไม่สำเร็จ: "+ins.error.message); return; }
       var ids={}; payments.forEach(function(p){ ids[p.bill_id]=1; });
       for(var k in ids){ await recomputeBillCredit(k); }
+      var pd=await closePendingForOldBills(plan, formDate||todayISO(), batch);
       if(msg) msg.innerHTML+='<div style="color:#15803d">✓ ตัดหนี้เก่าเรียบร้อย '+payments.length+' รายการ ('+fmt(payments.reduce(function(s,p){return s+p.amount;},0))+' บาท)</div>';
+      if(msg && pd.closed) msg.innerHTML+='<div style="color:#15803d">✓ ปิดยอดเงินรอจับคู่อัตโนมัติ '+pd.closed+' รายการ</div>';
+      if(msg && pd.skipped) msg.innerHTML+='<div class="muted">ℹ️ มี '+pd.skipped+' รายการที่จับคู่ยอดเงินรออัตโนมัติไม่ได้ (ยอดซ้ำ/ไม่พบ) — ตรวจในกล่องรอจับคู่</div>';
       loadCreditBills();
     }catch(err){ console.warn("oldbills",err); }
   };

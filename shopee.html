@@ -310,6 +310,10 @@ async function upsertOrders(list){
     if(inc.sale_amount && (inc.paid || !base.sale_amount)) row.sale_amount=inc.sale_amount;
     else if(!row.sale_amount && inc.billed_amount) row.sale_amount=inc.billed_amount;
     row.updated_at=new Date().toISOString();
+    // คีย์เชื่อมลูกหนี้: ต้องมีค่าเสมอ (bulk upsert เติม null ให้คีย์ที่ขาด → ชน not-null)
+    row.credit_posted=!!base.credit_posted;
+    row.credit_batch=base.credit_batch||null;
+    row.credit_posted_at=base.credit_posted_at||null;
     return row;
   });
   for(var j=0;j<merged.length;j+=200){

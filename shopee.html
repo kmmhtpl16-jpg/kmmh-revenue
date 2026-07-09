@@ -359,10 +359,11 @@ document.getElementById("f_ord").addEventListener("change",async function(e){
    - กันลงซ้ำด้วย shopee_orders.credit_posted
 ========================================================================= */
 var CREDIT_METHOD="โอนกสิกร (Shopee)";
+/* จับคู่ด้วย "เลขบิล" อย่างเดียว — บางบิลลูกค้าขอใบกำกับเต็มรูปแบบ ชื่อลูกค้าจึงไม่ใช่ SHOPEE */
 async function _billsByNo(nos){
   var out={};
   for(var i=0;i<nos.length;i+=100){
-    var r=await sb.from("rev_credit_bills").select("*").in("bill_no",nos.slice(i,i+100)).ilike("customer","%shop%");
+    var r=await sb.from("rev_credit_bills").select("*").in("bill_no",nos.slice(i,i+100));
     if(r.error) throw new Error("อ่านบิลลูกหนี้ไม่ได้: "+r.error.message);
     (r.data||[]).forEach(function(b){ out[b.bill_no]=b; });
   }
@@ -455,17 +456,24 @@ async function _markPosted(orders,batch){
 }
 /* ตรวจว่ายอด 2 โปรแกรมตรงกันไหม */
 async function creditCheck(){
-  var rb=await sb.from("rev_credit_bills").select("bill_no,total_amount,paid_amount,status").ilike("customer","%shop%");
-  if(rb.error) throw new Error(rb.error.message);
-  var bills=rb.data||[];
   var ro=await sb.from("shopee_orders").select("bill_no,paid,billed_amount").not("bill_no","is",null);
   if(ro.error) throw new Error(ro.error.message);
-  var unpaidByBill={}; (ro.data||[]).forEach(function(o){ if(!o.paid) unpaidByBill[o.bill_no]=r2((unpaidByBill[o.bill_no]||0)+num(o.billed_amount)); });
+  var unpaidByBill={},seen={}; (ro.data||[]).forEach(function(o){ seen[o.bill_no]=1; if(!o.paid) unpaidByBill[o.bill_no]=r2((unpaidByBill[o.bill_no]||0)+num(o.billed_amount)); });
+  // บิลของ SHOPEE = ชื่อลูกค้าเป็น shopee หรือ เลขบิลตรงกับออเดอร์ Shopee (เคสออกใบกำกับชื่อลูกค้าจริง)
+  var rb=await sb.from("rev_credit_bills").select("bill_no,customer,total_amount,paid_amount,status").ilike("customer","%shop%");
+  if(rb.error) throw new Error(rb.error.message);
+  var bills=rb.data||[], have={}; bills.forEach(function(b){ have[b.bill_no]=1; });
+  var nos=Object.keys(seen).filter(function(n){ return !have[n]; });
+  for(var i=0;i<nos.length;i+=100){
+    var r2q=await sb.from("rev_credit_bills").select("bill_no,customer,total_amount,paid_amount,status").in("bill_no",nos.slice(i,i+100));
+    if(r2q.error) throw new Error(r2q.error.message);
+    bills=bills.concat(r2q.data||[]);
+  }
   var credRem=r2(bills.reduce(function(s,b){ return s+(num(b.total_amount)-num(b.paid_amount)); },0));
   var shopRem=r2(bills.reduce(function(s,b){ return s+(unpaidByBill[b.bill_no]||0); },0));
   var rows=bills.map(function(b){
     var cr=r2(num(b.total_amount)-num(b.paid_amount)), sr=r2(unpaidByBill[b.bill_no]||0);
-    return {bill_no:b.bill_no,cred:cr,shop:sr,diff:r2(cr-sr),noOrders:!(b.bill_no in unpaidByBill) && cr>0.01};
+    return {bill_no:b.bill_no,cust:b.customer||"",cred:cr,shop:sr,diff:r2(cr-sr),noOrders:!(b.bill_no in seen) && cr>0.01};
   }).filter(function(x){ return x.cred>0.01||x.shop>0.01; });
   return {credRem:credRem,shopRem:shopRem,diff:r2(credRem-shopRem),rows:rows};
 }
@@ -500,8 +508,8 @@ async function creditRender(res){
          : '<div class="note">⚠ ยอดไม่ตรงกัน '+fmt(chk.diff)+' บาท — ดูรายบิลด้านล่าง (บิลที่ไม่มีออเดอร์ = ยังไม่ได้นำเข้าไฟล์บิล/ออเดอร์ของวันนั้น)</div>';
   var bad=chk.rows.filter(function(x){ return Math.abs(x.diff)>0.01; });
   if(bad.length){
-    h+='<table style="margin-top:8px"><thead><tr><th>เลขบิล</th><th class="n">หนี้คงเหลือ</th><th class="n">Shopee ยังไม่จ่าย</th><th class="n">ต่าง</th><th>หมายเหตุ</th></tr></thead><tbody>'+
-      bad.map(function(x){ return '<tr><td>'+esc(x.bill_no||"—")+'</td><td class="n">'+fmt(x.cred)+'</td><td class="n">'+fmt(x.shop)+'</td><td class="n" style="color:var(--red)">'+fmt(x.diff)+'</td><td>'+(x.noOrders?"ไม่พบออเดอร์ของบิลนี้":"")+'</td></tr>'; }).join("")+
+    h+='<table style="margin-top:8px"><thead><tr><th>เลขบิล</th><th>ลูกค้า</th><th class="n">หนี้คงเหลือ</th><th class="n">Shopee ยังไม่จ่าย</th><th class="n">ต่าง</th><th>หมายเหตุ</th></tr></thead><tbody>'+
+      bad.map(function(x){ return '<tr><td>'+esc(x.bill_no||"—")+'</td><td>'+esc(x.cust)+'</td><td class="n">'+fmt(x.cred)+'</td><td class="n">'+fmt(x.shop)+'</td><td class="n" style="color:var(--red)">'+fmt(x.diff)+'</td><td>'+(x.noOrders?"ไม่พบออเดอร์ของบิลนี้":"")+'</td></tr>'; }).join("")+
       '</tbody></table>';
   }
   if(res){

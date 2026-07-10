@@ -533,7 +533,12 @@ function collectDetail(){
   const _fk=(DATA.form&&DATA.form.knv!=null)?DATA.form.knv:null; const _rk=(DATA.kplus&&DATA.form&&DATA.kplus.map&&DATA.kplus.map[DATA.form.date]!=null)?DATA.kplus.map[DATA.form.date]:null;
   const _lk=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date].reduce((s,x)=>s+(x.amt||0),0):0;
   const _lki=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date]:[];
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ return {bill:x.bill,knv:x.knv,ksk:x.ksk,cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[x.bill])||"")}; })), bill_audit:(DATA._billAudit||null), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, /* เก็บเลขบิลสะอาด + แยกเลขใบมัดจำ (RA) ออกมาเป็นฟิลด์ของตัวเอง
+     เดิมเก็บ "KM6907-0396(RA6907-0004)" ทั้งก้อน ทำให้ billCust[] หาไม่เจอ (cust ว่าง)
+     และ xferBill() เทียบเลขบิลตรงๆ ไม่ได้ · มัดจำที่มีเลขบิลแล้ว = หักจากบิลไปแล้ว ไม่ใช่มัดจำค้าง */
+  xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ const b=normBill(x.bill);
+    return {bill:b, knv:x.knv, ksk:x.ksk, ra:(x.ra||raOf(x.bill)||null),
+            cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[b])||"")}; })), bill_audit:(DATA._billAudit||null), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -989,7 +994,10 @@ function lateKItems(auDetail, dailyRows){
   return dailyRows.filter(function(r){ var m=String(r.t||"").match(/(\d{2}):(\d{2})/); return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30)); })
                   .map(function(r){ var m=String(r.t||"").match(/(\d{2}):(\d{2})/); return {hhmm:m?m[1]+":"+m[2]:"",amt:r.amt,name:""}; });
 }
-function xferBill(xf, amt, col){ if(!xf||!xf.length) return null; for(var i=0;i<xf.length;i++){ var x=xf[i]; if((col==='knv'||col==='any')&&(x.knv||0)>0&&Math.abs((x.knv||0)-amt)<=1) return x.bill; if((col==='ksk'||col==='any')&&(x.ksk||0)>0&&Math.abs((x.ksk||0)-amt)<=1) return x.bill; } return null; }
+/* ข้อมูลเก่าใน rev_audit เก็บ bill เป็น "KM…(RA…)" — ตัดวงเล็บตอนอ่าน จะได้เทียบ/แสดงเหมือนกันทุกวัน */
+function xferBill(xf, amt, col){ if(!xf||!xf.length) return null; for(var i=0;i<xf.length;i++){ var x=xf[i];
+  if((col==='knv'||col==='any')&&(x.knv||0)>0&&Math.abs((x.knv||0)-amt)<=1) return normBill(x.bill);
+  if((col==='ksk'||col==='any')&&(x.ksk||0)>0&&Math.abs((x.ksk||0)-amt)<=1) return normBill(x.bill); } return null; }
 async function pushTransferPending(amt, name, dateIso){
   if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
   const rec={ date:dateIso, amount:amt, source:"โอนกสิกร", from_name:(name||""), ref:"โอนเข้าตรง (สเตทเมนต์)", status:"open" };

@@ -172,9 +172,18 @@ function pcIsExpense(r){
   if(r.is_return) return false;
   return (r.tx_type||"expense")==="expense";
 }
+/* 🛡️ รหัสบัญชีที่ยังไม่ได้จัดหมวด — เก็บไว้ขึ้นแถบเตือน แทนที่จะซุกลง "อื่นๆ" เงียบๆ */
+const PC_UNMAPPED=new Map();   // code -> {label, n, amount}
 function pcCat(acc){
   const c=pcCode(acc);
-  return PC_CAT_MAP[c] || PC_CAT_MAP[c.slice(0,4)] || "อื่นๆ";
+  const hit=PC_CAT_MAP[c] || PC_CAT_MAP[c.slice(0,4)];
+  return hit || "อื่นๆ";
+}
+function pcNoteUnmapped(r){
+  const c=pcCode(r.acc_code);
+  if(!c || PC_CAT_MAP[c] || PC_CAT_MAP[c.slice(0,4)]) return;
+  const cur=PC_UNMAPPED.get(c)||{label:pcLabel(r.acc_code),n:0,amount:0};
+  cur.n++; cur.amount+=num(r.amount); PC_UNMAPPED.set(c,cur);
 }
 function pcLabel(acc){
   const raw=String(acc||"").trim();
@@ -183,6 +192,7 @@ function pcLabel(acc){
 }
 /* แถวเสมือน: อ่านอย่างเดียว แก้ที่โปรแกรมเงินสดย่อยเท่านั้น */
 function pcToExpRow(r){
+  pcNoteUnmapped(r);
   const detail=(r.description||"").trim()||pcLabel(r.acc_code);
   return {
     id:"pc:"+r.id, exp_date:r.tx_date, category:pcCat(r.acc_code),
@@ -192,6 +202,21 @@ function pcToExpRow(r){
   };
 }
 const isVirtual=id=>String(id||"").startsWith("pc:");
+
+/* ===== 🛡️ เงินออก "ค่าซื้อสินค้า" ที่ยังไม่ได้ผูกกับบิลซื้อ (ตรวจจากข้อมูล ไม่ผูกชื่อร้าน) =====
+   เคสจริง: จ่ายเจ้าหนี้ไปแล้ว แต่บิลใน ACC-BILLING ยังไม่มียอด/ยังไม่นำเข้า → ต้นทุนต่ำกว่าจริง
+   และถ้านำเข้าบิลทีหลังโดยไม่จับคู่ จะนับต้นทุน 2 ครั้ง */
+function buildUnbilledPayouts(){
+  const paid=STATE.exp.filter(x=>x.source==="statement"&&x.is_cogs);   /* settlement ถูกจับคู่แล้ว ไม่เข้าเงื่อนไข */
+  const open=STATE.exp.filter(x=>x.source==="acc_billing"&&x.pay_status!=="paid");
+  return paid.map(x=>{
+    const amt=r2(x.amount);
+    const exact=open.some(b=>r2(b.amount)===amt);
+    return {x, amt, hint: exact?"มีบิลค้างจ่ายยอดตรงกัน — กด 🔗 จ่ายบิลซื้อ เพื่อจับคู่"
+                             :(open.length?"ไม่พบบิลยอดตรง — ตรวจว่าคีย์ยอดที่ ACC-BILLING แล้วหรือยัง"
+                                          :"ไม่มีบิลซื้อค้างจ่ายในช่วงนี้เลย — บิลอาจยังไม่ถูกคีย์ยอด/นำเข้า")};
+  });
+}
 
 /* ===== จับคู่ชื่อคนในสเตทเมนต์กับใบสำคัญจ่าย payroll ===== */
 function normName(s){
@@ -212,8 +237,16 @@ function nameHit(a,b){
 const dShift=(d,n)=>{ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); };
 
 /* คืน {map: {expId:{nick,vno,vdate}}, cards:[...]} — ไม่บวกยอดใดๆ เข้ารายจ่าย */
+let PAY_KEY_WARN=null;   // 🛡️ เตือนถ้า payroll เปลี่ยนชื่อคีย์ to_pay
 function buildPayrollMatch(){
   const map={}, cards=[], used=new Set();
+  PAY_KEY_WARN=null;
+  let lnTot=0, lnNoKey=0;
+  (STATE.vouchers||[]).forEach(v=>(Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{
+    lnTot++; if(!ln || !Object.prototype.hasOwnProperty.call(ln,"to_pay")) lnNoKey++;
+  }));
+  if(lnTot && lnNoKey===lnTot) PAY_KEY_WARN={lnTot,lnNoKey,keys:[...new Set((STATE.vouchers||[]).flatMap(v=>(Array.isArray(v.lines)?v.lines:[]).flatMap(ln=>Object.keys(ln||{}))))].slice(0,12)};
+  else if(lnNoKey) PAY_KEY_WARN={lnTot,lnNoKey,keys:[]};
   const stmt=STATE.exp.filter(x=>x.source==="statement");
   (STATE.vouchers||[]).forEach(v=>{
     const lines=Array.isArray(v.lines)?v.lines:[];
@@ -236,6 +269,7 @@ function buildPayrollMatch(){
 
 /* ===== ค่าเที่ยว: ระบบจัดส่งเสนอ vs จ่ายจริงใน payroll (ไม่นับเป็นรายจ่ายเพิ่ม) ===== */
 const isTripLabel=l=>/ค่าเที่ยว/.test(String(l||""));
+let TRIP_LABEL_WARN=false;
 function buildTripCheck(){
   const from=gFrom(), to=gTo();
   const yms=[...new Set([from.slice(0,7), to.slice(0,7)].concat(
@@ -251,6 +285,8 @@ function buildTripCheck(){
       });
     });
   });
+  /* 🛡️ ถ้ามีใบเสนอค่าเที่ยว แต่ไม่เจอ label "ค่าเที่ยว" ในใบสำคัญจ่ายเลยสักใบ = ฝั่ง payroll อาจเปลี่ยนคำ */
+  TRIP_LABEL_WARN=(STATE.trips||[]).length>0 && Object.keys(paid).length===0;
   return yms.map(ym=>{
     const props=(STATE.trips||[]).filter(t=>t.ym===ym);
     const pd=paid[ym]||{};
@@ -344,12 +380,14 @@ async function reloadAll(){
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
       (ROLE==="owner" ? sb.from("petty_cash_transactions").select("id,tx_date,tx_type,acc_code,description,amount,is_return,by_name").gte("tx_date",from).lte("tx_date",to) : Promise.resolve({data:[]})),
-      (ROLE==="owner" ? sb.from("payout_vouchers").select("voucher_no,cycle_date,created_at,total_amount,employee_count,lines,status").eq("status","approved") : Promise.resolve({data:[]})),
+      /* 🛡️ กรองที่ query: ใบสำคัญจ่ายเฉพาะรอบๆ ช่วงที่ดู (±45 วัน ครอบใบสิ้นเดือนที่การ์ดค่าเที่ยวต้องใช้) */
+      (ROLE==="owner" ? sb.from("payout_vouchers").select("voucher_no,cycle_date,created_at,total_amount,employee_count,lines,status").eq("status","approved").gte("created_at",dShift(from,-45)).lte("created_at",dShift(to,45)+"T23:59:59") : Promise.resolve({data:[]})),
       (ROLE==="owner" ? sb.from("trip_pay_proposals").select("ym,nickname,full_name,amount,trips,status,source") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
     /* เงินสดย่อย: ใบเสร็จรายจ่ายจริงเท่านั้น (ตัดเงินสำรอง 1111-30 / เงินคืน 1111-10) */
+    PC_UNMAPPED.clear();
     STATE.petty=(pc&&!pc.error?(pc.data||[]):[]).filter(pcIsExpense);
     /* payroll: ใบสำคัญจ่ายที่อนุมัติแล้ว — ใช้กระทบยอดเท่านั้น ไม่นับเป็นรายจ่าย */
     STATE.vouchersAll=(pv&&!pv.error?(pv.data||[]):[])
@@ -636,7 +674,45 @@ function renderExpense(){
       </table></div>
     </div>`).join("");
 
+  /* ═══ 🛡️ แถบเตือนตัวกันพลาด ═══ */
+  const warns=[];
+  if(PC_UNMAPPED.size){
+    const items=[...PC_UNMAPPED.entries()].map(([c,v])=>`<span class="chip mn" style="margin:2px">${esc(c)} ${esc(v.label)} · ${v.n} ใบ · ${TH(v.amount)}</span>`).join(" ");
+    warns.push(`<b>พบรหัสบัญชีเงินสดย่อยที่ยังไม่ได้จัดหมวด</b> — ตอนนี้ถูกนับรวมอยู่ใน “อื่นๆ”<br>${items}<div class="muted" style="margin-top:4px">แก้ที่ <code>PC_CAT_MAP</code> ในหน้านี้</div>`);
+  }
+  if(PAY_KEY_WARN){
+    warns.push(PAY_KEY_WARN.lnNoKey===PAY_KEY_WARN.lnTot
+      ? `<b>ใบสำคัญจ่าย payroll ไม่มีคีย์ <code>to_pay</code> เลยสักบรรทัด</b> (${PAY_KEY_WARN.lnTot} บรรทัด) — การ์ดกระทบยอดจะเป็น 0 ทุกใบ<br><span class="muted">คีย์ที่เจอจริง: ${PAY_KEY_WARN.keys.map(k=>esc(k)).join(", ")||"—"}</span>`
+      : `<b>ใบสำคัญจ่าย payroll มี ${PAY_KEY_WARN.lnNoKey} จาก ${PAY_KEY_WARN.lnTot} บรรทัดที่ไม่มีคีย์ <code>to_pay</code></b> — บรรทัดเหล่านั้นถูกคิดเป็น 0`);
+  }
+  if(TRIP_LABEL_WARN){
+    warns.push('<b>มีใบเสนอค่าเที่ยวจากระบบจัดส่ง แต่หาบรรทัด “ค่าเที่ยว” ในใบสำคัญจ่ายไม่เจอเลย</b> — ฝั่ง payroll อาจเปลี่ยนคำใน label · การ์ดตรวจค่าเที่ยวจะโชว์ว่ายังไม่จ่ายทุกคน');
+  }
+  const warnHtml=warns.length?`<div class="card" style="border:1px solid #fcd34d;background:#fffbeb">
+    <h3 style="color:#92400e">⚠️ ตัวกันพลาด — ตรวจเจอความผิดปกติของข้อมูล</h3>
+    ${warns.map(w=>`<div style="margin-bottom:8px;font-size:14px;color:#92400e">• ${w}</div>`).join("")}
+  </div>`:"";
+
+  /* เงินออกค่าซื้อสินค้าที่ยังไม่ผูกบิล */
+  const ub=buildUnbilledPayouts();
+  const ubTot=ub.reduce((s,r)=>s+r.amt,0);
+  const ubHtml=ub.length?`<div class="card" style="border:1px solid #fca5a5;background:#fef2f2">
+    <h3 style="color:#991b1b">🧾 เงินออก “ค่าซื้อสินค้า” ที่ยังไม่ได้ผูกกับบิลซื้อ (${ub.length} รายการ · ${TH(ubTot)} บาท)</h3>
+    <div class="note">จ่ายเจ้าหนี้ไปแล้วแต่ยังไม่จับคู่บิล → <b>ต้นทุนต่ำกว่าจริง</b> และถ้านำเข้าบิลทีหลังโดยไม่จับคู่ จะ<b>นับต้นทุน 2 ครั้ง</b></div>
+    <div class="scroll"><table>
+      <thead><tr><th>วันที่</th><th>รายละเอียด</th><th class="n">จำนวน</th><th>สถานะบิล</th><th></th></tr></thead>
+      <tbody>${ub.map(r=>`<tr>
+        <td>${beDate(r.x.exp_date)}</td>
+        <td>${esc(r.x.description||r.x.ref||"")}</td>
+        <td class="n">${TH(r.amt)}</td>
+        <td class="muted">${esc(r.hint)}</td>
+        <td><button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${r.x.exp_date}',${r.amt},${JSON.stringify(r.x.description||r.x.ref||"").replace(/"/g,'&quot;')},'${r.x.id}')">🔗 จ่ายบิลซื้อ</button></td></tr>`).join("")}</tbody>
+    </table></div>
+  </div>`:"";
+
   el.innerHTML=`
+  ${warnHtml}
+  ${ubHtml}
   <div class="card">
     <h3>➕ เพิ่มรายจ่ายเอง</h3>
     <div class="row">

@@ -789,39 +789,17 @@ function renderPnl(rows,m,retCount){
   h+='<div class="muted" style="margin-top:6px">* ยังไม่รวมต้นทุนสินค้า (COGS) · ค่าธรรมเนียมออเดอร์ที่ยังไม่ได้รับเงินใช้ประมาณการ ('+(oc-paidN)+' ออเดอร์)</div>';
   if(profit>=0) h+='<div class="okbox" style="margin-top:10px">🟢 <b>มีกำไร '+fmt(profit)+' บาท</b> (เฉลี่ย '+fmt(oc?profit/oc:0)+'/ออเดอร์) — พิจารณาแบ่งโบนัส/ปรับปรุงอุปกรณ์ให้ทีมแพ็ค</div>';
   else h+='<div class="errbox" style="margin-top:10px">🔴 <b>ขาดทุน '+fmt(-profit)+' บาท</b> — ควรทบทวน/เตรียมเปลี่ยนแพลตฟอร์ม</div>';
-  h+='<div style="margin-top:14px;border-top:1px dashed #ccc;padding-top:10px"><button class="btn" onclick="pushToFinance()">\uD83D\uDCE4 \u0e14\u0e31\u0e19\u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22+\u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21\u0e40\u0e02\u0e49\u0e32 \u201c\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17\u201d (\u0e2a\u0e34\u0e49\u0e19\u0e40\u0e14\u0e37\u0e2d\u0e19)</button>'+
-    '<div class="muted" style="margin-top:4px">\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22\u0e23\u0e27\u0e21\u0e40\u0e1b\u0e47\u0e19 \u201c\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a Shopee\u201d \u0e41\u0e25\u0e30\u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21\u0e40\u0e1b\u0e47\u0e19 \u201c\u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22\u201d \u0e02\u0e2d\u0e07\u0e40\u0e14\u0e37\u0e2d\u0e19\u0e17\u0e35\u0e48\u0e40\u0e25\u0e37\u0e2d\u0e01 (\u0e14\u0e31\u0e19\u0e0b\u0e49\u0e33\u0e44\u0e14\u0e49=\u0e2d\u0e31\u0e1b\u0e40\u0e14\u0e15\u0e17\u0e31\u0e1a)</div>'+
-    '<div id="pushMsg" style="margin-top:8px"></div></div>';
+  h+='<div style="margin-top:14px;border-top:1px dashed #ccc;padding-top:10px" class="muted">\u2139\ufe0f \u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21 Shopee \u0e40\u0e02\u0e49\u0e32\u201c\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17\u201d \u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34\u0e40\u0e1b\u0e47\u0e19\u0e23\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e41\u0e25\u0e49\u0e27 (\u0e15\u0e2d\u0e19\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48\u0e40\u0e07\u0e34\u0e19\u0e42\u0e2d\u0e19) \u2014 \u0e44\u0e21\u0e48\u0e15\u0e49\u0e2d\u0e07\u0e14\u0e31\u0e19\u0e0b\u0e49\u0e33\u0e23\u0e32\u0e22\u0e40\u0e14\u0e37\u0e2d\u0e19</div>';
   document.getElementById("pnlBox").innerHTML=h;
 }
 
 function tab(t){ if(!canSee(t)) t="pack"; CURTAB=t; document.querySelectorAll(".tab").forEach(function(e){e.classList.toggle("on",e.getAttribute("data-t")===t);});
   ["pay","fee","pack","pnl","rtn"].forEach(function(x){ document.getElementById("tab_"+x).classList.toggle("hide",x!==t); }); }
 window.pushToFinance=async function(){
-  if(ROLE!=="owner"){ alert("\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e40\u0e08\u0e49\u0e32\u0e02\u0e2d\u0e07"); return; }
-  var m=(document.getElementById("monthPick")||{}).value;
-  if(!m||m==="ALL"){ alert("\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e40\u0e14\u0e37\u0e2d\u0e19\u0e01\u0e48\u0e2d\u0e19 (\u0e44\u0e21\u0e48\u0e43\u0e0a\u0e48 \u201c\u0e17\u0e38\u0e01\u0e40\u0e14\u0e37\u0e2d\u0e19\u201d)"); return; }
-  var rows=ALL.filter(function(o){ return inMonth(o,m)&&!o.return_status; });
-  if(!rows.length){ alert("\u0e44\u0e21\u0e48\u0e21\u0e35\u0e2d\u0e2d\u0e40\u0e14\u0e2d\u0e23\u0e4c\u0e43\u0e19\u0e40\u0e14\u0e37\u0e2d\u0e19\u0e19\u0e35\u0e49"); return; }
-  var sale=r2(rows.reduce(function(s,o){return s+num(o.sale_amount);},0));
-  var fee=r2(rows.reduce(function(s,o){return s+Math.abs(effFee(o));},0));
-  var paidN=rows.filter(function(o){return o.paid;}).length, est=rows.length-paidN;
-  var p=m.split("-"), mlabel=p[1]+"/"+(parseInt(p[0],10)+543);
-  var lastDay=new Date(parseInt(p[0],10),parseInt(p[1],10),0).getDate();
-  var ed=m+"-"+pad2(lastDay);
-  var estNote=est>0?("\n(\u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21 "+est+" \u0e2d\u0e2d\u0e40\u0e14\u0e2d\u0e23\u0e4c\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e23\u0e31\u0e1a\u0e40\u0e07\u0e34\u0e19 \u0e43\u0e0a\u0e49\u0e1b\u0e23\u0e30\u0e21\u0e32\u0e13\u0e01\u0e32\u0e23)"):"";
-  if(!confirm("\u0e14\u0e31\u0e19\u0e40\u0e02\u0e49\u0e32\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17 \u0e40\u0e14\u0e37\u0e2d\u0e19 "+mlabel+"?\n\n\u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22\u0e23\u0e27\u0e21 (\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a) = "+fmt(sale)+"\n\u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21 (\u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22) = "+fmt(fee)+"\n"+rows.length+" \u0e2d\u0e2d\u0e40\u0e14\u0e2d\u0e23\u0e4c"+estNote+"\n\n(\u0e40\u0e04\u0e22\u0e14\u0e31\u0e19\u0e40\u0e14\u0e37\u0e2d\u0e19\u0e19\u0e35\u0e49\u0e41\u0e25\u0e49\u0e27 = \u0e2d\u0e31\u0e1b\u0e40\u0e14\u0e15\u0e17\u0e31\u0e1a\u0e43\u0e2b\u0e49)")) return;
-  var box=document.getElementById("pushMsg"); if(box) box.innerHTML="\u0e01\u0e33\u0e25\u0e31\u0e07\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u2026";
-  var ok=await ensureRevSession("0402");
-  var recs=[
-    {exp_date:ed,category:"\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a Shopee",description:"\u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22 Shopee "+mlabel+" ("+rows.length+" \u0e2d\u0e2d\u0e40\u0e14\u0e2d\u0e23\u0e4c)",amount:sale,source:"shopee_income",ref:"shopee-income-"+m,is_cogs:false,created_by:"owner"},
-    {exp_date:ed,category:"\u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21/\u0e14\u0e2d\u0e01\u0e40\u0e1a\u0e35\u0e49\u0e22",description:"\u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21 Shopee "+mlabel+" ("+rows.length+" \u0e2d\u0e2d\u0e40\u0e14\u0e2d\u0e23\u0e4c)",amount:fee,source:"shopee_fee",ref:"shopee-fee-"+m,is_cogs:false,created_by:"owner"}
-  ];
-  var del=await sb.from("rev_expenses").delete().in("ref",["shopee-income-"+m,"shopee-fee-"+m]);
-  if(del.error){ if(box) box.innerHTML='<div class="errbox">\u0e25\u0e1a\u0e02\u0e2d\u0e07\u0e40\u0e14\u0e34\u0e21\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49: '+esc(del.error.message)+' (\u0e15\u0e49\u0e2d\u0e07\u0e25\u0e47\u0e2d\u0e01\u0e2d\u0e34\u0e19\u0e14\u0e49\u0e27\u0e22 PIN \u0e40\u0e08\u0e49\u0e32\u0e02\u0e2d\u0e07 0402)</div>'; return; }
-  var ins=await sb.from("rev_expenses").insert(recs);
-  if(ins.error){ if(box) box.innerHTML='<div class="errbox">\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08: '+esc(ins.error.message)+'</div>'; return; }
-  if(box) box.innerHTML='<div class="okbox">\u2713 \u0e14\u0e31\u0e19\u0e40\u0e02\u0e49\u0e32\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17\u0e41\u0e25\u0e49\u0e27: \u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a '+fmt(sale)+' + \u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21 '+fmt(fee)+' (\u0e40\u0e14\u0e37\u0e2d\u0e19 '+mlabel+') \u2014 \u0e40\u0e1b\u0e34\u0e14\u0e2b\u0e19\u0e49\u0e32 \u201c\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17\u201d \u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e14\u0e39</div>';
+  /* ปิดใช้ 10 ก.ค.69: ค่าธรรมเนียมถูกบันทึกรายบิล (source=shopee-auto) ตอนจับคู่เงินโอนแล้ว
+     ถ้าดันรายเดือนซ้ำจะนับค่าธรรมเนียมสองรอบ (ปุ่มลบของเดิมด้วย ref รายเดือน จับแถวรายบิลไม่ได้) */
+  alert("\u0e1b\u0e34\u0e14\u0e43\u0e0a\u0e49\u0e41\u0e25\u0e49\u0e27 \u2014 \u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21\u0e40\u0e02\u0e49\u0e32\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17\u0e23\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34\u0e41\u0e25\u0e49\u0e27");
+  return;
 };
 var _billNo=null;
 function openBill(no){

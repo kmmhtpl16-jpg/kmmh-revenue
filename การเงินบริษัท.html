@@ -153,6 +153,119 @@ function allCats(){
   return merged;
 }
 const catOptions=(sel)=>allCats().map(c=>`<option${c===sel?" selected":""}>${esc(c)}</option>`).join("");
+/* ===== เงินสดย่อย: แม็พผังบัญชี -> หมวดรายจ่ายของหน้านี้ ===== */
+const PC_CAT_MAP={
+  "5113":"ค่าขนส่ง","5222":"ค่าขนส่ง",
+  "5211-10":"ค่าแรง/เงินเดือน","5221-40":"ค่าแรง/เงินเดือน",
+  "5211-20":"ค่าจ้างเหมา",
+  "5221-30":"ค่าน้ำมัน",
+  "5221-60":"ค่าอาหารและเครื่องดื่ม",
+  "5231":"ซ่อมบำรุง"
+};
+/* รหัสที่ไม่ใช่รายจ่ายจริง (เงินสำรอง/เงินคืน) — ต้องไม่นับ */
+const PC_SKIP_PREFIX=["1111"];
+function pcCode(acc){ return String(acc||"").trim().split(/\s+/)[0]; }
+function pcIsExpense(r){
+  const c=pcCode(r.acc_code);
+  if(!c) return false;
+  if(PC_SKIP_PREFIX.some(p=>c.startsWith(p))) return false;
+  if(r.is_return) return false;
+  return (r.tx_type||"expense")==="expense";
+}
+function pcCat(acc){
+  const c=pcCode(acc);
+  return PC_CAT_MAP[c] || PC_CAT_MAP[c.slice(0,4)] || "อื่นๆ";
+}
+function pcLabel(acc){
+  const raw=String(acc||"").trim();
+  const sp=raw.indexOf(" ");
+  return sp>0?raw.slice(sp+1):raw;
+}
+/* แถวเสมือน: อ่านอย่างเดียว แก้ที่โปรแกรมเงินสดย่อยเท่านั้น */
+function pcToExpRow(r){
+  const detail=(r.description||"").trim()||pcLabel(r.acc_code);
+  return {
+    id:"pc:"+r.id, exp_date:r.tx_date, category:pcCat(r.acc_code),
+    description:detail+(r.by_name?" · "+r.by_name:""),
+    amount:r.amount, source:"petty_cash", is_cogs:false,
+    acc_code:r.acc_code, ref:pcLabel(r.acc_code), pay_status:null, _ro:true
+  };
+}
+const isVirtual=id=>String(id||"").startsWith("pc:");
+
+/* ===== จับคู่ชื่อคนในสเตทเมนต์กับใบสำคัญจ่าย payroll ===== */
+function normName(s){
+  return String(s||"")
+    .replace(/\+\+/g,"")
+    .replace(/^โอนไป\s*/,"")
+    .replace(/เพื่อชำระ/g,"")
+    .replace(/\b(GSB|SCB|KTB|TTB|UOBT|UOB|BBL|KBANK|BAY|KKP|CIMB|GHB|BAAC|Ref|QR)\b/gi,"")
+    .replace(/X\d+/gi,"")
+    .replace(/(นางสาว|น\.ส\.|นาง|นาย)/g,"")
+    .replace(/[\s.\-]/g,"");
+}
+function nameHit(a,b){
+  a=normName(a); b=normName(b);
+  if(a.length<4||b.length<4) return false;
+  return a.startsWith(b)||b.startsWith(a);
+}
+const dShift=(d,n)=>{ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); };
+
+/* คืน {map: {expId:{nick,vno,vdate}}, cards:[...]} — ไม่บวกยอดใดๆ เข้ารายจ่าย */
+function buildPayrollMatch(){
+  const map={}, cards=[], used=new Set();
+  const stmt=STATE.exp.filter(x=>x.source==="statement");
+  (STATE.vouchers||[]).forEach(v=>{
+    const lines=Array.isArray(v.lines)?v.lines:[];
+    const lo=dShift(v.vdate,-1), hi=dShift(v.vdate,3);
+    const det=[]; let trTot=0, cashTot=0;
+    lines.forEach(ln=>{
+      const need=r2(ln.to_pay);
+      if(need<=0){ det.push({nick:ln.nickname,amt:0,st:"none"}); return; }
+      const c=stmt.find(sx=>!used.has(sx.id)&&r2(sx.amount)===need&&sx.exp_date>=lo&&sx.exp_date<=hi&&nameHit(ln.full_name,sx.ref||sx.description));
+      if(c){ used.add(c.id); map[c.id]={nick:ln.nickname,vno:v.voucher_no,vdate:v.vdate}; trTot+=need; det.push({nick:ln.nickname,amt:need,st:"transfer"}); }
+      else { cashTot+=need; det.push({nick:ln.nickname,amt:need,st:"cash"}); }
+    });
+    const pcTot=STATE.exp.filter(x=>x.source==="petty_cash"&&x.exp_date===v.vdate&&pcCode(x.acc_code)==="5211-10")
+                         .reduce((s,x)=>s+num(x.amount),0);
+    const noStmt=!stmt.some(sx=>sx.exp_date>=lo&&sx.exp_date<=hi);
+    cards.push({v,det,trTot,cashTot,pcTot,noStmt,diff:r2(num(v.total_amount)-(trTot+pcTot))});
+  });
+  return {map,cards};
+}
+
+/* ===== ค่าเที่ยว: ระบบจัดส่งเสนอ vs จ่ายจริงใน payroll (ไม่นับเป็นรายจ่ายเพิ่ม) ===== */
+const isTripLabel=l=>/ค่าเที่ยว/.test(String(l||""));
+function buildTripCheck(){
+  const from=gFrom(), to=gTo();
+  const yms=[...new Set([from.slice(0,7), to.slice(0,7)].concat(
+    (STATE.trips||[]).map(t=>t.ym)).filter(m=>m>=from.slice(0,7)&&m<=to.slice(0,7)))].sort().reverse();
+  /* ค่าเที่ยวที่จ่ายจริง: อ่านจาก income_items ในใบสำคัญจ่ายทุกใบ (ไม่จำกัดช่วง) จับเดือนจากวันที่ใบ */
+  const paid={};
+  (STATE.vouchersAll||[]).forEach(v=>{
+    const ym=String(v.vdate||"").slice(0,7);
+    (Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{
+      (ln.income_items||[]).filter(it=>isTripLabel(it.label)).forEach(it=>{
+        paid[ym]=paid[ym]||{};
+        paid[ym][ln.nickname]=(paid[ym][ln.nickname]||0)+num(it.amount);
+      });
+    });
+  });
+  return yms.map(ym=>{
+    const props=(STATE.trips||[]).filter(t=>t.ym===ym);
+    const pd=paid[ym]||{};
+    const names=[...new Set(props.map(p=>p.nickname).concat(Object.keys(pd)))];
+    const rows=names.map(n=>{
+      const p=props.find(x=>x.nickname===n);
+      const prop=p?num(p.amount):null, pay=pd[n]!=null?r2(pd[n]):null;
+      let st="ok";
+      if(prop==null) st="noprop"; else if(pay==null) st="nopay"; else if(Math.abs(prop-pay)>=1) st="diff";
+      return {n,prop,pay,trips:p?p.trips:null,status:p?p.status:null,st};
+    }).sort((a,b)=>(b.prop||0)-(a.prop||0));
+    const propTot=rows.reduce((s,r)=>s+(r.prop||0),0), payTot=rows.reduce((s,r)=>s+(r.pay||0),0);
+    return {ym,rows,propTot,payTot,bad:rows.filter(r=>r.st!=="ok").length};
+  }).filter(c=>c.rows.length);
+}
 /* ใช้ในหน้าแก้ไข: ถ้าหมวดเดิมไม่มีในลิสต์ (เช่นหมวดเก่า/หมวดที่ลบไปแล้ว) ให้คงไว้ กันเปลี่ยนหมวดเงียบๆ */
 const catOptionsWith=(sel)=>{
   const list=allCats().slice();
@@ -221,18 +334,31 @@ const gFrom=()=>document.getElementById("from").value;
 const gTo=()=>document.getElementById("to").value;
 
 /* ================= ข้อมูล ================= */
-let STATE={daily:[],audit:[],exp:[]};
+let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[]};
 async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e]=await Promise.all([
+    const [d,a,e,pc,pv,tp]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
-      (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
+      (ROLE==="owner" ? sb.from("petty_cash_transactions").select("id,tx_date,tx_type,acc_code,description,amount,is_return,by_name").gte("tx_date",from).lte("tx_date",to) : Promise.resolve({data:[]})),
+      (ROLE==="owner" ? sb.from("payout_vouchers").select("voucher_no,cycle_date,created_at,total_amount,employee_count,lines,status").eq("status","approved") : Promise.resolve({data:[]})),
+      (ROLE==="owner" ? sb.from("trip_pay_proposals").select("ym,nickname,full_name,amount,trips,status,source") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
-    STATE.daily=d.data||[]; STATE.audit=a.data||[]; STATE.exp=e.data||[];
+    STATE.daily=d.data||[]; STATE.audit=a.data||[];
+    /* เงินสดย่อย: ใบเสร็จรายจ่ายจริงเท่านั้น (ตัดเงินสำรอง 1111-30 / เงินคืน 1111-10) */
+    STATE.petty=(pc&&!pc.error?(pc.data||[]):[]).filter(pcIsExpense);
+    /* payroll: ใบสำคัญจ่ายที่อนุมัติแล้ว — ใช้กระทบยอดเท่านั้น ไม่นับเป็นรายจ่าย */
+    STATE.vouchersAll=(pv&&!pv.error?(pv.data||[]):[])
+      .map(v=>Object.assign({},v,{vdate:v.cycle_date||String(v.created_at||"").slice(0,10)}))
+      .sort((x,y)=>x.vdate<y.vdate?1:-1);
+    STATE.vouchers=STATE.vouchersAll.filter(v=>v.vdate>=from&&v.vdate<=to);
+    /* ค่าเที่ยวจากระบบจัดส่ง — ใช้ตรวจสอบเท่านั้น จ่ายจริงผ่าน payroll */
+    STATE.trips=(tp&&!tp.error?(tp.data||[]):[]);
+    STATE.exp=(e.data||[]).concat(STATE.petty.map(pcToExpRow));
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
     renderAll();
   }catch(err){ msg.textContent="ผิดพลาด: "+err.message; }
@@ -394,15 +520,27 @@ function printIncome(){
 
 /* ================= TAB 2: รายจ่าย ================= */
 let _accRows=null; // แคชแถวไฟล์ ACC-BILLING ที่อัป
-let EXPF={cat:"",pay:""};   // ตัวกรองตารางรายจ่าย (หมวด / การชำระ)
+let EXPF={cat:"",pay:"",src:""};   // ตัวกรองตารางรายจ่าย (หมวด / การชำระ / แหล่งข้อมูล)
+/* แหล่งข้อมูล: source ในฐานข้อมูล + "payroll" (แถวเงินโอนออกที่จับคู่ใบสำคัญจ่ายได้) */
+/* Shopee เขียน source 3 แบบ: shopee-auto (ค่าธรรมเนียมรายบิล) · shopee_fee/shopee_income (ปุ่มดันรายเดือน) */
+const isShopeeSrc=s=>s==="shopee-auto"||s==="shopee_fee"||s==="shopee_income";
+const SRC_LABEL={petty_cash:"🟣 เงินสดย่อย",payroll:"💼 เงินเดือน (payroll)",statement:"🏦 สเตทเมนต์",acc_billing:"📥 ACC-BILLING",shopee:"🛒 Shopee",manual:"✍️ กรอกมือ"};
+const SRC_ORDER=["petty_cash","payroll","statement","acc_billing","shopee","manual"];
+function srcKeys(x){
+  const s=x.source||"manual";
+  const k=[isShopeeSrc(s)?"shopee":(SRC_LABEL[s]?s:"manual")];
+  if(STATE.payMatch && STATE.payMatch[x.id]) k.push("payroll");   // แถวเดียวอยู่ได้ 2 แหล่ง
+  return k;
+}
 window.setExpFilter=function(){
-  const c=document.getElementById("f_cat"), p=document.getElementById("f_pay");
-  EXPF.cat=c?c.value:""; EXPF.pay=p?p.value:"";
+  const c=document.getElementById("f_cat"), p=document.getElementById("f_pay"), s=document.getElementById("f_src");
+  EXPF.cat=c?c.value:""; EXPF.pay=p?p.value:""; EXPF.src=s?s.value:"";
   renderExpense();
 };
-window.clearExpFilter=function(){ EXPF={cat:"",pay:""}; renderExpense(); };
+window.clearExpFilter=function(){ EXPF={cat:"",pay:"",src:""}; renderExpense(); };
 function renderExpense(){
   const el=document.getElementById("p_expense");
+  const PM=buildPayrollMatch(); STATE.payMatch=PM.map; STATE.payCards=PM.cards;
   // เงินออกจากสเตทเมนต์ที่ยังไม่ได้บันทึก
   const recorded=new Set(STATE.exp.filter(x=>x.source==="statement"||x.source==="settlement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
   let wdHtml="", wdCount=0;
@@ -422,12 +560,16 @@ function renderExpense(){
   const expsAll=[...STATE.exp].filter(x=>x.source!=="shopee_income"&&x.source!=="settlement").sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
   /* สถานะชำระ: บิลซื้อ = paid/credit · รายการอื่น = nonbill */
   const payKey=x=>x.source!=="acc_billing"?"nonbill":(x.pay_status==="paid"?"paid":"credit");
-  const exps=expsAll.filter(x=>(!EXPF.cat||x.category===EXPF.cat)&&(!EXPF.pay||payKey(x)===EXPF.pay));
+  const exps=expsAll.filter(x=>(!EXPF.cat||x.category===EXPF.cat)&&(!EXPF.pay||payKey(x)===EXPF.pay)&&(!EXPF.src||srcKeys(x).includes(EXPF.src)));
+  const srcCount={}; expsAll.forEach(x=>srcKeys(x).forEach(k=>srcCount[k]=(srcCount[k]||0)+1));
+  const srcsInData=SRC_ORDER.filter(k=>srcCount[k]);
   const catsInData=[...new Set(expsAll.map(x=>x.category))].sort();
   const grandTot=expsAll.reduce((s,x)=>s+num(x.amount),0);
   const creditTot=expsAll.filter(x=>payKey(x)==="credit").reduce((s,x)=>s+num(x.amount),0);
-  const filtered=(EXPF.cat||EXPF.pay);
-  const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':(s==="shopee_fee"||s==="shopee_income")?'<span class="chip ac">Shopee</span>':'<span class="chip mn">กรอกมือ</span>';
+  const filtered=(EXPF.cat||EXPF.pay||EXPF.src);
+  const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':isShopeeSrc(s)?'<span class="chip ac">Shopee</span>':s==="petty_cash"?'<span class="chip" style="background:#7c3aed;color:#fff">เงินสดย่อย</span>':'<span class="chip mn">กรอกมือ</span>';
+  /* ป้ายชื่อพนักงานสำหรับเงินโอนออกที่จับคู่กับใบสำคัญจ่ายได้ */
+  const payTag=x=>{ const m=STATE.payMatch[x.id]; return m?`<span class="chip" style="background:#0ea5e9;color:#fff">💼 เงินเดือน ${esc(m.nick)} · งวด ${beDate(m.vdate)}</span> `:""; };
   const payBadge=x=>x.source!=="acc_billing"?"":(x.pay_status==="paid"
       ?`<span class="chip" style="background:#16a34a;color:#fff">🟢 จ่ายแล้ว${x.paid_date?" "+beDate(x.paid_date):""}</span>`
       :`<span class="chip" style="background:#dc2626;color:#fff">🔴 ค้างเครดิต</span>`);
@@ -437,13 +579,62 @@ function renderExpense(){
   /* แถวเงินออกจากสเตทเมนต์ที่เป็นค่าซื้อของ → จับคู่บิลซื้อได้ (กันนับซ้ำย้อนหลัง) */
   const stmtBtn=x=>(x.source==="statement"&&x.is_cogs)
       ?`<button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${x.exp_date}',${num(x.amount)},${JSON.stringify(x.description||x.ref||"").replace(/"/g,'&quot;')},'${x.id}')">🔗 จ่ายบิลซื้อ</button>`:"";
+  const rowActions=x=>isVirtual(x.id)
+      ? `<span class="muted" style="font-size:12px">🔒 แก้ที่โปรแกรมเงินสดย่อย</span>`
+      : `${payBtn(x)}${stmtBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+          <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button>`;
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
-      <td>${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${payBadge(x)}</td>
+      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${payBadge(x)}</td>
       <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
-      <td>${payBtn(x)}${stmtBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
-          <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button></td></tr>`).join("");
+      <td>${rowActions(x)}</td></tr>`).join("");
+  const pettyTot=expsAll.filter(x=>x.source==="petty_cash").reduce((s,x)=>s+num(x.amount),0);
+  /* การ์ดกระทบยอดใบสำคัญจ่าย payroll (ไม่บวกเข้ารายจ่าย — เงินออกจริงอยู่ในสเตทเมนต์/เงินสดย่อยแล้ว) */
+  const stMark={transfer:'<span style="color:#0369a1">โอน</span>',cash:'<span style="color:#7c3aed">เงินสด</span>',none:'<span class="muted">—</span>'};
+  const vCards=(STATE.payCards||[]).map(c=>{
+    const ok=Math.abs(c.diff)<1;
+    const badge=c.noStmt
+      ? '<span class="chip" style="background:#94a3b8;color:#fff">ยังไม่ได้นำเข้าสเตทเมนต์ช่วงนี้</span>'
+      : (ok?'<span class="chip" style="background:#16a34a;color:#fff">✅ ยอดตรง</span>'
+           :`<span class="chip" style="background:#dc2626;color:#fff">⚠️ ต่าง ${TH(c.diff)}</span>`);
+    return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div class="row" style="align-items:center;gap:8px">
+        <b>${esc(c.v.voucher_no)}</b><span class="muted">งวด ${beDate(c.v.vdate)} · ${c.v.employee_count||0} คน</span>
+        <span style="margin-left:auto">ยอดใบสำคัญจ่าย <b>${TH(c.v.total_amount)}</b></span>
+      </div>
+      <div class="muted" style="margin-top:6px">
+        โอนออก (จับคู่ได้) <b>${TH(c.trTot)}</b> + เงินสดย่อย (เงินเดือนวันเดียวกัน) <b>${TH(c.pcTot)}</b> = <b>${TH(r2(c.trTot+c.pcTot))}</b> ${badge}
+      </div>
+      <details style="margin-top:6px"><summary class="muted" style="cursor:pointer">ดูรายคน (${c.det.length})</summary>
+        <div style="margin-top:6px;font-size:13px;line-height:1.9">
+          ${c.det.map(d=>`<span class="chip mn" style="margin:2px">${esc(d.nick)} ${TH(d.amt)} · ${stMark[d.st]}</span>`).join("")}
+        </div></details>
+    </div>`;
+  }).join("");
   const expTot=exps.reduce((s,x)=>s+num(x.amount),0);
+
+  const tripSt={ok:'<span style="color:#16a34a">ตรงกัน</span>',
+                diff:'<span style="color:#dc2626">ยอดไม่ตรง</span>',
+                nopay:'<span style="color:#f59e0b">ยังไม่จ่าย</span>',
+                noprop:'<span style="color:#dc2626">ไม่มีใบเสนอจากระบบจัดส่ง</span>'};
+  const tCards=buildTripCheck().map(c=>`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div class="row" style="align-items:center;gap:8px">
+        <b>${beMonth(c.ym)}</b>
+        <span class="muted">${c.rows.length} คน</span>
+        <span style="margin-left:auto">เสนอ <b>${TH(c.propTot)}</b> · จ่ายจริง <b>${TH(c.payTot)}</b>
+        ${c.bad?`<span class="chip" style="background:#dc2626;color:#fff">⚠️ ต้องตรวจ ${c.bad} รายการ</span>`
+                :'<span class="chip" style="background:#16a34a;color:#fff">✅ ตรงทุกคน</span>'}</span>
+      </div>
+      <div class="scroll" style="margin-top:6px"><table>
+        <thead><tr><th>พนักงาน</th><th class="n">เที่ยว</th><th class="n">ระบบจัดส่งเสนอ</th><th class="n">จ่ายจริง</th><th>สถานะ</th></tr></thead>
+        <tbody>${c.rows.map(r=>`<tr>
+          <td>${esc(r.n)}</td>
+          <td class="n">${r.trips!=null?r.trips:"—"}</td>
+          <td class="n">${r.prop!=null?TH(r.prop):"—"}</td>
+          <td class="n">${r.pay!=null?TH(r.pay):"—"}</td>
+          <td>${tripSt[r.st]}</td></tr>`).join("")}</tbody>
+      </table></div>
+    </div>`).join("");
 
   el.innerHTML=`
   <div class="card">
@@ -475,13 +666,31 @@ function renderExpense(){
       <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">✓ จัดหมวดครบทุกรายการแล้ว (ไม่มีเงินออกที่ยังไม่ได้ลงรายจ่าย)</div>`}
   </div>
 
+  ${tCards?`<div class="card">
+    <h3>🚚 ตรวจค่าเที่ยว (ระบบจัดส่ง ↔ payroll)</h3>
+    <div class="note">ค่าเที่ยว <b>ไม่ถูกนับเป็นรายจ่ายแยก</b> เพราะจ่ายรวมไปกับเงินเดือนแล้ว · การ์ดนี้เทียบยอดที่ระบบจัดส่งเสนอ กับยอดที่จ่ายจริงในใบสำคัญจ่าย</div>
+    ${tCards}
+  </div>`:""}
+
+  ${vCards?`<div class="card">
+    <h3>💼 กระทบยอดใบสำคัญจ่าย (payroll)</h3>
+    <div class="note">ใบสำคัญจ่าย <b>ไม่ถูกนับเป็นรายจ่าย</b> เพราะเงินออกจริงบันทึกไว้แล้วในสเตทเมนต์ + เงินสดย่อย · การ์ดนี้ใช้เช็คว่าจ่ายครบตามใบหรือไม่ และติดป้ายชื่อพนักงานให้แถวเงินโอนออกอัตโนมัติ</div>
+    ${vCards}
+  </div>`:""}
+
   <div class="card">
     <h3>📋 รายจ่ายที่บันทึก (${filtered?`${exps.length} จาก ${expsAll.length}`:`${expsAll.length}`} รายการ)</h3>
+    <div class="note">รวมใบเสร็จจากโปรแกรมเงินสดย่อยอัตโนมัติ (${TH(pettyTot)} บาทในช่วงนี้) — แถวสีม่วงแก้/ลบที่นี่ไม่ได้ ต้องแก้ที่โปรแกรมเงินสดย่อย · เงินที่เบิกเข้าก้อนเงินสดย่อยไม่นับเป็นรายจ่าย นับเฉพาะใบเสร็จ</div>
     <div class="row" style="margin-bottom:8px;align-items:center">
       <label>🏷️ หมวด</label>
       <select id="f_cat" onchange="setExpFilter()">
         <option value=""${EXPF.cat?"":" selected"}>— ทุกหมวด —</option>
         ${catsInData.map(c=>`<option value="${esc(c)}"${c===EXPF.cat?" selected":""}>${esc(c)}</option>`).join("")}
+      </select>
+      <label>🗂️ แหล่งข้อมูล</label>
+      <select id="f_src" onchange="setExpFilter()">
+        <option value=""${EXPF.src?"":" selected"}>— ทุกแหล่ง —</option>
+        ${srcsInData.map(k=>`<option value="${k}"${k===EXPF.src?" selected":""}>${SRC_LABEL[k]} (${srcCount[k]})</option>`).join("")}
       </select>
       <label>💳 การชำระ</label>
       <select id="f_pay" onchange="setExpFilter()">
@@ -593,6 +802,7 @@ async function addManualExp(){
 /* แก้ไขรายการ: แก้ "หมวด/รายละเอียด/COGS" ได้ — ยอดเงินดึงจากฐานข้อมูล ห้ามแก้ */
 window.closeEditModal=function(){ const m=document.getElementById("editModal"); if(m) m.remove(); };
 window.editExp=function(id){
+  if(isVirtual(id)){ alert("รายการนี้มาจากโปรแกรมเงินสดย่อย — ต้องแก้ที่ต้นทาง"); return; }
   const x=STATE.exp.find(e=>e.id===id); if(!x) return;
   closeEditModal();
   const html=`<div id="editModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeEditModal()">
@@ -628,6 +838,7 @@ window.saveEditExp=async function(id){
   closeEditModal(); await reloadAll(); tab("expense");
 };
 async function delExp(id){
+  if(isVirtual(id)){ alert("รายการนี้มาจากโปรแกรมเงินสดย่อย — ต้องลบที่ต้นทาง"); return; }
   if(!confirm("ลบรายการนี้?")) return;
   const {error}=await sb.from("rev_expenses").delete().eq("id",id);
   if(error){ alert("ลบไม่สำเร็จ: "+error.message); return; }

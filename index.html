@@ -218,6 +218,96 @@ function readFile(input, kind, onName){
 }
 function rowsOf(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
 
+
+/* ═══════════ ตรวจยอดบิล: POS (ACC-BILLING) ↔ ฟอร์มพนักงาน ═══════════
+   สมการ: ยอดบิล = (มัดจำ/โอน) + (ลงบัญชี) + (เงินสด)
+   ต่างเกิน BA_TOL บาท จึงเตือน (เศษสตางค์ก็คือเงิน) */
+const BA_TOL=1;
+const r2c=n=>Math.round((+n||0)*100)/100;
+const normBill=b=>String(b||"").split("(")[0].trim().toUpperCase();
+const raOf=b=>{ const m=/\((RA[\w-]+)\)/i.exec(String(b||"")); return m?m[1]:null; };
+const BA_SUMROW=/^(ยอดรวม|รวมทั้งหมด|รวม|ยอดเงิน|ชื่อร้านค้า)$/;
+const baIsSum=n=>BA_SUMROW.test(String(n||"").trim());
+/* ฟอร์มพิมพ์ชื่อลูกค้าสั้น/ตัดคำนำหน้า → เทียบแบบหลวม */
+function baKey(s){ return String(s||"").replace(/ห้างหุ้นส่วนจำกัด|บริษัท|จำกัด|\(มหาชน\)|หจก\.?|ร้าน|คุณ|นาย|นาง(สาว)?/g,"").replace(/[\s\.\-]/g,""); }
+function baHit(a,b){ a=baKey(a); b=baKey(b); if(a.length<4||b.length<4) return false;
+  const n=Math.min(8,a.length,b.length); return a.slice(0,n)===b.slice(0,n)||a.indexOf(b)>=0||b.indexOf(a)>=0; }
+/* ลูกค้าปลีกใน POS (ชื่อ "คุณ 1") */
+function baRetailCust(pos){ const ns=Object.keys(pos.custTotalByName||{}); return ns.find(c=>baKey(c)==="1")||null; }
+
+function buildBillAudit(form,pos){
+  const bt=pos.billTotal||{}, bc=pos.billCust||{}, out={bills:[],custs:[],cash:[],ok:true};
+  if(!Object.keys(bt).length) return out;
+  const retail=baRetailCust(pos);
+
+  const paid={}, raBill={};
+  (form.xfer||[]).forEach(x=>{ const b=normBill(x.bill);
+    paid[b]=r2c((paid[b]||0)+(+x.knv||0)+(+x.ksk||0)); if(x.ra) raBill[b]=x.ra; });
+
+  const names=Object.keys(pos.custTotalByName||{});
+  const byCust={}, acctByCust={}, unknown=[];
+  Object.keys(paid).forEach(b=>{ const c=bc[b]; if(c) byCust[c]=r2c((byCust[c]||0)+paid[b]); });
+  (form.acctRows||[]).filter(r=>!baIsSum(r.name)).forEach(row=>{
+    const hit=names.find(c=>baHit(row.name,c));
+    if(hit) acctByCust[hit]=r2c((acctByCust[hit]||0)+(+row.amt||0)); });
+  [].concat(form.acctRows||[],form.shopCash||[]).filter(r=>!baIsSum(r.name)).forEach(row=>{
+    const hit=names.find(c=>baHit(row.name,c));
+    if(hit) byCust[hit]=r2c((byCust[hit]||0)+(+row.amt||0)); else if(+row.amt) unknown.push(row); });
+  const rc=(form.retailCash||[]).map(Number).filter(v=>!isNaN(v));
+  if(retail&&rc.length) byCust[retail]=r2c((byCust[retail]||0)+rc.reduce((s,v)=>s+v,0));
+
+  /* ระดับบิล (เฉพาะบิลที่มีเลขบิลในชีท "โอน") */
+  Object.keys(paid).forEach(b=>{ const tot=bt[b];
+    if(tot==null){ out.bills.push({bill:b,kind:"nopos"}); return; }
+    const cust=bc[b]||"", acct=acctByCust[cust]||0, diff=r2c(tot-paid[b]-acct);
+    if(Math.abs(diff)>BA_TOL) out.bills.push({bill:b,cust:cust,tot:tot,paid:paid[b],acct:acct,ra:raBill[b]||null,diff:diff,kind:diff>0?"short":"over"}); });
+
+  /* ระดับลูกค้า */
+  names.forEach(c=>{ const tot=r2c(pos.custTotalByName[c]), got=r2c(byCust[c]||0), diff=r2c(tot-got);
+    if(Math.abs(diff)>BA_TOL) out.custs.push({cust:c,tot:tot,got:got,diff:diff,kind:diff>0?"short":"over"}); });
+  unknown.forEach(u=>out.custs.push({cust:u.name,got:r2c(u.amt),kind:"nocust"}));
+
+  /* เจาะรายการเงินสดลูกค้าปลีก — หาใบที่ลงยอดผิด / ไม่มีบิลคู่ */
+  if(retail&&rc.length){
+    const xb={}; Object.keys(paid).forEach(b=>xb[b]=1);
+    const pool=Object.keys(bt).filter(b=>bc[b]===retail&&!xb[b]).map(b=>({bill:b,amt:r2c(bt[b]),used:false}));
+    const orphan=[];
+    rc.forEach(v=>{ v=r2c(v); const m=pool.find(p=>!p.used&&p.amt===v); if(m) m.used=true; else orphan.push(v); });
+    pool.filter(p=>!p.used).forEach(p=>{ const near=orphan.find(v=>Math.abs(p.amt-v)<=BA_TOL);
+      if(near!=null) out.cash.push({bill:p.bill,tot:p.amt,form:near,diff:r2c(p.amt-near),kind:"wrong"});
+      else out.cash.push({bill:p.bill,tot:p.amt,kind:"missing"}); });
+    orphan.filter(v=>!pool.some(p=>!p.used&&Math.abs(p.amt-v)<=BA_TOL)).forEach(v=>{
+      if(!out.cash.some(c=>c.form===v)) out.cash.push({amt:v,kind:"nobill"}); });
+  }
+  out.ok=!out.bills.length&&!out.custs.length&&!out.cash.length;
+  return out;
+}
+
+function billAuditHtml(a){
+  if(!a) return "";
+  const tot=a.bills.length+a.custs.length+a.cash.length;
+  const sign=d=>d>0?'<b style="color:#b91c1c">ขาด '+TH(d)+'</b>':'<b style="color:#b45309">เกิน '+TH(-d)+'</b>';
+  let h='<div class="card"><h2>🧾 ตรวจยอดบิล (เครื่อง ↔ ฟอร์ม) <span class="badge '+(a.ok?"ok":"warn")+'">'+(a.ok?"ตรงทุกใบ ✓":tot+" รายการต้องตรวจ 🚩")+'</span></h2>'
+    + '<div class="muted" style="margin:2px 0 10px">ยอดบิล = มัดจำ/โอน + ลงบัญชี + เงินสด · บิลที่มีเลขใบมัดจำ (RA…) ยอดที่เหลือต้องไปอยู่ชีท “ลงบัญชี” · เตือนเมื่อต่างเกิน '+BA_TOL+' บาท</div>';
+  if(a.ok) return h+'<div class="verdict v-ok">✓ ทุกบิล/ทุกลูกค้ายอดตรงกับเครื่อง</div></div>';
+  if(a.bills.length){ h+='<div style="margin-bottom:8px"><b>บิลที่ยอดไม่ตรง</b></div><div class="scroll"><table><thead><tr><th>บิล</th><th>ลูกค้า</th><th class="num">ยอดบิล</th><th class="num">มัดจำ/โอน</th><th class="num">ลงบัญชี</th><th>ผล</th></tr></thead><tbody>';
+    a.bills.forEach(b=>{ h+= b.kind==="nopos"
+      ? '<tr><td>'+esc(b.bill)+'</td><td colspan="5" class="muted">⚠️ ไม่พบบิลนี้ในรายงานเครื่อง</td></tr>'
+      : '<tr><td>'+esc(b.bill)+(b.ra?'<div class="muted" style="font-size:11px">มัดจำ '+esc(b.ra)+'</div>':'')+'</td><td>'+esc(b.cust)+'</td><td class="num">'+TH(b.tot)+'</td><td class="num">'+TH(b.paid)+'</td><td class="num">'+TH(b.acct)+'</td><td>'+sign(b.diff)+'</td></tr>'; });
+    h+='</tbody></table></div>'; }
+  if(a.custs.length){ h+='<div style="margin:12px 0 8px"><b>ลูกค้าที่ยอดรวมไม่ตรง</b></div><div class="scroll"><table><thead><tr><th>ลูกค้า</th><th class="num">ยอดเครื่อง</th><th class="num">ยอดฟอร์ม</th><th>ผล</th></tr></thead><tbody>';
+    a.custs.forEach(c=>{ h+= c.kind==="nocust"
+      ? '<tr><td>'+esc(c.cust)+'</td><td class="num">—</td><td class="num">'+TH(c.got)+'</td><td class="muted">⚠️ ไม่พบชื่อนี้ในเครื่อง</td></tr>'
+      : '<tr><td>'+esc(c.cust)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.got)+'</td><td>'+sign(c.diff)+'</td></tr>'; });
+    h+='</tbody></table></div>'; }
+  if(a.cash.length){ h+='<div style="margin:12px 0 8px"><b>เงินสดลูกค้าปลีก (ชีท “ง-ส คุณ1”)</b></div><div class="scroll"><table><thead><tr><th>บิล</th><th class="num">ยอดจริง</th><th class="num">ฟอร์มลง</th><th>ผล</th></tr></thead><tbody>';
+    a.cash.forEach(c=>{ h+= c.kind==="wrong" ? '<tr><td>'+esc(c.bill)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.form)+'</td><td>'+sign(c.diff)+'</td></tr>'
+      : c.kind==="missing" ? '<tr><td>'+esc(c.bill)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">—</td><td><b style="color:#b91c1c">ไม่มีรายการในฟอร์ม</b></td></tr>'
+      : '<tr><td class="muted">(ไม่มีบิลคู่)</td><td class="num">—</td><td class="num">'+TH(c.amt)+'</td><td><b style="color:#b45309">เงินก้อนนี้เป็นของบิลไหน?</b></td></tr>'; });
+    h+='</tbody></table></div>'; }
+  return h+'</div>';
+}
+
 function parseForm(wb){
   let ws = wb.Sheets["สรุปรายรับ-รายจ่าย"] || wb.Sheets[wb.SheetNames[0]];
   const R = rowsOf(ws);
@@ -237,8 +327,26 @@ function parseForm(wb){
   let refund=0, upk=0, old=0;
   R.forEach(r=>{ const a=lab(r); if(a==="คืนเงิน")refund=num(r[3]); if(a==="UPK")upk=num(r[3]); });
   if(iref>iold) for(let i=iold+1;i<iref;i++) old+=num(R[i][3]);
-  let xfer=[]; const wsX=wb.Sheets["โอน"]; if(wsX){ const RX=rowsOf(wsX); for(let i=0;i<RX.length;i++){ const r=RX[i]; if(!r) continue; const rb=r[1], rk=num(r[2]), rs=num(r[3]); if(rb&&/^KM/i.test(String(rb).trim())&&(rk||rs)) xfer.push({bill:String(rb).trim(),knv:rk,ksk:rs}); const mb=r[6], mk=num(r[7]), ms=num(r[8]); if(mb&&/^KM/i.test(String(mb).trim())&&(mk||ms)) xfer.push({bill:String(mb).trim(),knv:mk,ksk:ms}); } }
-  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr, xfer };
+  /* เลขบิลในชีท "โอน" อาจเป็น KM6907-0396(RA6907-0004) — ในวงเล็บคือเลขใบมัดจำของ ACC-BILLING
+     ยอดที่ลงคือ "มัดจำ" ส่วนที่เหลือของบิลไปโผล่ในชีท "ลงบัญชี" (เป็นลูกหนี้) */
+  let xfer=[]; const wsX=wb.Sheets["โอน"];
+  if(wsX){ const RX=rowsOf(wsX);
+    for(let i=0;i<RX.length;i++){ const r=RX[i]; if(!r) continue;
+      [[1,2,3],[6,7,8]].forEach(function(c){ const raw=r[c[0]]; if(!raw||!/^KM/i.test(String(raw).trim())) return;
+        const kn=num(r[c[1]]), ks=num(r[c[2]]); if(!kn&&!ks) return;
+        xfer.push({bill:normBill(raw), knv:kn, ksk:ks, ra:raOf(raw)});
+      });
+    }
+  }
+  /* ชีทที่ไม่มีเลขบิล — จับคู่ด้วยชื่อลูกค้าทีหลัง */
+  const pickNamed=(sn,nc,ac)=>{ const w=wb.Sheets[sn]; if(!w) return [];
+    return rowsOf(w).slice(2).filter(r=>r&&r[nc]&&num(r[ac])).map(r=>({name:String(r[nc]).trim(),amt:num(r[ac])})); };
+  const acctRows=pickNamed("ลงบัญชี",4,5);
+  const shopCash=pickNamed("ร้านค้าเงินสด",1,2);
+  /* เงินสดลูกค้าปลีก: ตัวเลขล้วนคอลัมน์ A แถวสุดท้าย = ยอดรวม */
+  let retailCash=[]; const wsR=wb.Sheets["ง-ส คุณ1"];
+  if(wsR){ const all=rowsOf(wsR).map(r=>r&&r[0]).filter(v=>v!=null&&v!=="").map(num); retailCash=all.slice(0,-1); }
+  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr, xfer, acctRows, shopCash, retailCash };
 }
 function parsePos(wb){
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -258,7 +366,8 @@ function parsePos(wb){
       else if(c5==="หัก ใบลดหนี้"){ cnTotal=num(r[6]); }
     });
     if(gross===0) throw new Error("อ่านยอดรวมไม่ได้ — เช็กรูปแบบไฟล์เครื่อง (แบบรายลูกค้ามีรายละเอียด)");
-    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billCust, billTotal };
+    const custTotalByName={}; Object.keys(billTotal).forEach(function(b){ const c=billCust[b]; if(c) custTotalByName[c]=r2c((custTotalByName[c]||0)+billTotal[b]); });
+    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billCust, billTotal, custTotalByName };
   }
   // แบบ A = รายลูกค้าแบบสรุป (รหัสลูกค้าคอลัมน์แรก)
   const custA = /^\s*\d{2,4}-\d{5}\s*$/;
@@ -336,6 +445,9 @@ function render(){
     </table>
     ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
   </div>`;
+
+  try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += billAuditHtml(DATA._billAudit); }
+  catch(e){ console.warn('billAudit', e); }
 
   const kp = DATA.kplus;
   let a3="";
@@ -421,7 +533,7 @@ function collectDetail(){
   const _fk=(DATA.form&&DATA.form.knv!=null)?DATA.form.knv:null; const _rk=(DATA.kplus&&DATA.form&&DATA.kplus.map&&DATA.kplus.map[DATA.form.date]!=null)?DATA.kplus.map[DATA.form.date]:null;
   const _lk=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date].reduce((s,x)=>s+(x.amt||0),0):0;
   const _lki=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date])?DATA.kplus.late[DATA.form.date]:[];
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ return {bill:x.bill,knv:x.knv,ksk:x.ksk,cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[x.bill])||"")}; })), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ return {bill:x.bill,knv:x.knv,ksk:x.ksk,cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[x.bill])||"")}; })), bill_audit:(DATA._billAudit||null), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){

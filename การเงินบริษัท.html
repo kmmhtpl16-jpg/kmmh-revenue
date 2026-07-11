@@ -370,12 +370,12 @@ const gFrom=()=>document.getElementById("from").value;
 const gTo=()=>document.getElementById("to").value;
 
 /* ================= ข้อมูล ================= */
-let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[],advances:[]};
+let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[],advances:[],uobLoans:[]};
 async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e,pc,pv,tp,adv]=await Promise.all([
+    const [d,a,e,pc,pv,tp,adv,uob]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
@@ -384,7 +384,9 @@ async function reloadAll(){
       (ROLE==="owner" ? sb.from("payout_vouchers").select("voucher_no,cycle_date,created_at,total_amount,employee_count,lines,status").eq("status","approved").gte("created_at",dShift(from,-45)).lte("created_at",dShift(to,45)+"T23:59:59") : Promise.resolve({data:[]})),
       (ROLE==="owner" ? sb.from("trip_pay_proposals").select("ym,nickname,full_name,amount,trips,status,source") : Promise.resolve({data:[]})),
       /* 🅰️ จ่ายล่วงหน้า: โหลดทุกงวด (ข้ามช่วงวันที่) เพราะบิลมาเดือนถัดไป */
-      (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("is_advance",true) : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("is_advance",true) : Promise.resolve({data:[]})),
+      /* 🏦 เงินกู้ UOB: บิลที่จ่ายด้วยกู้ UOB (ทุกงวด) */
+      (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("uob_loan",true) : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
@@ -400,6 +402,7 @@ async function reloadAll(){
     STATE.trips=(tp&&!tp.error?(tp.data||[]):[]);
     STATE.exp=(e.data||[]).concat(STATE.petty.map(pcToExpRow));
     STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
+    STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
     renderAll();
   }catch(err){ msg.textContent="ผิดพลาด: "+err.message; }
@@ -593,7 +596,7 @@ function renderExpense(){
       wdHtml+=`<tr><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}</td><td class="n">${TH(amt)}</td>
         <td><select id="wc_${d.date}_${i}" class="sm">${catOptions("อื่นๆ")}</select>
          <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
-         <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button></td></tr>`;
+         <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button></td></tr>`;
     });
   });
 
@@ -612,6 +615,7 @@ function renderExpense(){
   /* ป้ายชื่อพนักงานสำหรับเงินโอนออกที่จับคู่กับใบสำคัญจ่ายได้ */
   const payTag=x=>{ const m=STATE.payMatch[x.id]; return m?`<span class="chip" style="background:#0ea5e9;color:#fff">💼 เงินเดือน ${esc(m.nick)} · งวด ${beDate(m.vdate)}</span> `:""; };
   const advCovered=x=>x.source==="acc_billing"&&(STATE.advances||[]).some(a=>a.advance_bill_id===x.id);
+  const uobChip=x=>x.uob_loan?`<span class="chip" style="background:#7c3aed;color:#fff">🏦 กู้ UOB${x.uob_repay_date?" · คืนแล้ว":" · ค้างคืน"}</span>`:"";
   const payBadge=x=>x.source!=="acc_billing"?"":(advCovered(x)
       ?`<span class="chip" style="background:#2563eb;color:#fff">🅰️ จ่ายด้วยเงินล่วงหน้า</span>`
       :(x.pay_status==="paid"
@@ -627,13 +631,15 @@ function renderExpense(){
       ?`<button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${x.exp_date}',${num(x.amount)},${JSON.stringify(x.description||x.ref||"").replace(/"/g,'&quot;')},'${x.id}')">🔗 จ่ายบิลซื้อ</button>`:"";
   const advBtn=x=>(x.source==="statement"&&x.is_cogs&&!x.is_advance)
       ?`<button class="btn sm" style="background:#3b82f6;color:#fff" onclick="setAdvance('${x.id}',true)">⏳ จ่ายล่วงหน้า</button>`:"";
+  const uobBtn=x=>(x.source==="acc_billing"&&x.pay_status!=="paid")
+      ?`<button class="btn sm" style="background:#7c3aed;color:#fff" onclick="markBillUOB('${x.id}')">🏦 จ่ายด้วยกู้ UOB</button>`:"";
   const rowActions=x=>isVirtual(x.id)
       ? `<span class="muted" style="font-size:12px">🔒 แก้ที่โปรแกรมเงินสดย่อย</span>`
-      : `${payBtn(x)}${stmtBtn(x)}${advBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+      : `${payBtn(x)}${uobBtn(x)}${stmtBtn(x)}${advBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
           <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button>`;
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
-      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${x.is_advance?'<span class="chip" style="background:#3b82f6;color:#fff">⏳ จ่ายล่วงหน้า</span>':''} ${payBadge(x)}</td>
+      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${x.is_advance?'<span class="chip" style="background:#3b82f6;color:#fff">⏳ จ่ายล่วงหน้า</span>':''} ${uobChip(x)} ${payBadge(x)}</td>
       <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
       <td>${rowActions(x)}</td></tr>`).join("");
   const pettyTot=expsAll.filter(x=>x.source==="petty_cash").reduce((s,x)=>s+num(x.amount),0);
@@ -724,6 +730,7 @@ function renderExpense(){
   ${warnHtml}
   ${ubHtml}
   ${buildAdvancesHtml()}
+  ${buildUobHtml()}
   <div class="card">
     <h3>➕ เพิ่มรายจ่ายเอง</h3>
     <div class="row">
@@ -949,6 +956,99 @@ window.undoAdvanceMatch=async function(billId){
   const b=await sb.from("rev_expenses").update({pay_status:"credit",paid_date:null,is_cogs:true}).eq("id",billId);
   if(b.error){ alert("ไม่สำเร็จ: "+b.error.message); return; }
   if(adv){ const a=await sb.from("rev_expenses").update({advance_bill_id:null}).eq("id",adv.id); if(a.error){ alert("ไม่สำเร็จ: "+a.error.message); return; } }
+  await reloadAll(); tab("expense");
+};
+/* ================= 🏦 เงินกู้ UOB (จ่ายซัพด้วยกู้ UOB · จ่ายคืนหักดอกเบี้ย) ================= */
+function buildUobHtml(){
+  const loans=STATE.uobLoans||[];
+  if(!loans.length) return "";
+  const out=loans.filter(b=>!b.uob_repay_date), paid=loans.filter(b=>b.uob_repay_date);
+  const outTot=out.reduce((s,b)=>s+num(b.amount),0), intTot=paid.reduce((s,b)=>s+num(b.uob_interest),0);
+  const outRows=out.length?out.map(b=>`<tr>
+      <td>${beDate(b.exp_date)}</td><td>${esc(b.description||b.ref||"")}</td>
+      <td class="n">${TH(num(b.amount))}</td>
+      <td><button class="btn sm gray" onclick="repayUobManual('${b.id}')">💵 บันทึกจ่ายคืน</button>
+          <button class="btn sm red" onclick="undoUobLoan('${b.id}')">ยกเลิก</button></td></tr>`).join("")
+    :`<tr><td colspan="4" class="muted">— ไม่มีหนี้ค้าง —</td></tr>`;
+  const paidRows=paid.map(b=>`<tr>
+      <td>${beDate(b.uob_repay_date)}</td><td>${esc(b.description||b.ref||"")}</td>
+      <td class="n">${TH(num(b.amount))}</td><td class="n">${TH(num(b.uob_repay_amount))}</td>
+      <td class="n" style="color:#b45309">${TH(num(b.uob_interest))}</td>
+      <td><button class="btn sm gray" onclick="undoUobRepay('${b.id}')">↩︎ แยกคืน</button></td></tr>`).join("");
+  return `<div class="card" style="border:1px solid #c4b5fd;background:#f5f3ff">
+    <h3 style="color:#5b21b6">🏦 หนี้เงินกู้ UOB คงเหลือ (${out.length} บิล · ${TH(outTot)} บาท)</h3>
+    <div class="note">บิลที่จ่ายซัพด้วยเงินกู้ UOB (เงินต้น = ยอดบิล) · จ่ายคืนโดยกด "🏦 คืนกู้ UOB" ที่รายการเงินออกจากสเตทเมนต์วันที่โอนคืน — ระบบหักส่วนต่างเป็น <b>ดอกเบี้ย</b> อัตโนมัติ (ดอกเบี้ยลงเป็นค่าใช้จ่าย · เงินต้นไม่นับซ้ำต้นทุน · เงินโอนคืนถูกตัดออกจากยอดรวมกันนับซ้ำ)</div>
+    <div class="scroll"><table>
+      <thead><tr><th>วันที่บิล</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้</th><th></th></tr></thead>
+      <tbody>${outRows}</tbody></table></div>
+    ${paidRows?`<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">ประวัติจ่ายคืน (${paid.length}) · ดอกเบี้ยรวม ${TH(intTot)} บาท</summary>
+      <div class="scroll"><table style="margin-top:6px">
+        <thead><tr><th>วันที่คืน</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้</th><th class="n">จ่ายคืน</th><th class="n">ดอกเบี้ย</th><th></th></tr></thead>
+        <tbody>${paidRows}</tbody></table></div></details>`:""}
+  </div>`;
+}
+window.markBillUOB=async function(id){
+  const bill=STATE.exp.find(x=>x.id===id);
+  if(!confirm(`ทำเครื่องหมายว่าบิลนี้${bill?" ("+TH(bill.amount)+" บาท)":""} จ่ายซัพด้วย "เงินกู้ UOB"?\n\n• บิลขึ้น "จ่ายแล้ว" (ซัพได้เงินจาก UOB)\n• ต้นทุนสินค้ายังนับที่บิลตามเดิม\n• ไปโผล่ในกล่อง "หนี้เงินกู้ UOB คงเหลือ" รอจ่ายคืน`)) return;
+  const {error}=await sb.from("rev_expenses").update({pay_status:"paid",paid_date:gTo(),uob_loan:true}).eq("id",id);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
+window.openUobRepay=function(date,amt,ref){
+  const out=(STATE.uobLoans||[]).filter(b=>!b.uob_repay_date);
+  const rows=out.length?out.map(b=>{ const it=r2(amt-num(b.amount)); return `<tr>
+      <td>${beDate(b.exp_date)}</td><td>${esc(b.description||b.ref||"")}</td>
+      <td class="n">${TH(num(b.amount))}</td>
+      <td class="n" style="${it<0?'color:#dc2626':'color:#b45309'}">${TH(it)}</td>
+      <td>${it<-0.005?'<span class="muted">ยอดคืน&lt;ยอดกู้</span>':`<button class="btn sm blu" onclick="repayUob('${b.id}','${date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">เลือกบิลนี้</button>`}</td>
+    </tr>`;}).join(""):`<tr><td colspan="5" class="muted">ไม่มีหนี้ UOB ค้างจ่าย</td></tr>`;
+  const html=`<div id="matchModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeMatchModal()">
+    <div style="background:#fff;border-radius:10px;max-width:760px;width:92%;max-height:82vh;overflow:auto;padding:16px">
+      <h3 style="margin:0 0 6px">🏦 จ่ายคืนเงินกู้ UOB</h3>
+      <div class="muted" style="margin-bottom:10px">เงินโอนคืน ${beDate(date)} · ${TH(amt)} บาท · "${esc(ref)}"<br>เลือกบิลที่กู้มา — ระบบถือ <b>เงินต้น = ยอดบิล</b> · <b>ดอกเบี้ย = ยอดโอนคืน − ยอดบิล</b> (ดอกเบี้ยลงเป็นค่าใช้จ่าย · เงินโอนคืนก้อนนี้ถูกตัดออกจากยอดรวม กันนับซ้ำ)</div>
+      <div class="scroll"><table>
+        <thead><tr><th>วันที่บิล</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้(ต้น)</th><th class="n">ดอกเบี้ย</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div style="text-align:right;margin-top:12px"><button class="btn gray" onclick="closeMatchModal()">ปิด</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML("beforeend",html);
+};
+window.repayUob=async function(billId,date,amt,ref){
+  const bill=(STATE.uobLoans||[]).find(b=>b.id===billId)||STATE.exp.find(x=>x.id===billId);
+  if(!bill){ alert("ไม่พบบิล"); return; }
+  const principal=num(bill.amount), interest=r2(amt-principal);
+  if(interest<-0.005){ alert("ยอดโอนคืนน้อยกว่ายอดกู้ ("+TH(principal)+" บาท) — กรณีจ่ายบางส่วนยังไม่รองรับ"); return; }
+  if(!confirm(`จ่ายคืน UOB บิล "${bill.description||bill.ref||""}"\n\nเงินต้น ${TH(principal)} + ดอกเบี้ย ${TH(interest)} = โอนคืน ${TH(amt)} บาท\n\n• ดอกเบี้ยลงเป็นค่าใช้จ่าย\n• เงินโอนคืนก้อนนี้ตัดออกจากยอดรวม (กันนับซ้ำ)`)) return;
+  const sres=await sb.from("rev_expenses").insert([{exp_date:date,category:"ชำระคืนเงินกู้ UOB",description:"คืนเงินต้นกู้ UOB · "+(bill.description||bill.ref||""),amount:amt,source:"settlement",ref:ref,is_cogs:false,settles_id:billId,created_by:"owner"}]);
+  if(sres.error){ alert("บันทึกการคืนไม่สำเร็จ: "+sres.error.message); return; }
+  if(interest>0){
+    const ires=await sb.from("rev_expenses").insert([{exp_date:date,category:"ดอกเบี้ยจ่าย (เงินกู้ UOB)",description:"ดอกเบี้ยกู้ UOB · "+(bill.description||bill.ref||""),amount:interest,source:"uob_interest",ref:ref,is_cogs:false,settles_id:billId,created_by:"owner"}]);
+    if(ires.error){ alert("บันทึกดอกเบี้ยไม่สำเร็จ: "+ires.error.message); return; }
+  }
+  const u=await sb.from("rev_expenses").update({uob_repay_date:date,uob_interest:interest,uob_repay_amount:amt}).eq("id",billId);
+  if(u.error){ alert("อัปเดตบิลไม่สำเร็จ: "+u.error.message); return; }
+  closeMatchModal(); await reloadAll(); tab("expense");
+};
+window.repayUobManual=async function(billId){
+  const bill=(STATE.uobLoans||[]).find(b=>b.id===billId); if(!bill) return;
+  const principal=num(bill.amount);
+  const inp=prompt(`บันทึกจ่ายคืน UOB (กรณีจ่ายเงินสด/ไม่มีในสเตทเมนต์)\nบิล: ${bill.description||bill.ref||""}\nยอดกู้(เงินต้น) = ${TH(principal)} บาท\n\nกรอก "ยอดโอนคืนทั้งหมด" (เงินต้น+ดอกเบี้ย):`, String(principal));
+  if(inp===null) return;
+  const amt=r2(inp); if(!(amt>0)){ alert("ยอดไม่ถูกต้อง"); return; }
+  await repayUob(billId, gTo(), amt, "คืนกู้ UOB "+(bill.ref||""));
+};
+window.undoUobLoan=async function(id){
+  if(!confirm("ยกเลิกการทำเครื่องหมาย \"จ่ายด้วยกู้ UOB\"?\n(บิลกลับเป็นค้างเครดิต)")) return;
+  const {error}=await sb.from("rev_expenses").update({pay_status:"credit",paid_date:null,uob_loan:false}).eq("id",id);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
+window.undoUobRepay=async function(id){
+  if(!confirm("แยกคืนการจ่ายคืน UOB?\n(ลบรายการดอกเบี้ย+ชำระเงินต้นที่บันทึก · บิลกลับเป็นหนี้ค้าง)")) return;
+  const del=await sb.from("rev_expenses").delete().eq("settles_id",id).in("source",["settlement","uob_interest"]);
+  if(del.error){ alert("ลบรายการไม่สำเร็จ: "+del.error.message); return; }
+  const u=await sb.from("rev_expenses").update({uob_repay_date:null,uob_interest:null,uob_repay_amount:null}).eq("id",id);
+  if(u.error){ alert("อัปเดตบิลไม่สำเร็จ: "+u.error.message); return; }
   await reloadAll(); tab("expense");
 };
 async function addManualExp(){

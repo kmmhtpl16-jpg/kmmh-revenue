@@ -207,7 +207,7 @@ const isVirtual=id=>String(id||"").startsWith("pc:");
    เคสจริง: จ่ายเจ้าหนี้ไปแล้ว แต่บิลใน ACC-BILLING ยังไม่มียอด/ยังไม่นำเข้า → ต้นทุนต่ำกว่าจริง
    และถ้านำเข้าบิลทีหลังโดยไม่จับคู่ จะนับต้นทุน 2 ครั้ง */
 function buildUnbilledPayouts(){
-  const paid=STATE.exp.filter(x=>x.source==="statement"&&x.is_cogs);   /* settlement ถูกจับคู่แล้ว ไม่เข้าเงื่อนไข */
+  const paid=STATE.exp.filter(x=>x.source==="statement"&&x.is_cogs&&!x.is_advance);   /* settlement/จ่ายล่วงหน้า ไม่เข้าเงื่อนไข */
   const open=STATE.exp.filter(x=>x.source==="acc_billing"&&x.pay_status!=="paid");
   return paid.map(x=>{
     const amt=r2(x.amount);
@@ -370,19 +370,21 @@ const gFrom=()=>document.getElementById("from").value;
 const gTo=()=>document.getElementById("to").value;
 
 /* ================= ข้อมูล ================= */
-let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[]};
+let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[],advances:[]};
 async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e,pc,pv,tp]=await Promise.all([
+    const [d,a,e,pc,pv,tp,adv]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
       (ROLE==="owner" ? sb.from("petty_cash_transactions").select("id,tx_date,tx_type,acc_code,description,amount,is_return,by_name").gte("tx_date",from).lte("tx_date",to) : Promise.resolve({data:[]})),
       /* 🛡️ กรองที่ query: ใบสำคัญจ่ายเฉพาะรอบๆ ช่วงที่ดู (±45 วัน ครอบใบสิ้นเดือนที่การ์ดค่าเที่ยวต้องใช้) */
       (ROLE==="owner" ? sb.from("payout_vouchers").select("voucher_no,cycle_date,created_at,total_amount,employee_count,lines,status").eq("status","approved").gte("created_at",dShift(from,-45)).lte("created_at",dShift(to,45)+"T23:59:59") : Promise.resolve({data:[]})),
-      (ROLE==="owner" ? sb.from("trip_pay_proposals").select("ym,nickname,full_name,amount,trips,status,source") : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("trip_pay_proposals").select("ym,nickname,full_name,amount,trips,status,source") : Promise.resolve({data:[]})),
+      /* 🅰️ จ่ายล่วงหน้า: โหลดทุกงวด (ข้ามช่วงวันที่) เพราะบิลมาเดือนถัดไป */
+      (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("is_advance",true) : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
@@ -397,6 +399,7 @@ async function reloadAll(){
     /* ค่าเที่ยวจากระบบจัดส่ง — ใช้ตรวจสอบเท่านั้น จ่ายจริงผ่าน payroll */
     STATE.trips=(tp&&!tp.error?(tp.data||[]):[]);
     STATE.exp=(e.data||[]).concat(STATE.petty.map(pcToExpRow));
+    STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
     renderAll();
   }catch(err){ msg.textContent="ผิดพลาด: "+err.message; }
@@ -608,22 +611,29 @@ function renderExpense(){
   const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':isShopeeSrc(s)?'<span class="chip ac">Shopee</span>':s==="petty_cash"?'<span class="chip" style="background:#7c3aed;color:#fff">เงินสดย่อย</span>':'<span class="chip mn">กรอกมือ</span>';
   /* ป้ายชื่อพนักงานสำหรับเงินโอนออกที่จับคู่กับใบสำคัญจ่ายได้ */
   const payTag=x=>{ const m=STATE.payMatch[x.id]; return m?`<span class="chip" style="background:#0ea5e9;color:#fff">💼 เงินเดือน ${esc(m.nick)} · งวด ${beDate(m.vdate)}</span> `:""; };
-  const payBadge=x=>x.source!=="acc_billing"?"":(x.pay_status==="paid"
+  const advCovered=x=>x.source==="acc_billing"&&(STATE.advances||[]).some(a=>a.advance_bill_id===x.id);
+  const payBadge=x=>x.source!=="acc_billing"?"":(advCovered(x)
+      ?`<span class="chip" style="background:#2563eb;color:#fff">🅰️ จ่ายด้วยเงินล่วงหน้า</span>`
+      :(x.pay_status==="paid"
       ?`<span class="chip" style="background:#16a34a;color:#fff">🟢 จ่ายแล้ว${x.paid_date?" "+beDate(x.paid_date):""}</span>`
-      :`<span class="chip" style="background:#dc2626;color:#fff">🔴 ค้างเครดิต</span>`);
-  const payBtn=x=>x.source!=="acc_billing"?"":(x.pay_status==="paid"
+      :`<span class="chip" style="background:#dc2626;color:#fff">🔴 ค้างเครดิต</span>`));
+  const payBtn=x=>x.source!=="acc_billing"?"":(advCovered(x)
+      ?`<button class="btn sm gray" onclick="undoAdvanceMatch('${x.id}')">↩︎ แยกคืนล่วงหน้า</button>`
+      :(x.pay_status==="paid"
       ?`<button class="btn sm gray" onclick="unpayBill('${x.id}')">↩︎ คืนค้าง</button>`
-      :`<button class="btn sm" style="background:#16a34a;color:#fff" onclick="markBillPaidCash('${x.id}')">✓ จ่ายสด</button>`);
+      :`<button class="btn sm" style="background:#16a34a;color:#fff" onclick="markBillPaidCash('${x.id}')">✓ จ่ายสด</button>`));
   /* แถวเงินออกจากสเตทเมนต์ที่เป็นค่าซื้อของ → จับคู่บิลซื้อได้ (กันนับซ้ำย้อนหลัง) */
-  const stmtBtn=x=>(x.source==="statement"&&x.is_cogs)
+  const stmtBtn=x=>(x.source==="statement"&&x.is_cogs&&!x.is_advance)
       ?`<button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${x.exp_date}',${num(x.amount)},${JSON.stringify(x.description||x.ref||"").replace(/"/g,'&quot;')},'${x.id}')">🔗 จ่ายบิลซื้อ</button>`:"";
+  const advBtn=x=>(x.source==="statement"&&x.is_cogs&&!x.is_advance)
+      ?`<button class="btn sm" style="background:#3b82f6;color:#fff" onclick="setAdvance('${x.id}',true)">⏳ จ่ายล่วงหน้า</button>`:"";
   const rowActions=x=>isVirtual(x.id)
       ? `<span class="muted" style="font-size:12px">🔒 แก้ที่โปรแกรมเงินสดย่อย</span>`
-      : `${payBtn(x)}${stmtBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+      : `${payBtn(x)}${stmtBtn(x)}${advBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
           <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button>`;
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
-      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${payBadge(x)}</td>
+      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${x.is_advance?'<span class="chip" style="background:#3b82f6;color:#fff">⏳ จ่ายล่วงหน้า</span>':''} ${payBadge(x)}</td>
       <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
       <td>${rowActions(x)}</td></tr>`).join("");
   const pettyTot=expsAll.filter(x=>x.source==="petty_cash").reduce((s,x)=>s+num(x.amount),0);
@@ -706,13 +716,14 @@ function renderExpense(){
         <td>${esc(r.x.description||r.x.ref||"")}</td>
         <td class="n">${TH(r.amt)}</td>
         <td class="muted">${esc(r.hint)}</td>
-        <td><button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${r.x.exp_date}',${r.amt},${JSON.stringify(r.x.description||r.x.ref||"").replace(/"/g,'&quot;')},'${r.x.id}')">🔗 จ่ายบิลซื้อ</button></td></tr>`).join("")}</tbody>
+        <td><button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${r.x.exp_date}',${r.amt},${JSON.stringify(r.x.description||r.x.ref||"").replace(/"/g,'&quot;')},'${r.x.id}')">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#3b82f6;color:#fff" onclick="setAdvance('${r.x.id}',true)">⏳ จ่ายล่วงหน้า</button></td></tr>`).join("")}</tbody>
     </table></div>
   </div>`:"";
 
   el.innerHTML=`
   ${warnHtml}
   ${ubHtml}
+  ${buildAdvancesHtml()}
   <div class="card">
     <h3>➕ เพิ่มรายจ่ายเอง</h3>
     <div class="row">
@@ -864,6 +875,80 @@ window.unpayBill=async function(id){
   }
   const {error}=await sb.from("rev_expenses").update({pay_status:"credit",paid_date:null}).eq("id",id);
   if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
+/* ================= 🅰️ จ่ายล่วงหน้า (จ่ายก่อน–บิลมาเดือนหน้า) ================= */
+function buildAdvancesHtml(){
+  const pend=(STATE.advances||[]).filter(a=>!a.advance_bill_id);
+  if(!pend.length) return "";
+  const tot=pend.reduce((s,a)=>s+num(a.amount),0);
+  return `<div class="card" style="border:1px solid #93c5fd;background:#eff6ff">
+    <h3 style="color:#1e40af">⏳ จ่ายล่วงหน้า รอบิลเดือนหน้า (${pend.length} รายการ · ${TH(tot)} บาท)</h3>
+    <div class="note">จ่ายเงินก่อน–ของมาส่ง–บิลมาทีหลัง (เช่น ไอกะ) · <b>ต้นทุนถูกนับที่เดือนที่จ่ายแล้ว</b> · พอบิลเข้า ACC-BILLING เดือนถัดไป กด "🔗 จับคู่บิล" ระบบจะตัดต้นทุนที่ตัวบิลออก ไม่ให้นับซ้ำ (ไม่ย้ายเดือนต้นทุน)</div>
+    <div class="scroll"><table>
+      <thead><tr><th>วันที่จ่าย</th><th>รายละเอียด</th><th class="n">จำนวน</th><th></th></tr></thead>
+      <tbody>${pend.map(a=>`<tr>
+        <td>${beDate(a.exp_date)}</td>
+        <td>${esc(a.description||a.ref||"")}</td>
+        <td class="n">${TH(num(a.amount))}</td>
+        <td><button class="btn sm blu" onclick="openAdvanceMatch('${a.id}')">🔗 จับคู่บิล</button>
+            <button class="btn sm gray" onclick="setAdvance('${a.id}',false)">ยกเลิก</button></td></tr>`).join("")}</tbody>
+    </table></div>
+  </div>`;
+}
+window.setAdvance=async function(rowId,on){
+  if(on && !confirm("ตั้งรายการนี้เป็น \"จ่ายล่วงหน้า รอบิล\"?\n\n• ต้นทุนยังนับที่เดือนที่จ่าย (ไม่เปลี่ยน)\n• ย้ายออกจากการ์ดเตือน \"ยังไม่ผูกบิล\"\n• ไปรออยู่กล่องจ่ายล่วงหน้า รอจับคู่ตอนบิลมาเดือนหน้า")) return;
+  const {error}=await sb.from("rev_expenses").update({is_advance:on,advance_bill_id:null}).eq("id",rowId);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
+window.openAdvanceMatch=async function(payId){
+  const adv=(STATE.advances||[]).find(a=>a.id===payId);
+  if(!adv){ alert("ไม่พบรายการจ่ายล่วงหน้า"); return; }
+  const q=await sb.from("rev_expenses").select("id,exp_date,category,description,ref,amount,pay_status").eq("source","acc_billing").order("exp_date",{ascending:false}).limit(500);
+  if(q.error){ alert("โหลดบิลไม่สำเร็จ: "+q.error.message); return; }
+  const amt=num(adv.amount), key=normName(adv.description||adv.ref||"");
+  const nameHitB=d=>{ const n=normName(d||""); return n.length>=4&&key.length>=4&&(n.includes(key)||key.includes(n)); };
+  const bills=(q.data||[]).filter(b=>b.pay_status!=="paid").sort((a,b)=>{
+    const na=nameHitB(a.description)?0:1, nb=nameHitB(b.description)?0:1;
+    if(na!==nb) return na-nb;
+    return Math.abs(num(a.amount)-amt)-Math.abs(num(b.amount)-amt);
+  });
+  const rows=bills.length?bills.map(b=>`<tr>
+      <td>${beDate(b.exp_date)}</td><td>${esc(b.description||b.ref||"")}</td>
+      <td class="n">${TH(b.amount)}</td>
+      <td>${nameHitB(b.description)?'<span class="chip cogs">ผู้ขายตรง</span>':''}${num(b.amount)===amt?' <span class="chip cogs">ยอดตรง</span>':''}</td>
+      <td><button class="btn sm blu" onclick="matchAdvanceBill('${payId}','${b.id}')">เลือกบิลนี้</button></td>
+    </tr>`).join(""):`<tr><td colspan="5" class="muted">ไม่มีบิลซื้อ ACC-BILLING ค้างจ่าย</td></tr>`;
+  const html=`<div id="matchModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeMatchModal()">
+    <div style="background:#fff;border-radius:10px;max-width:760px;width:92%;max-height:82vh;overflow:auto;padding:16px">
+      <h3 style="margin:0 0 6px">🔗 จับคู่บิลกับเงินจ่ายล่วงหน้า</h3>
+      <div class="muted" style="margin-bottom:10px">จ่ายล่วงหน้า ${beDate(adv.exp_date)} · ${TH(amt)} บาท · "${esc(adv.description||adv.ref||"")}"<br>เลือกบิล ACC-BILLING ที่เงินก้อนนี้จ่าย — บิลจะขึ้น "จ่ายแล้ว" และ<b>ถูกตัดต้นทุนออก</b> (ต้นทุนนับที่เงินจ่ายล่วงหน้าแล้ว) · ถ้ายอดต่างกัน ต้นทุนยึดตามยอดที่จ่ายจริง</div>
+      <div class="scroll"><table>
+        <thead><tr><th>วันที่บิล</th><th>รายละเอียด</th><th class="n">ยอดบิล</th><th></th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <div style="text-align:right;margin-top:12px"><button class="btn gray" onclick="closeMatchModal()">ปิด</button></div>
+    </div></div>`;
+  document.body.insertAdjacentHTML("beforeend",html);
+};
+window.matchAdvanceBill=async function(payId,billId){
+  const adv=(STATE.advances||[]).find(a=>a.id===payId);
+  const q=await sb.from("rev_expenses").select("*").eq("id",billId).maybeSingle();
+  if(q.error||!q.data){ alert("ไม่พบบิล"); return; }
+  const bill=q.data, aAmt=num(adv?adv.amount:0), bAmt=num(bill.amount), diff=r2(Math.abs(aAmt-bAmt));
+  if(!confirm(`จับคู่เงินจ่ายล่วงหน้า ${TH(aAmt)} บาท กับบิล "${bill.description||bill.ref||""}" (${TH(bAmt)} บาท)?\n\n• ต้นทุนยังนับที่เดือนจ่ายเงิน${adv?" ("+beDate(adv.exp_date)+")":""}\n• บิลนี้จะถูกตัดต้นทุน + ขึ้น "จ่ายแล้ว" เพื่อไม่ให้นับซ้ำ${diff>0?`\n\n⚠️ ยอดต่างกัน ${TH(diff)} บาท (จ่ายล่วงหน้า vs บิลจริง) — ต้นทุนยึดยอดที่จ่ายจริง`:""}`)) return;
+  const u1=await sb.from("rev_expenses").update({pay_status:"paid",paid_date:gTo(),is_cogs:false}).eq("id",billId);
+  if(u1.error){ alert("อัปเดตบิลไม่สำเร็จ: "+u1.error.message); return; }
+  const u2=await sb.from("rev_expenses").update({advance_bill_id:billId}).eq("id",payId);
+  if(u2.error){ alert("อัปเดตรายการจ่ายล่วงหน้าไม่สำเร็จ: "+u2.error.message); return; }
+  closeMatchModal(); await reloadAll(); tab("expense");
+};
+window.undoAdvanceMatch=async function(billId){
+  if(!confirm("แยกคืนการจับคู่จ่ายล่วงหน้า?\n\n• บิลกลับเป็น \"ค้างเครดิต\" + คืนต้นทุนที่บิล\n• รายการจ่ายล่วงหน้ากลับไปรอจับคู่")) return;
+  const adv=(STATE.advances||[]).find(a=>a.advance_bill_id===billId);
+  const b=await sb.from("rev_expenses").update({pay_status:"credit",paid_date:null,is_cogs:true}).eq("id",billId);
+  if(b.error){ alert("ไม่สำเร็จ: "+b.error.message); return; }
+  if(adv){ const a=await sb.from("rev_expenses").update({advance_bill_id:null}).eq("id",adv.id); if(a.error){ alert("ไม่สำเร็จ: "+a.error.message); return; } }
   await reloadAll(); tab("expense");
 };
 async function addManualExp(){

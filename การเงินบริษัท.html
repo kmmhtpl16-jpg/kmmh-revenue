@@ -931,9 +931,10 @@ function loadAcc(input){
       const ws=wb.Sheets[wb.SheetNames[0]];
       const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
       // ตรวจว่าเป็นฟอร์แมต "รายงานซื้อ แยกตามวันที่" ของ ACC-BILLING หรือไม่
-      const isBill=aoa.some(r=>(r||[]).some(c=>String(c).includes("เลขที่บิลซื้อ")))
-                && aoa.some(r=>(r||[]).some(c=>String(c).indexOf("ประจำวันที่")===0));
-      if(isBill){ const p=parseAccBill(aoa); _accRows={mode:"accbill",items:p.items,foot:p.foot}; }
+      const hasBillNo=aoa.some(r=>(r||[]).some(c=>String(c).includes("เลขที่บิลซื้อ")));
+      const hasProjDate=aoa.some(r=>(r||[]).some(c=>String(c).indexOf("ประจำวันที่")===0));
+      if(hasBillNo && hasProjDate){ const p=parseAccBill(aoa); _accRows={mode:"accbill",items:p.items,foot:p.foot}; }
+      else if(hasBillNo){ const p=parseAccBillCols(aoa); _accRows={mode:"accbill",items:p.items,foot:p.foot}; }
       else {
         // ฟอร์แมตทั่วไป: หาแถวหัวตาราง = แถวแรกที่มีเซลล์ไม่ว่าง >= 2
         let hi=0; for(let i=0;i<Math.min(aoa.length,15);i++){ if(aoa[i].filter(c=>String(c).trim()!=="").length>=2){ hi=i; break; } }
@@ -961,6 +962,30 @@ function parseAccBill(aoa){
     const net=num(row[6]), goods=num(row[4]); const amt=r2(net>0?net:goods);
     if(!(amt>0) || !cur) continue;
     items.push({exp_date:cur, amount:amt, description:c3, ref:(c1||c0)});
+  }
+  return {items,foot};
+}
+/* รายงานซื้อ ACC-BILLING แบบมี "คอลัมน์วันที่" ในตัว (ไม่มีหัวข้อ ประจำวันที่ คั่นกลุ่ม) */
+function parseAccBillCols(aoa){
+  const items=[]; const foot={cash:0,cn:0,grand:0};
+  let hi=-1; for(let i=0;i<aoa.length;i++){ if((aoa[i]||[]).some(c=>String(c).includes("เลขที่บิลซื้อ"))){ hi=i; break; } }
+  if(hi<0) return {items,foot};
+  const H=aoa[hi]||[];
+  const find=(...kw)=>{ for(const k of kw){ for(let j=0;j<H.length;j++){ if(String(H[j]).includes(k)) return j; } } return -1; };
+  const cDate=find("วันที่"), cRef=find("เลขที่บิลซื้อ"), cName=find("ชื่อผู้ขาย","ผู้ขาย"),
+        cNet=find("สุทธิ"), cGoods=find("มูลค่า");
+  const maxNum=row=>row.reduce((m,c)=>Math.max(m,num(c)),0);
+  for(let i=hi+1;i<aoa.length;i++){
+    const row=aoa[i]||[];
+    const rowText=row.map(x=>String(x==null?"":x)).join(" ");
+    if(rowText.includes("ซื้อสด")){ foot.cash=Math.max(foot.cash,maxNum(row)); continue; }
+    if(rowText.includes("ใบลดหนี้")){ foot.cn=Math.max(foot.cn,maxNum(row)); continue; }
+    if(rowText.includes("รวมทั้งหมด")){ foot.grand=Math.max(foot.grand,maxNum(row)); continue; }
+    const iso=cDate>=0?isoFromExcel(row[cDate]):null;
+    const net=cNet>=0?num(row[cNet]):0, goods=cGoods>=0?num(row[cGoods]):0;
+    const amt=r2(net>0?net:goods);
+    if(!iso || !(amt>0)) continue;   /* ข้ามแถวหัวข้อหมวด/ยอดรวม/บิลยอดว่าง */
+    items.push({exp_date:iso, amount:amt, description:cName>=0?String(row[cName]||"").trim():"", ref:cRef>=0?String(row[cRef]||"").trim():""});
   }
   return {items,foot};
 }

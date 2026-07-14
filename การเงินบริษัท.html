@@ -647,13 +647,15 @@ function renderExpense(){
   /* แถวเงินออกจากสเตทเมนต์ที่เป็นค่าซื้อของ → จับคู่บิลซื้อได้ (กันนับซ้ำย้อนหลัง) */
   const stmtBtn=x=>(x.source==="statement"&&x.is_cogs&&!x.is_advance)
       ?`<button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${x.exp_date}',${num(x.amount)},${JSON.stringify(x.description||x.ref||"").replace(/"/g,'&quot;')},'${x.id}')">🔗 จ่ายบิลซื้อ</button>`:"";
+  const settleBtn=x=>(x.source==="statement"&&x.is_cogs&&!x.is_advance)
+      ?`<button class="btn sm" style="background:#16a34a;color:#fff" onclick="settleCreditor('${x.id}')">💸 ชำระเจ้าหนี้</button>`:"";
   const advBtn=x=>(x.source==="statement"&&x.is_cogs&&!x.is_advance)
       ?`<button class="btn sm" style="background:#3b82f6;color:#fff" onclick="setAdvance('${x.id}',true)">⏳ จ่ายล่วงหน้า</button>`:"";
   const uobBtn=x=>(x.source==="acc_billing"&&x.pay_status!=="paid")
       ?`<button class="btn sm" style="background:#7c3aed;color:#fff" onclick="markBillUOB('${x.id}')">🏦 จ่ายด้วยกู้ UOB</button>`:"";
   const rowActions=x=>isVirtual(x.id)
       ? `<span class="muted" style="font-size:12px">🔒 แก้ที่โปรแกรมเงินสดย่อย</span>`
-      : `${payBtn(x)}${uobBtn(x)}${stmtBtn(x)}${advBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
+      : `${payBtn(x)}${uobBtn(x)}${stmtBtn(x)}${settleBtn(x)}${advBtn(x)} <button class="btn sm gray" onclick="editExp('${x.id}')">แก้</button>
           <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button>`;
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
@@ -740,13 +742,31 @@ function renderExpense(){
         <td>${esc(r.x.description||r.x.ref||"")}</td>
         <td class="n">${TH(r.amt)}</td>
         <td class="muted">${esc(r.hint)}</td>
-        <td><button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${r.x.exp_date}',${r.amt},${JSON.stringify(r.x.description||r.x.ref||"").replace(/"/g,'&quot;')},'${r.x.id}')">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#3b82f6;color:#fff" onclick="setAdvance('${r.x.id}',true)">⏳ จ่ายล่วงหน้า</button></td></tr>`).join("")}</tbody>
+        <td><button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${r.x.exp_date}',${r.amt},${JSON.stringify(r.x.description||r.x.ref||"").replace(/"/g,'&quot;')},'${r.x.id}')">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#16a34a;color:#fff" onclick="settleCreditor('${r.x.id}')">💸 ชำระเจ้าหนี้</button> <button class="btn sm" style="background:#3b82f6;color:#fff" onclick="setAdvance('${r.x.id}',true)">⏳ จ่ายล่วงหน้า</button></td></tr>`).join("")}</tbody>
     </table></div>
+    <div class="note" style="background:#f0fdf4;border-color:#86efac;margin-top:8px">💸 <b>ชำระเจ้าหนี้ (ไม่ผูกใบ)</b> — ใช้เมื่อ<b>บิลของยอดนี้อยู่ใน ACC-BILLING แล้ว</b> ระบบจะตัดเงินโอนก้อนนี้ออกจากยอดต้นทุน+กระแสเงินสด (ต้นทุนนับที่บิลฝั่งเดียว) โดยไม่ต้องจับทีละใบ · ถ้าบิลยังไม่เข้าให้ใช้ ⏳ จ่ายล่วงหน้าแทน</div>
+  </div>`:"";
+
+  /* รายการที่ชำระเจ้าหนี้แบบไม่ผูกใบ — มีปุ่มถอนคืน */
+  const settledNB=STATE.exp.filter(x=>x.source==="settlement"&&!x.settles_id&&x.orig_source);
+  const sbTot=settledNB.reduce((s,x)=>s+num(x.amount),0);
+  const sbHtml=settledNB.length?`<div class="card" style="border:1px solid #86efac;background:#f0fdf4">
+    <h3 style="color:#166534">💸 ชำระเจ้าหนี้แล้ว (ไม่ผูกใบ) — ตัดออกจากยอดรวมแล้ว (${settledNB.length} รายการ · ${TH(sbTot)} บาท)</h3>
+    <details><summary class="muted" style="cursor:pointer">ดูรายการ / ถอนคืน</summary>
+    <div class="scroll" style="margin-top:6px"><table>
+      <thead><tr><th>วันที่</th><th>รายละเอียด</th><th class="n">จำนวน</th><th></th></tr></thead>
+      <tbody>${settledNB.slice().sort((a,b)=>(a.exp_date<b.exp_date?1:-1)).map(x=>`<tr>
+        <td>${beDate(x.exp_date)}</td>
+        <td>${esc(x.description||x.ref||"")}</td>
+        <td class="n">${TH(num(x.amount))}</td>
+        <td><button class="btn sm" style="background:#6b7280;color:#fff" onclick="unsettleCreditor('${x.id}')">↩️ ถอนคืน</button></td></tr>`).join("")}</tbody>
+    </table></div></details>
   </div>`:"";
 
   el.innerHTML=`
   ${warnHtml}
   ${ubHtml}
+  ${sbHtml}
   ${buildAdvancesHtml()}
   ${buildUobHtml()}
   <div class="card">
@@ -889,6 +909,22 @@ window.convertToSettlement=async function(rowId,billId,date,amt,ref){
   const u2=await sb.from("rev_expenses").update({source:"settlement",settles_id:billId,is_cogs:false,orig_source:row.source}).eq("id",rowId);
   if(u2.error){ alert("แปลงรายการไม่สำเร็จ: "+u2.error.message); return; }
   closeMatchModal(); await reloadAll(); tab("expense");
+};
+/* 💸 ชำระเจ้าหนี้แบบไม่ผูกใบ — ตัดเงินโอนออกจากยอดต้นทุน+กระแสเงินสด (ต้นทุนนับที่บิลฝั่งเดียว) */
+window.settleCreditor=async function(rowId){
+  const row=STATE.exp.find(x=>x.id===rowId); if(!row) return;
+  if(!confirm(`ทำเครื่องหมายเงินออก ${TH(num(row.amount))} บาท\n“${row.description||row.ref||""}”\nเป็น “ชำระเจ้าหนี้ (ไม่ผูกใบ)”?\n\n• ตัดออกจากยอดต้นทุน + กระแสเงินสด กันนับซ้ำ\n• ต้นทุนนับที่บิล ACC-BILLING ฝั่งเดียว\n⚠️ ใช้เฉพาะเมื่อบิลของยอดนี้อยู่ในระบบแล้ว (ถ้าบิลยังไม่เข้าใช้ ⏳ จ่ายล่วงหน้าแทน)`)) return;
+  const {error}=await sb.from("rev_expenses").update({source:"settlement",is_cogs:false,orig_source:row.source,settles_id:null}).eq("id",rowId);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
+};
+/* ↩️ ถอนคืนรายการชำระเจ้าหนี้แบบไม่ผูกใบ กลับเป็นเงินออกค่าซื้อเดิม */
+window.unsettleCreditor=async function(rowId){
+  const row=STATE.exp.find(x=>x.id===rowId); if(!row) return;
+  if(!confirm(`ถอนคืนรายการ ${TH(num(row.amount))} บาท กลับเป็นเงินออกค่าซื้อ (ยังไม่ผูกบิล)?`)) return;
+  const {error}=await sb.from("rev_expenses").update({source:row.orig_source||"statement",is_cogs:true,orig_source:null}).eq("id",rowId);
+  if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
+  await reloadAll(); tab("expense");
 };
 window.markBillPaidCash=async function(id){
   if(!confirm("ทำเครื่องหมายว่าบิลนี้จ่ายแล้ว (จ่ายสด / ไม่ได้ออกจากสเตทเมนต์)?")) return;

@@ -238,6 +238,12 @@ const dShift=(d,n)=>{ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDat
 
 /* คืน {map: {expId:{nick,vno,vdate}}, cards:[...]} — ไม่บวกยอดใดๆ เข้ารายจ่าย */
 let PAY_KEY_WARN=null;   // 🛡️ เตือนถ้า payroll เปลี่ยนชื่อคีย์ to_pay
+/* ===== จำบัญชีปลายทาง → หมวดรายจ่าย (rev_payee_map) ===== */
+var PAYEE_MAP={};
+function payeeKey(detail){ var s=String(detail||""); var m=s.match(/X\d{3,}/); if(m) return m[0].toUpperCase(); var n=normName(s); return n.length>=4?("N:"+n):""; }
+async function loadPayeeMap(){ try{ if(!sb) return; var r=await sb.from("rev_payee_map").select("*"); PAYEE_MAP={}; (r.data||[]).forEach(function(x){ PAYEE_MAP[x.payee_key]=x; }); }catch(e){ PAYEE_MAP={}; } }
+function payeeHint(detail){ var k=payeeKey(detail); return k?(PAYEE_MAP[k]||null):null; }
+async function rememberPayee(detail,cat,isCogs,date){ try{ if(!sb) return; var k=payeeKey(detail); if(!k||!cat||cat==="อื่นๆ") return; var old=PAYEE_MAP[k]; var row={ payee_key:k, payee_raw:String(detail||""), category:String(cat), is_cogs:!!isCogs, hit_count:(old&&old.category===cat)?((old.hit_count||1)+1):1, last_date:date||null, updated_at:new Date().toISOString() }; await sb.from("rev_payee_map").upsert(row,{onConflict:"payee_key"}); PAYEE_MAP[k]=row; }catch(e){ console.warn("rememberPayee",e); } }
 function buildPayrollMatch(){
   const map={}, cards=[], used=new Set();
   PAY_KEY_WARN=null;
@@ -404,6 +410,7 @@ async function reloadAll(){
     STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
     STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
+    await loadPayeeMap();
     renderAll();
   }catch(err){ msg.textContent="ผิดพลาด: "+err.message; }
 }
@@ -587,11 +594,12 @@ function renderExpense(){
   const PM=buildPayrollMatch(); STATE.payMatch=PM.map; STATE.payCards=PM.cards;
   // เงินออกจากสเตทเมนต์ที่ยังไม่ได้บันทึก
   const recorded=new Set(STATE.exp.filter(x=>x.source==="statement"||x.source==="settlement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
-  let wdHtml="", wdCount=0;
+  let wdHtml="", wdCount=0, _wdNew=0; window.WD_KNOWN=[];
   // จำหมวดจากประวัติ: ผู้รับคนเดียวกันเคยลงหมวดไหน (statement/manual ที่ไม่ใช่ "อื่นๆ") + ชื่อในใบสำคัญจ่าย = ค่าแรง
   const _histRows=STATE.exp.filter(x=>(x.source==="statement"||x.source==="manual")&&x.category&&x.category!=="อื่นๆ"&&(x.ref||x.description)).sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
   const _vNames=[]; (STATE.vouchersAll||[]).forEach(v=>{ (Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{ if(ln&&ln.full_name) _vNames.push(ln.full_name); }); });
   function suggestCat(detail){
+    var _pm=payeeHint(detail); if(_pm) return {cat:_pm.category, why:"จำจากบัญชีนี้"};
     for(let h of _histRows){ if(nameHit(detail, h.ref||h.description||"")) return {cat:h.category, why:"จำจากประวัติ"}; }
     for(let nm of _vNames){ if(nameHit(detail, nm)) return {cat:"ค่าแรง/เงินเดือน", why:"ชื่อในใบสำคัญจ่าย"}; }
     return null;
@@ -602,7 +610,8 @@ function renderExpense(){
       if(done) return;   // ซ่อนรายการที่ลงบันทึกแล้ว เพื่อดันรายการที่ยังไม่ลงขึ้นมา
       wdCount++;
       const _sug=suggestCat(ref); const _defCat=_sug?_sug.cat:"อื่นๆ";
-      wdHtml+=`<tr><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}${_sug?' <span class="chip" style="background:#0ea5e9;color:#fff">💡 '+esc(_sug.cat)+'</span>':''}</td><td class="n">${TH(amt)}</td>
+      if(_sug&&_defCat!=="ค่าซื้อสินค้า"){ window.WD_KNOWN.push({date:d.date,amt:amt,ref:ref,cat:_defCat}); } else if(!_sug){ _wdNew++; }
+      wdHtml+=`<tr${!_sug?' style="background:#fff7ed"':''}><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}${_sug?' <span class="chip" style="background:#0ea5e9;color:#fff">💡 '+esc(_sug.cat)+'</span>':''}</td><td class="n">${TH(amt)}</td>
         <td><select id="wc_${d.date}_${i}" class="sm">${catOptions(_defCat)}</select>
          <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
          <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button></td></tr>`;
@@ -764,7 +773,7 @@ function renderExpense(){
   <div class="card">
     <h3>🏦 เงินออกจากสเตทเมนต์ (จัดหมวดเป็นรายจ่าย)</h3>
     <div class="muted" style="margin-bottom:6px">เงินออกที่เป็นรายจ่ายทั่วไป → เลือกหมวดแล้วกด “ลงรายจ่าย” · เงินออกที่จ่ายค่าซื้อของ (มีบิลใน ACC-BILLING อยู่แล้ว) → กด “🔗 จ่ายบิลซื้อ” เพื่อจับคู่ ระบบจะไม่นับซ้ำ · รายการที่จัดการแล้วจะถูกซ่อนอัตโนมัติ</div>
-    ${wdCount?`<div class="scroll"><table>
+    ${wdCount?`${window.WD_KNOWN.length?`<div style="margin-bottom:8px"><button class="btn sm" style="background:#16a34a;color:#fff" onclick="bookAllKnown()">➕ ลงทั้งหมดที่ระบบจำได้ (${window.WD_KNOWN.length})</button> <span class="muted">· 🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ (แถวสีส้ม)</span></div>`:(_wdNew?`<div class="muted" style="margin-bottom:8px">🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ</div>`:``)}<div class="scroll"><table>
       <thead><tr><th>วันที่</th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th><th>จัดหมวด</th></tr></thead>
       <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">✓ จัดหมวดครบทุกรายการแล้ว (ไม่มีเงินออกที่ยังไม่ได้ลงรายจ่าย)</div>`}
   </div>
@@ -823,8 +832,19 @@ async function addStmtExp(date,amt,btn,selId,ref){
   btn.disabled=true; btn.textContent="…";
   const {error}=await sb.from("rev_expenses").insert([{exp_date:date,category:cat,description:ref,amount:amt,source:"statement",ref:ref,is_cogs:isCogs,created_by:"owner"}]);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); btn.disabled=false; btn.textContent="➕ ลงรายจ่าย"; return; }
+  await rememberPayee(ref,cat,isCogs,date);
   await reloadAll(); tab("expense");
 }
+window.bookAllKnown=async function(){
+  var L=window.WD_KNOWN||[]; if(!L.length) return;
+  if(!confirm("ลงรายจ่ายอัตโนมัติ "+L.length+" รายการที่ระบบจำหมวดได้แล้ว?\n\n(บัญชีใหม่ที่ยังไม่เคยจัด จะไม่ถูกแตะ — ต้องจัดเอง)")) return;
+  var rows=L.map(function(w){ return {exp_date:w.date,category:w.cat,description:w.ref,amount:w.amt,source:"statement",ref:w.ref,is_cogs:w.cat==="ค่าซื้อสินค้า",created_by:"owner"}; });
+  var ins=await sb.from("rev_expenses").insert(rows);
+  if(ins.error){ alert("ลงไม่สำเร็จ: "+ins.error.message); return; }
+  for(var i=0;i<L.length;i++){ await rememberPayee(L[i].ref,L[i].cat,L[i].cat==="ค่าซื้อสินค้า",L[i].date); }
+  alert("✓ ลงรายจ่าย "+L.length+" รายการแล้ว");
+  await reloadAll(); tab("expense");
+};
 /* ===== จับคู่บิลซื้อ (ACC-BILLING) กับเงินออกจริง — กันนับซ้ำ ===== */
 function unpaidBills(){
   return STATE.exp.filter(x=>x.source==="acc_billing"&&x.pay_status!=="paid");

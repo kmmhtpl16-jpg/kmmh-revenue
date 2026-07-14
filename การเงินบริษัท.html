@@ -588,13 +588,22 @@ function renderExpense(){
   // เงินออกจากสเตทเมนต์ที่ยังไม่ได้บันทึก
   const recorded=new Set(STATE.exp.filter(x=>x.source==="statement"||x.source==="settlement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
   let wdHtml="", wdCount=0;
+  // จำหมวดจากประวัติ: ผู้รับคนเดียวกันเคยลงหมวดไหน (statement/manual ที่ไม่ใช่ "อื่นๆ") + ชื่อในใบสำคัญจ่าย = ค่าแรง
+  const _histRows=STATE.exp.filter(x=>(x.source==="statement"||x.source==="manual")&&x.category&&x.category!=="อื่นๆ"&&(x.ref||x.description)).sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
+  const _vNames=[]; (STATE.vouchersAll||[]).forEach(v=>{ (Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{ if(ln&&ln.full_name) _vNames.push(ln.full_name); }); });
+  function suggestCat(detail){
+    for(let h of _histRows){ if(nameHit(detail, h.ref||h.description||"")) return {cat:h.category, why:"จำจากประวัติ"}; }
+    for(let nm of _vNames){ if(nameHit(detail, nm)) return {cat:"ค่าแรง/เงินเดือน", why:"ชื่อในใบสำคัญจ่าย"}; }
+    return null;
+  }
   STATE.daily.forEach(d=>{
     (d.bank_rows||[]).filter(r=>num(r.wd)>0).forEach((r,i)=>{
       const amt=r2(r.wd), ref=String(r.detail||""), key=d.date+"|"+amt+"|"+ref, done=recorded.has(key);
       if(done) return;   // ซ่อนรายการที่ลงบันทึกแล้ว เพื่อดันรายการที่ยังไม่ลงขึ้นมา
       wdCount++;
-      wdHtml+=`<tr><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}</td><td class="n">${TH(amt)}</td>
-        <td><select id="wc_${d.date}_${i}" class="sm">${catOptions("อื่นๆ")}</select>
+      const _sug=suggestCat(ref); const _defCat=_sug?_sug.cat:"อื่นๆ";
+      wdHtml+=`<tr><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}${_sug?' <span class="chip" style="background:#0ea5e9;color:#fff">💡 '+esc(_sug.cat)+'</span>':''}</td><td class="n">${TH(amt)}</td>
+        <td><select id="wc_${d.date}_${i}" class="sm">${catOptions(_defCat)}</select>
          <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
          <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button></td></tr>`;
     });

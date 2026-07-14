@@ -778,17 +778,17 @@ function renderPnl(rows,m,retCount){
     '<tr><td>− ค่าธรรมเนียม Shopee</td><td class="n" style="color:var(--red)">'+fmt(fee)+'</td></tr>'+
     '<tr class="tot"><td>= เงินได้รับสุทธิ</td><td class="n">'+fmt(net)+'</td></tr>'+
     '<tr><td>− ต้นทุน/ค่าใช้จ่าย (แท็บ ③)</td><td class="n" style="color:var(--red)">'+fmt(cost)+'</td></tr>'+
-    '<tr class="tot"><td>= กำไรขั้นต้น</td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+';font-size:18px">'+fmt(profit)+'</td></tr>'+
+    '<tr class="tot"><td>= เงินเหลือ <span style="font-weight:400;font-size:12px;color:var(--red)">(ยังไม่หักต้นทุนสินค้า)</span></td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+';font-size:18px">'+fmt(profit)+'</td></tr>'+
     '</table>';
   h+='<table class="pnl" style="max-width:460px;margin-top:8px"><tr><td class="muted" colspan="2">เฉลี่ยต่อออเดอร์ ('+oc+' ออเดอร์ขายจริง)</td></tr>'+
     '<tr><td>ยอดขาย/ออเดอร์</td><td class="n">'+fmt(oc?sale/oc:0)+'</td></tr>'+
     '<tr><td>ค่าธรรมเนียม/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?fee/oc:0)+'</td></tr>'+
     '<tr><td>ต้นทุนแพ็ค/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?cost/oc:0)+'</td></tr>'+
-    '<tr class="tot"><td>กำไร/ออเดอร์</td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+'">'+fmt(oc?profit/oc:0)+'</td></tr>'+
+    '<tr class="tot"><td>เงินเหลือ/ออเดอร์ <span style="font-weight:400;font-size:11px;color:var(--red)">(ก่อนหักต้นทุน)</span></td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+'">'+fmt(oc?profit/oc:0)+'</td></tr>'+
     '</table>';
   h+='<div class="muted" style="margin-top:6px">* ยังไม่รวมต้นทุนสินค้า (COGS) · ค่าธรรมเนียมออเดอร์ที่ยังไม่ได้รับเงินใช้ประมาณการ ('+(oc-paidN)+' ออเดอร์)</div>';
-  if(profit>=0) h+='<div class="okbox" style="margin-top:10px">🟢 <b>มีกำไร '+fmt(profit)+' บาท</b> (เฉลี่ย '+fmt(oc?profit/oc:0)+'/ออเดอร์) — พิจารณาแบ่งโบนัส/ปรับปรุงอุปกรณ์ให้ทีมแพ็ค</div>';
-  else h+='<div class="errbox" style="margin-top:10px">🔴 <b>ขาดทุน '+fmt(-profit)+' บาท</b> — ควรทบทวน/เตรียมเปลี่ยนแพลตฟอร์ม</div>';
+  if(profit>=0) h+='<div class="okbox" style="margin-top:10px">🟢 <b>เงินเหลือ '+fmt(profit)+' บาท</b> (ยังไม่หักต้นทุนสินค้า · เฉลี่ย '+fmt(oc?profit/oc:0)+'/ออเดอร์) — กำไรจริงต้องนำต้นทุนสินค้ามาหักก่อน</div>';
+  else h+='<div class="errbox" style="margin-top:10px">🔴 <b>ติดลบ '+fmt(-profit)+' บาท</b> — ขาดทุนตั้งแต่ยังไม่หักต้นทุนสินค้า ควรทบทวน/เตรียมเปลี่ยนแพลตฟอร์ม</div>';
   h+='<div style="margin-top:14px;border-top:1px dashed #ccc;padding-top:10px" class="muted">\u2139\ufe0f \u0e04\u0e48\u0e32\u0e18\u0e23\u0e23\u0e21\u0e40\u0e19\u0e35\u0e22\u0e21 Shopee \u0e40\u0e02\u0e49\u0e32\u201c\u0e01\u0e32\u0e23\u0e40\u0e07\u0e34\u0e19\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17\u201d \u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34\u0e40\u0e1b\u0e47\u0e19\u0e23\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e41\u0e25\u0e49\u0e27 (\u0e15\u0e2d\u0e19\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48\u0e40\u0e07\u0e34\u0e19\u0e42\u0e2d\u0e19) \u2014 \u0e44\u0e21\u0e48\u0e15\u0e49\u0e2d\u0e07\u0e14\u0e31\u0e19\u0e0b\u0e49\u0e33\u0e23\u0e32\u0e22\u0e40\u0e14\u0e37\u0e2d\u0e19</div>';
   document.getElementById("pnlBox").innerHTML=h;
 }

@@ -245,6 +245,7 @@ function renderRegister(){
 }
 
 function billsTable(g){
+  var canFin=(ROLE==="finance"||ROLE==="owner");
   var rows=g.bills.slice().sort(function(a,b){ return String(a.bill_date).localeCompare(String(b.bill_date)) || String(a.bill_no||"").localeCompare(String(b.bill_no||"")); });
   var out='<table style="margin:6px 0"><thead><tr><th style="width:24px"></th><th>วันที่บิล</th><th>เลขบิล</th><th class="n">ยอดบิล</th><th class="n">จ่ายแล้ว</th><th class="n">คงเหลือ</th><th>สถานะ</th><th></th></tr></thead><tbody>';
   rows.forEach(function(b){
@@ -256,7 +257,8 @@ function billsTable(g){
     var payHtml=pays.length? pays.map(function(p){
       return '<div class="muted" style="padding:2px 0">• '+beDate(p.pay_date)+' — '+fmt(p.amount)+' ('+esc(p.method||"")+")"+
         (p.billing_note_no?' · ใบวางบิล '+esc(p.billing_note_no):"")+(p.ref?" · "+esc(p.ref):"")+(p.batch_ref?' <span class="chip info" style="font-size:10px">'+esc(p.batch_ref)+'</span>':"")+(p.confirmed_by?" · "+esc(p.confirmed_by):"")+
-        ' <a href="#" onclick="return delPayment(\''+p.id+'\')" style="color:var(--red);text-decoration:none">✕</a></div>';
+        (canFin?' <a href="#" title="แก้ไขรายการจ่ายนี้" onclick="return editPayment(\''+p.id+'\')" style="text-decoration:none">✏️</a>':"")+
+        (canFin?' <a href="#" title="ลบรายการจ่ายนี้" onclick="return delPayment(\''+p.id+'\')" style="color:var(--red);text-decoration:none">✕</a>':' <span class="muted" style="font-size:11px">🔒</span>')+'</div>';
     }).join(""):'<div class="muted">ยังไม่มีการจ่าย</div>';
     out+='<tr>'+
       '<td>'+(rem>0.01?'<input type="checkbox" class="billchk" data-id="'+b.id+'" onclick="toggleSel(this)" data-cust="'+esc(b.customer||"")+'" data-key="'+esc(g.key)+'" data-rem="'+rem+'" data-date="'+esc(b.bill_date||"")+'" data-no="'+esc(b.bill_no||"")+'">':"")+'</td>'+
@@ -269,7 +271,8 @@ function billsTable(g){
       '<td style="white-space:nowrap">'+
         (rem>0.01?'<button class="btn sm" onclick="payBill(\''+b.id+'\')">+ จ่าย</button> ':"")+
         '<button class="btn sm ghost" onclick="togglePays(\''+b.id+'\')">การจ่าย ▾</button>'+
-        ' <button class="btn sm red" title="ลบบิลนี้ (กรณีลงผิด)" onclick="delBill(\''+b.id+'\')">🗑</button>'+
+        (canFin?' <button class="btn sm ghost" title="แก้ไขบิลนี้ (ชื่อลูกค้า/เลขบิล/วันที่/ยอด)" onclick="editBill(\''+b.id+'\')">✏️</button>':"")+
+        (canFin?' <button class="btn sm red" title="ลบบิลนี้ (กรณีลงผิด)" onclick="delBill(\''+b.id+'\')">🗑</button>':' <span class="muted" style="font-size:11px">🔒 การเงิน+</span>')+
         '<div id="cp_'+b.id+'" class="hide" style="margin-top:6px">'+payHtml+'</div>'+
       '</td>'+
     '</tr>';
@@ -379,6 +382,91 @@ window.delPayment=async function(pid){
   var d=await sb.from("rev_credit_payments").delete().eq("id",pid);
   if(d.error){ alert("ลบไม่ได้: "+d.error.message); return false; }
   if(bid) await recomputeBill(bid);
+  loadRegister();
+  return false;
+};
+
+/* ---------- ✏️ แก้ไขบิล / แก้ไขการจ่าย (การเงิน + เจ้าของ) ---------- */
+function finOnly(what){
+  if(ROLE==="finance"||ROLE==="owner") return true;
+  alert("แก้ไข"+what+"ได้เฉพาะสิทธิ์การเงินขึ้นไป\nถ้าลงผิด แจ้งการเงินหรือเจ้าของแก้ให้ได้เลยค่ะ");
+  return false;
+}
+window.editBill=async function(id){
+  if(!finOnly("บิล")) return;
+  var r=await sb.from("rev_credit_bills").select("*").eq("id",id).single();
+  if(r.error){ alert("โหลดบิลไม่ได้"); return; }
+  var b=r.data, paid=num(b.paid_amount);
+  var cust=prompt("แก้ชื่อลูกค้า\n(ชื่อสะกดผิด = ระบบมองเป็นคนละลูกค้า แล้วตัดยอดผิดบิลได้)", b.customer||"");
+  if(cust===null) return; cust=cust.trim(); if(!cust){ alert("ต้องมีชื่อลูกค้า"); return; }
+  var billno=prompt("แก้เลขบิล (เว้นว่าง = ยังไม่มีเลขบิล):", b.bill_no||"");
+  if(billno===null) return; billno=billno.trim();
+  var code=prompt("แก้รหัสลูกค้า (เว้นว่างได้):", b.customer_code||"");
+  if(code===null) return; code=code.trim();
+  var date=prompt("แก้วันที่บิล (YYYY-MM-DD):", String(b.bill_date||"").slice(0,10));
+  if(date===null) return; date=date.trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ alert("รูปแบบวันที่ต้องเป็น YYYY-MM-DD"); return; }
+  var amtS=prompt("แก้ยอดบิล (จ่ายมาแล้ว "+fmt(paid)+" บาท):", String(num(b.total_amount)));
+  if(amtS===null) return;
+  var amt=num(amtS); if(amt<=0){ alert("ยอดบิลต้องมากกว่า 0"); return; }
+  if(amt<paid-0.01 && !confirm("⚠️ ยอดบิลใหม่ ("+fmt(amt)+") น้อยกว่ายอดที่จ่ายมาแล้ว ("+fmt(paid)+")\nจะกลายเป็นจ่ายเกิน — ยืนยันไหม?")) return;
+  var chg=[];
+  if((b.customer||"")!==cust) chg.push("ชื่อ: "+(b.customer||"—")+" → "+cust);
+  if((b.bill_no||"")!==billno) chg.push("เลขบิล: "+(b.bill_no||"—")+" → "+(billno||"—"));
+  if((b.customer_code||"")!==code) chg.push("รหัสลูกค้า: "+(b.customer_code||"—")+" → "+(code||"—"));
+  if(String(b.bill_date||"").slice(0,10)!==date) chg.push("วันที่: "+beDate(b.bill_date)+" → "+beDate(date));
+  if(Math.abs(num(b.total_amount)-amt)>0.005) chg.push("ยอดบิล: "+fmt(b.total_amount)+" → "+fmt(amt));
+  if(!chg.length){ alert("ไม่มีอะไรเปลี่ยน"); return; }
+  var by=prompt("ผู้แก้ไข (ชื่อคุณ):", "")||"";
+  if(!confirm("ยืนยันแก้บิล "+(b.bill_no||beDate(b.bill_date))+" ?\n\n"+chg.join("\n"))) return;
+  var stamp="[แก้ "+beDate(todayISO())+(by.trim()?" โดย "+by.trim():"")+"] "+chg.join(", ");
+  var u=await sb.from("rev_credit_bills").update({
+    customer:cust, bill_no:billno||null, customer_code:code||null, bill_date:date,
+    total_amount:amt, note:((b.note?b.note+" | ":"")+stamp).slice(0,900)
+  }).eq("id",id);
+  if(u.error){ alert("แก้ไม่ได้: "+u.error.message); return; }
+  await recomputeBill(id);
+  loadRegister();
+};
+window.editPayment=async function(pid){
+  if(!finOnly("รายการจ่าย")) return false;
+  var r=await sb.from("rev_credit_payments").select("*").eq("id",pid).single();
+  if(r.error){ alert("โหลดรายการจ่ายไม่ได้"); return false; }
+  var p=r.data, oldBill=p.bill_id;
+  var br=await sb.from("rev_credit_bills").select("bill_no,customer,total_amount,paid_amount").eq("id",oldBill).single();
+  var bn=(br.data&&br.data.bill_no)||"(ไม่มีเลขบิล)";
+  var amtS=prompt("แก้ยอดที่จ่าย — ตอนนี้ตัดกับบิล "+bn+"\nใส่ยอดใหม่:", String(num(p.amount)));
+  if(amtS===null) return false;
+  var amt=num(amtS); if(amt<=0){ alert("ยอดต้องมากกว่า 0"); return false; }
+  var pdate=prompt("แก้วันที่รับชำระ (YYYY-MM-DD):", String(p.pay_date||"").slice(0,10));
+  if(pdate===null) return false; pdate=pdate.trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(pdate)){ alert("รูปแบบวันที่ต้องเป็น YYYY-MM-DD"); return false; }
+  var cur=METHODS.indexOf(p.method||"")+1; if(cur<1) cur=1;
+  var mS=prompt("ช่องทางจ่าย ("+METHODS.map(function(m,i){return (i+1)+"="+m;}).join("  ")+"):", String(cur));
+  if(mS===null) return false;
+  var method=METHODS[parseInt(mS,10)-1]||p.method||METHODS[0];
+  var moveTo=prompt("ย้ายไปตัดบิลอื่นไหม? ใส่ 'เลขบิล' ปลายทาง\n(เว้นว่าง = ไม่ย้าย ตัดบิล "+bn+" เหมือนเดิม)","");
+  if(moveTo===null) return false; moveTo=moveTo.trim();
+  var newBill=oldBill, newBn=bn;
+  if(moveTo && moveTo!==bn){
+    var f=await sb.from("rev_credit_bills").select("id,bill_no,customer,total_amount,paid_amount").eq("bill_no",moveTo);
+    var cand=(f.data||[]);
+    if(!cand.length){ alert("ไม่พบบิลเลขที่ "+moveTo+" ในทะเบียน\n(ถ้าบิลยังไม่ถูกดูดเข้าระบบ ให้เพิ่มบิลก่อน แล้วค่อยย้าย)"); return false; }
+    if(cand.length>1){ alert("พบบิลเลข "+moveTo+" มากกว่า 1 ใบ ("+cand.length+" ใบ) — แก้เลขบิลให้ไม่ซ้ำก่อนค่ะ"); return false; }
+    newBill=cand[0].id; newBn=cand[0].bill_no;
+    var remNew=Math.round((num(cand[0].total_amount)-num(cand[0].paid_amount))*100)/100;
+    if(!confirm("ย้ายยอด "+fmt(amt)+" จากบิล "+bn+" ไปตัดบิล "+newBn+" ("+(cand[0].customer||"")+")\nบิลปลายทางค้างอยู่ "+fmt(remNew)+" บาท\n\nยืนยันไหม?")) return false;
+  }
+  var by=prompt("ผู้แก้ไข (ชื่อคุณ):", p.confirmed_by||"")||p.confirmed_by||"";
+  var refDef=(p.ref||"");
+  var ref=prompt("อ้างอิง/หมายเหตุ:", refDef); if(ref===null) return false;
+  var u=await sb.from("rev_credit_payments").update({
+    bill_id:newBill, amount:amt, pay_date:pdate, method:method,
+    ref:(ref.trim()||null), confirmed_by:(by.trim()||null)
+  }).eq("id",pid);
+  if(u.error){ alert("แก้ไม่ได้: "+u.error.message); return false; }
+  await recomputeBill(oldBill);
+  if(newBill!==oldBill) await recomputeBill(newBill);
   loadRegister();
   return false;
 };

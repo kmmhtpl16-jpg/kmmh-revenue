@@ -1217,22 +1217,68 @@ async function mpRecompute(id){
 }
 
 /* ---------- บิลขาย KM ---------- */
+var MP_KM_OPEN=[], MP_KM_DONE=[], MP_HC="";
 window.matchKM=async function(id){
   if(!sb) return; MP_PID=id; MP_P=await mpLoadPend(id); if(!MP_P){ alert("ไม่พบรายการ"); return; }
-  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount").neq("status","paid").order("bill_date",{ascending:true});
+  /* 2 query แยกกัน: บิลค้าง = ครบทุกใบเสมอ (ห้ามโดน limit ตัด) · บิลปิดแล้ว = เอาไว้ให้ "ค้นแล้วเจอ" พอ 500 ใบล่าสุด */
+  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount,status").neq("status","paid").order("bill_date",{ascending:true});
   if(r.error){ alert("โหลดบิลไม่ได้: "+r.error.message); return; }
+  var rd=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount,status").eq("status","paid").order("bill_date",{ascending:false}).limit(500);
   await loadPayerMap();
   var _h=payerHint(MP_P.from_name), _hc=_h?_h.customer:"";
-  var _list=(r.data||[]).filter(function(b){ return Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100>0.01; });
-  if(_hc){ _list.sort(function(a,b){ var ah=nameMatch(_hc,a.customer)?0:1, bh=nameMatch(_hc,b.customer)?0:1; if(ah!==bh) return ah-bh; return (a.bill_date<b.bill_date)?-1:1; }); }
-  var rows=_list.map(function(b){ var rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; var hit=_hc&&nameMatch(_hc,b.customer); return '<tr'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
+  MP_HC=_hc;
+  var _mk=function(b){ b._rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; return b; };
+  var _open=(r.data||[]).map(_mk).filter(function(b){ return b._rem>0.01; });
+  var _done=(rd.data||[]).map(_mk).concat((r.data||[]).map(_mk).filter(function(b){ return b._rem<=0.01; }));
+  _done.sort(function(a,b){ return (a.bill_date<b.bill_date)?1:-1; });
+  if(_hc){ _open.sort(function(a,b){ var ah=nameMatch(_hc,a.customer)?0:1, bh=nameMatch(_hc,b.customer)?0:1; if(ah!==bh) return ah-bh; return (a.bill_date<b.bill_date)?-1:1; }); }
+  MP_KM_OPEN=_open; MP_KM_DONE=_done;
   mpOpen('<h3>จับคู่ '+TH(MP_P.amount)+' ฿ — เลือกบิลขาย (เก่าสุดบน)</h3>'+
     '<div class="mpmut">จาก '+esc(MP_P.from_name||"")+' · ติ๊กบิลที่เงินก้อนนี้ปิด</div>'+
     (_hc?('<div style="margin-top:6px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 8px;font-size:12.5px;color:#6d28d9">🔁 บัญชีนี้เคยจ่ายในชื่อ <b>'+esc(_hc)+'</b>'+(_h.hit_count>1?(' ('+_h.hit_count+' ครั้ง)'):'')+' — ยกบิลของลูกค้ารายนี้ขึ้นบนให้แล้ว</div>'):'')+
-    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div style="margin-top:8px"><input id="mpKMq" type="search" placeholder="🔎 ค้นชื่อลูกค้า / เลขบิล (เช่น นาคำน้อย หรือ 0068)" oninput="mpKMRender()" style="width:100%;padding:6px 9px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px"></div>'+
+    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody id="mpKMrows"></tbody></table></div>'+
     '<div class="mpbar"><span id="mpKMmsg">เลือก 0 บิล</span><b id="mpKMsum" style="color:#2563eb">0.00 ฿</b></div>'+
     '<div id="mpKMshort"></div>'+
     '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button><button class="btn" id="mpKMdo" disabled onclick="mpDoKM()">✓ จับคู่ &amp; ปิดบิล</button></div>');
+  mpKMRender();
+};
+/* ค้นหา + วาดรายการบิลในกล่องจับคู่ · ไม่ค้น = โชว์เฉพาะบิลค้าง · ค้น = โชว์บิลที่ปิดแล้วด้วย (แบบจาง ติ๊กไม่ได้) */
+window.mpKMRender=function(){
+  var qEl=document.getElementById("mpKMq"), q=qEl?String(qEl.value||"").trim():"";
+  var nq=normName(q), lq=q.toLowerCase();
+  var hitB=function(b){ if(!q) return true;
+    return String(b.bill_no||"").toLowerCase().indexOf(lq)>=0 || (nq.length>0 && normName(b.customer||"").indexOf(nq)>=0); };
+  var open=MP_KM_OPEN.filter(hitB);
+  var done=q?MP_KM_DONE.filter(hitB):[];
+  var rows=open.map(function(b){
+    var hit=MP_HC&&nameMatch(MP_HC,b.customer);
+    return '<tr'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+b._rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(b._rem)+'</td></tr>';
+  }).join("");
+  if(done.length){
+    rows+='<tr><td colspan="5" style="background:#f5f5f4;font-size:11.5px;color:#78716c;padding:4px 6px">— บิลที่ตัดยอดครบแล้ว '+done.length+' ใบ (ติ๊กไม่ได้ ป้องกันรับเงินซ้ำ) —</td></tr>';
+    rows+=done.map(function(b){
+      return '<tr style="opacity:.55;background:#fafaf9"><td style="width:26px;text-align:center">✓</td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+' <span style="color:#15803d;font-size:11px">✓ ตัดยอดแล้ว '+TH(b.paid_amount)+'</span></td>'+
+        '<td class="num"><button class="btn sec" style="padding:2px 6px;font-size:11px;white-space:nowrap" title="เงินก้อนนี้คือยอดที่ปิดบิลใบนี้ไปแล้ว — ปิดรายการรอจับคู่ทิ้ง ไม่ตัดยอดซ้ำ" onclick="mpCloseNoPay(\''+b.id+'\')">ปิดรายการ ไม่ตัดซ้ำ</button></td></tr>';
+    }).join("");
+  }
+  if(!rows) rows='<tr><td colspan="5" class="mpmut" style="padding:10px">ไม่พบบิลที่ค้น "'+esc(q)+'"<br><span style="font-size:11.5px">ถ้าแน่ใจว่ามีบิลนี้ อาจสะกดชื่อลูกค้าผิดตอนดูดเข้าระบบ — เช็กในหน้า “ลูกหนี้ลงบัญชี” แล้วกด ✏️ แก้ชื่อ (อย่าสร้างบิลใหม่ จะกลายเป็นบิลซ้ำ)</span></td></tr>';
+  document.getElementById("mpKMrows").innerHTML=rows;
+  mpSumKM();
+};
+/* ✓ ปิดรายการรอจับคู่ โดยไม่สร้างการจ่าย — ใช้เมื่อบิลถูกตัดยอดไปแล้ว (เช่น ตัดผ่านชีตบิลเก่า) */
+window.mpCloseNoPay=async function(billId){
+  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ปิดรายการได้เฉพาะสิทธิ์การเงินขึ้นไป"); return; }
+  var b=null; for(var i=0;i<MP_KM_DONE.length;i++){ if(MP_KM_DONE[i].id===billId){ b=MP_KM_DONE[i]; break; } }
+  if(!b){ alert("ไม่พบบิล"); return; }
+  var pr=await sb.from("rev_credit_payments").select("pay_date,amount,method,ref,confirmed_by").eq("bill_id",billId).order("pay_date",{ascending:true});
+  var hist=(pr.data||[]).map(function(x){ return "• "+beDate(x.pay_date)+" "+TH(x.amount)+" ("+(x.method||"")+")"+(x.ref?" · "+x.ref:""); }).join("\n")||"—";
+  if(!confirm("ปิดรายการรอจับคู่ "+TH(MP_P.amount)+" ฿ โดย “ไม่ตัดยอดซ้ำ”?\n\nบิล "+(b.bill_no||"")+" ("+(b.customer||"")+") ยอด "+TH(b.total_amount)+"\nถูกตัดยอดครบไปแล้ว:\n"+hist+"\n\n→ เงินก้อนนี้ถูกลงบัญชีไปแล้วตั้งแต่ตอนนั้น จึงแค่ปิดรายการรอจับคู่ ไม่สร้างการจ่ายใหม่\n\n⚠️ ถ้าเงินก้อนนี้เป็นคนละก้อน (ลูกค้าโอนมาอีกรอบ) อย่ากดปุ่มนี้")) return;
+  var by=prompt("ผู้ยืนยัน:",""); if(by===null) return;
+  var u=await sb.from("rev_pending").update({ status:"matched", matched_bill_no:(b.bill_no||null), matched_date:mpToday(), confirmed_by:(by||"").trim()||null, ref:((MP_P.ref?MP_P.ref+" · ":"")+"ปิดรายการ ไม่ตัดซ้ำ (บิลถูกตัดยอดแล้ว)") }).eq("id",MP_PID);
+  if(u.error){ alert("ปิดรายการไม่สำเร็จ: "+u.error.message); return; }
+  mpClose(); alert("ปิดรายการแล้ว — ผูกไว้กับบิล "+(b.bill_no||"")+" (ไม่ได้ตัดยอดซ้ำ)"); loadPending();
+  if(window._openDay) renderDay(window._openDay,false);
 };
 window.mpSumKM=function(){
   var ck=[].slice.call(document.querySelectorAll(".mpkb:checked"));

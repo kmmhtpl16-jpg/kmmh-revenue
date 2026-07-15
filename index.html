@@ -772,7 +772,8 @@ function renderItems(det, edit, _deps, _pays){ det=det||{};
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
   (function(){ var _pp=(!edit && _pays)?_pays:[]; if(_pp.length){ var _pt=0;
     h+='<div style="font-weight:700;margin:14px 0 4px;color:#15803d">💰 จ่ายหนี้ (ลูกหนี้จ่ายคืนหนี้เก่า — รับเข้าวันนี้)</div>';
-    h+='<table><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th></tr></thead><tbody>'+_pp.map(function(pp){ var bi=pp.rev_credit_bills||{}; _pt+=num(pp.amount); return '<tr><td>'+esc(bi.customer||"—")+'</td><td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td><td class="num" style="color:#15803d;font-weight:600">'+TH(pp.amount)+'</td><td>'+esc(pp.method||"")+'</td><td style="font-size:11px;color:#64748b">'+esc(pp.ref||"")+'</td></tr>'; }).join("")+'<tr class="tot"><td colspan="2">รวมจ่ายหนี้</td><td class="num" style="color:#15803d">'+TH(_pt)+'</td><td colspan="2"></td></tr></tbody></table>';
+    var _canFin=(ROLE==="finance"||ROLE==="owner");
+    h+='<table><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>'+_pp.map(function(pp){ var bi=pp.rev_credit_bills||{}; _pt+=num(pp.amount); return '<tr><td>'+esc(bi.customer||"—")+'</td><td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td><td class="num" style="color:#15803d;font-weight:600">'+TH(pp.amount)+'</td><td>'+esc(pp.method||"")+'</td><td style="font-size:11px;color:#64748b">'+esc(pp.ref||"")+'</td><td>'+(_canFin?'<button class="btn sec" style="padding:2px 7px;font-size:11px;color:#b91c1c" title="ยกเลิกการตัดยอดนี้ (ถอนออกจากบิล)" onclick="unpayCredit(\''+pp.id+'\')">✕ ยกเลิก</button>':'<span class="muted" style="font-size:11px">🔒</span>')+'</td></tr>'; }).join("")+'<tr class="tot"><td colspan="2">รวมจ่ายหนี้</td><td class="num" style="color:#15803d">'+TH(_pt)+'</td><td colspan="3"></td></tr></tbody></table>';
   } })();
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';
@@ -789,7 +790,7 @@ async function renderDay(date, edit){
   window._openDay = edit ? null : date;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
   const _dShift=function(iso,n){ const p=String(iso).slice(0,10).split("-"); const dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
-  const [a,d,pq,dp,pyq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)), sb.from("rev_credit_payments").select("amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",date) ]);
+  const [a,d,pq,dp,pyq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)), sb.from("rev_credit_payments").select("id,bill_id,amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",date) ]);
   const au=a.data, da=d.data;
   const _deps=(dp&&dp.data)?dp.data:[];
   const _pays=(pyq&&pyq.data)?pyq.data:[];
@@ -1191,6 +1192,21 @@ function mpShortHtml(diff){
       '<option value="part">แบ่งชำระ — ปิดเท่าที่เงินถึง (ที่เหลือค้าง)</option>'+
     '</select></div>';
 }
+/* ✕ ยกเลิกการตัดยอดลูกหนี้ทีละรายการ (การเงิน+เจ้าของ) — ใช้ตอนตัดผิดบิล/ตัดซ้ำ */
+window.unpayCredit=async function(pid){
+  if(!sb) return;
+  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ยกเลิกการตัดยอดได้เฉพาะสิทธิ์การเงินขึ้นไป\nแจ้งการเงินหรือเจ้าของให้ถอนให้ได้เลยค่ะ"); return; }
+  var r=await sb.from("rev_credit_payments").select("id,bill_id,amount,pay_date,method,ref,confirmed_by,rev_credit_bills(bill_no,customer,total_amount,paid_amount)").eq("id",pid).single();
+  if(r.error||!r.data){ alert("ไม่พบรายการนี้ (อาจถูกถอนไปแล้ว)"); return; }
+  var p=r.data, bi=p.rev_credit_bills||{};
+  var back=Math.round((num(bi.paid_amount)-num(p.amount))*100)/100;
+  if(!confirm("ยกเลิกการตัดยอดนี้?\n\nลูกค้า: "+(bi.customer||"—")+"\nบิล: "+(bi.bill_no||"—")+" (ยอดบิล "+TH(bi.total_amount)+")\nยอดที่จะถอน: "+TH(p.amount)+" ("+(p.method||"")+")"+(p.confirmed_by?"\nลงโดย: "+p.confirmed_by:"")+"\n\n→ บิลนี้จะกลับไปค้าง "+TH(Math.round((num(bi.total_amount)-back)*100)/100)+" บาท\n\n⚠️ ถ้าเงินเข้าจริงแต่ตัดผิดบิล ให้ไปตัดบิลที่ถูกต้องต่อในหน้า “ลูกหนี้ลงบัญชี” ด้วยนะคะ")) return;
+  var d=await sb.from("rev_credit_payments").delete().eq("id",pid);
+  if(d.error){ alert("ถอนไม่สำเร็จ: "+d.error.message); return; }
+  if(p.bill_id) await mpRecompute(p.bill_id);
+  if(window.loadPending) loadPending();
+  if(window._openDay) renderDay(window._openDay,false);
+};
 async function mpRecompute(id){
   var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
   var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);

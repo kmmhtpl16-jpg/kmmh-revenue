@@ -351,6 +351,14 @@ window.payBill=async function(id){
   var r=await sb.from("rev_credit_bills").select("*").eq("id",id).single();
   if(r.error){ alert("โหลดบิลไม่ได้"); return; }
   var b=r.data, rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100;
+  /* 🛑 กันจ่ายซ้ำ — บิลนี้ปิดไปแล้ว */
+  var exp=await sb.from("rev_credit_payments").select("id,pay_date,amount,method,ref,confirmed_by").eq("bill_id",id);
+  var EP=(exp.data||[]);
+  if(rem<=0.01){
+    var was=EP.map(function(x){ return "• "+beDate(x.pay_date)+" "+fmt(x.amount)+" ("+(x.method||"")+")"+(x.confirmed_by?" · "+x.confirmed_by:""); }).join("\n");
+    alert("🛑 บิล "+(b.bill_no||"")+" จ่ายครบแล้ว ("+fmt(b.paid_amount)+" บาท)\n\nประวัติการจ่าย:\n"+was+"\n\nไม่ต้องลงจ่ายซ้ำค่ะ — ถ้าลงซ้ำ ยอดรับเงินจะเด้งเป็น 2 เท่า");
+    return;
+  }
   var amtS=prompt("บันทึกการจ่าย — บิล "+(b.bill_no||b.customer)+"\nคงเหลือ "+fmt(rem)+" บาท\nใส่ยอดที่จ่ายครั้งนี้:", String(rem));
   if(amtS===null) return;
   var amt=num(amtS); if(amt<=0){ alert("ยอดไม่ถูกต้อง"); return; }
@@ -360,6 +368,9 @@ window.payBill=async function(id){
   var noteNo=prompt("เลขที่ใบวางบิล (จากโปรแกรมบัญชี — เว้นว่างได้):","")||"";
   var ref=prompt("อ้างอิง/หมายเหตุ (เว้นว่างได้):","")||"";
   var by=prompt("ผู้รับเงิน/ยืนยัน:","")||"";
+  /* 🛑 ยอดเท่ากัน + วันเดียวกัน = น่าจะกดซ้ำ */
+  var same=EP.filter(function(x){ return Math.abs(num(x.amount)-amt)<0.01 && String(x.pay_date).slice(0,10)===String(pdate||todayISO()).slice(0,10); });
+  if(same.length && !confirm("⚠️ บิลนี้มีการจ่าย "+fmt(amt)+" บาท วันที่ "+beDate(pdate)+" อยู่แล้ว"+(same[0].confirmed_by?(" (โดย "+same[0].confirmed_by+")"):"")+"\n\nลงซ้ำอีกครั้งจริงไหม? (ถ้าไม่แน่ใจ กดยกเลิกแล้วเช็ก “การจ่าย ▾” ก่อน)")) return;
   var pi=await sb.from("rev_credit_payments").insert({
     bill_id:id, pay_date:pdate||todayISO(), amount:amt, method:method, ref:ref.trim()||null, billing_note_no:noteNo.trim()||null, confirmed_by:by.trim()||null
   });
@@ -489,6 +500,19 @@ window.addBillManual=async function(){
   var date=document.getElementById("cb_date").value||todayISO();
   if(!cust){ alert("ใส่ชื่อลูกค้า"); return; }
   if(amt<=0){ alert("ใส่ยอดบิล"); return; }
+  /* 🛑 กันบิลซ้ำ — เลขบิลเดียวกันมีอยู่แล้วไหม (เคสวัดป่านาคำน้อย 15ก.ค.69: สร้างซ้ำแล้วจ่ายซ้ำ) */
+  if(bill){
+    var dup=await sb.from("rev_credit_bills").select("bill_no,customer,bill_date,total_amount,paid_amount,status,source").eq("bill_no",bill);
+    var D=(dup.data||[]);
+    if(D.length){
+      var info=D.map(function(x){
+        var st=(x.status==="paid"?"✓ จ่ายครบแล้ว":(x.status==="partial"?"◑ จ่ายบางส่วน "+fmt(x.paid_amount):"● ยังไม่จ่าย"));
+        return "• "+String(x.customer||"")+" · "+beDate(x.bill_date)+" · ยอด "+fmt(x.total_amount)+" · "+st+" ("+(x.source==="auto-form"?"ดูดจากฟอร์ม":x.source||"")+")";
+      }).join("\n");
+      alert("🛑 บิลเลข "+bill+" มีอยู่ในทะเบียนแล้ว "+D.length+" ใบ:\n\n"+info+"\n\nถ้าบิลนี้จ่ายครบแล้ว = ไม่ต้องสร้างใหม่ค่ะ\nถ้ายังไม่จ่าย = กด “+ จ่าย” ที่บิลเดิม (ค้นชื่อลูกค้าในช่องค้นหาด้านบน)\nถ้าบิลเดิมชื่อลูกค้าผิดจนหาไม่เจอ = ให้การเงินกด ✏️ แก้ชื่อ\n\n⚠️ สร้างซ้ำจะทำให้ยอดหนี้และยอดรับเงินเด้งเป็น 2 เท่า");
+      if(!confirm("ยืนยันว่าเป็นคนละบิลจริงๆ และต้องการสร้างบิลเลข "+bill+" เพิ่มอีกใบ?")) return;
+    }
+  }
   var by=prompt("บันทึกบิลลงบัญชี — ผู้บันทึก:","");
   if(by===null) return;
   var r=await sb.from("rev_credit_bills").insert({

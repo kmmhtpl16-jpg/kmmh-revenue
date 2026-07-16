@@ -378,6 +378,42 @@ async function _recomputeBill(id){
   await sb.from("rev_credit_bills").update({paid_amount:r2(paid),status:st}).eq("id",id);
   return {paid:r2(paid),total:r2(tot),status:st};
 }
+/* สร้างบิลลูกหนี้ SHOPEE จาก acc-billing (shopee_orders) — Shopee เป็นเจ้าของเลขบิล/ยอดตัวจริง
+   idempotent: สร้างเฉพาะเลขบิลที่ยังไม่มี + ซิงค์ยอดเฉพาะแถวที่ระบบนี้สร้างเอง (source=shopee-sync)
+   ไม่แตะบิลที่ออกใบกำกับชื่อลูกค้าจริง หรือบิลที่มาจากแหล่งอื่น */
+async function ensureCreditBills(){
+  if(!sbReady()) return {created:0,synced:0};
+  var r=await sb.from("shopee_orders").select("bill_no,bill_date,billed_amount").not("bill_no","is",null);
+  if(r.error) throw new Error("อ่านออเดอร์ Shopee ไม่ได้: "+r.error.message);
+  var agg={}; (r.data||[]).forEach(function(o){
+    var k=o.bill_no; if(!agg[k]) agg[k]={bill_no:k,total:0,date:o.bill_date||null};
+    agg[k].total=r2(agg[k].total+num(o.billed_amount));
+    if(o.bill_date && (!agg[k].date || o.bill_date<agg[k].date)) agg[k].date=o.bill_date;
+  });
+  var nos=Object.keys(agg); if(!nos.length) return {created:0,synced:0};
+  var existing=await _billsByNo(nos);
+  var toInsert=[], toSync=[], created=0, synced=0;
+  nos.forEach(function(k){
+    var a=agg[k], ex=existing[k];
+    if(!ex){
+      toInsert.push({source_key:"SHOPEE-SYNC-"+k, bill_no:k, customer:"SHOPEE", bill_date:a.date||todayISO(),
+        total_amount:a.total, paid_amount:0, status:"open", source:"shopee-sync",
+        note:"สร้างจากโปรแกรม Shopee (acc-billing)", created_by:"shopee-sync"});
+    } else if(ex.source==="shopee-sync" && Math.abs(num(ex.total_amount)-a.total)>0.01){
+      toSync.push({id:ex.id,total:a.total});
+    }
+  });
+  for(var i=0;i<toInsert.length;i+=100){
+    var ins=await sb.from("rev_credit_bills").upsert(toInsert.slice(i,i+100),{onConflict:"source_key",ignoreDuplicates:true});
+    if(ins.error) throw new Error("สร้างบิล Shopee ไม่ได้: "+ins.error.message);
+    created+=toInsert.slice(i,i+100).length;
+  }
+  for(var j=0;j<toSync.length;j++){
+    var u=await sb.from("rev_credit_bills").update({total_amount:toSync[j].total}).eq("id",toSync[j].id);
+    if(!u.error){ synced++; await _recomputeBill(toSync[j].id); }
+  }
+  return {created:created,synced:synced};
+}
 /* ตัดชำระอัตโนมัติ — คืน {posted:[], waiting:[], nobill:[], skipped:[]} */
 async function autoPostCredit(){
   if(!sbReady()) return null;
@@ -483,6 +519,7 @@ async function creditSync(manual){
   document.getElementById("creditCard").classList.remove("hide");
   if(box) box.innerHTML='<span class="muted">กำลังตรวจ…</span>';
   try{
+    await ensureCreditBills();
     var res=await autoPostCredit();
     if(res && res.posted.length){
       var t=res.posted.reduce(function(s,p){return s+p.give;},0), f=res.posted.reduce(function(s,p){return s+p.fee;},0);

@@ -19,6 +19,8 @@
   function pad2(n){ return String(n).padStart(2,"0"); }
   function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
   function normName(s){ return String(s||"").replace(/นางสาว|น\.ส\.|นาย|นาง|บริษัท|บจก\.|หจก\.|ร้าน|คุณ|จำกัด|\s|\+/g,""); }
+  // Shopee ใช้ข้อมูลจากโปรแกรม Shopee (acc-billing) เป็นหลัก — ชีตลงบัญชีจึงเป็นแค่บันทึกช่วยจำ ไม่ดูดมาสร้างบิลลูกหนี้
+  function isShopeeName(s){ var t=String(s||"").toLowerCase().replace(/\s/g,""); return t.indexOf("shop")>=0 || t.indexOf("ช้อป")>=0 || t.indexOf("ชอป")>=0 || t.indexOf("ช็อป")>=0; }
   var REGISTER_URL="ลูกหนี้ลงบัญชี.html";
   var OB_CACHE={};
 
@@ -428,6 +430,7 @@
       }
       if(name!=null && String(name).trim()!=="" && String(name).trim()!=="ยอดรวม" && num(amtR)>0){
         var nm=String(name).trim();
+        if(isShopeeName(nm)) continue;   // ⛔ ข้าม SHOPEE — สร้าง/ตัดหนี้จากโปรแกรม Shopee แทน
         var base=(dateISO||"")+"#"+normName(nm)+"#"+num(amtR);
         seq[base]=(seq[base]||0)+1;
         entries.push({source_key:base+"#"+seq[base], bill_no:null, customer:nm, amount:num(amtR)});

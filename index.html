@@ -833,6 +833,33 @@ async function renderDay(date, edit){
     html+=figRow("ใบลดหนี้",au.cn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     (function(){ var _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; var _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:(au.kplus_today!=null?au.kplus_today:null)); if(_fk==null||_rk==null){ html+=kCmp(_fk,_rk); return; } var _lti=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}):[]); var _lsum=_lti.reduce(function(s,x){return s+(+x.amt||0);},0); var _d=Math.round((_fk-_rk)*100)/100; if(_d<0 && Math.abs(_d)<=_lsum+1){ html+='<div class="kv"><span>K+ ฟอร์มแคชเชียร์ vs รายงาน</span><b style="color:#1d4ed8">'+TH(_fk)+' vs '+TH(_rk)+'</b></div><div class="muted" style="color:#1d4ed8">ℹ️ รายงานมากกว่าฟอร์ม '+TH0(-_d)+' — เป็น K+ หลัง 15:30 (ตัดรอบ) บิลออกวันถัดไป ปกติ ดูรายการด้านล่าง</div>'; } else { html+=kCmp(_fk,(_carryIn>1?Math.round((_rk+_carryIn)*100)/100:_rk)); } })();
+    /* 🚩 รายงาน K+ มากกว่าฟอร์ม = เงินเข้าจริงแต่ฟอร์มไม่มีบิลรองรับ
+       เดิมขึ้นแค่ข้อความเตือน ไม่บอกว่ารายการไหน และไม่ดันเข้ารอจับคู่ → เงินหลุดเงียบ
+       ตอนนี้: จับ K+ รายตัวกับเลขบิลในฟอร์มแบบตัวต่อตัว เหลือตัวไหน = กางให้เห็น + ปุ่มดันเข้ารอจับคู่ */
+    (function(){
+      var _rows=(da&&da.kplus_rows)?da.kplus_rows:null; if(!_rows||!_rows.length) return;
+      var _xf=((au.detail&&au.detail.xfer)||[]).filter(function(x){ return (+x.knv||0)>0; });
+      var _pool=_xf.map(function(x){ return {amt:(+x.knv||0), bill:normBill(x.bill), used:false}; });
+      var _miss=[];
+      _rows.forEach(function(r,i){
+        var amt=(+r.amt||0); if(amt<=0) return;
+        var hit=null;
+        for(var j=0;j<_pool.length;j++){ if(!_pool[j].used && Math.abs(_pool[j].amt-amt)<=1){ _pool[j].used=true; hit=_pool[j]; break; } }
+        if(!hit) _miss.push({i:i, amt:amt, t:String(r.t||""), name:String(r.name||"")});
+      });
+      if(!_miss.length) return;
+      var _mt=_miss.reduce(function(s,x){ return s+x.amt; },0);
+      var Q6=String.fromCharCode(39);
+      html+='<div style="margin:6px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px">'+
+        '<b style="color:#b91c1c">🚩 K+ เข้าจริงแต่ไม่มีบิลในฟอร์ม '+_miss.length+' รายการ · รวม '+TH(_mt)+'</b>'+
+        '<div class="muted" style="margin:2px 0 6px">เงินเข้าบัญชีแล้วแต่แคชเชียร์ไม่ได้ลงบิลของยอดนี้ในฟอร์ม — เช็กว่าเป็นบิลไหน ถ้ายังหาไม่เจอให้ดันเข้า “รอจับคู่” ไว้ก่อน เงินจะได้ไม่หลุด</div>'+
+        _miss.map(function(x){
+          var _pm=((pq&&pq.data)?pq.data:[]).find(function(pp){ return Math.abs((parseFloat(pp.amount)||0)-x.amt)<=1 && /K\+/.test(pp.source||""); });
+          var act=_pm?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):(_pm.status==="open"?' · รอจับคู่':''))+'</span>')
+                     :('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushKplusGap('+x.amt+','+Q6+(x.t||"")+Q6+','+Q6+date+Q6+',this)">ดันเข้ารอจับคู่</button>');
+          return '<div class="kv"><span>'+esc(x.t||"-")+(x.name?' · '+esc(x.name):'')+'</span><b>'+TH(x.amt)+' '+act+'</b></div>';
+        }).join("")+'</div>';
+    })();
     (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; const _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:null); const _lk=(au.detail&&au.detail.kplus_late!=null)?au.detail.kplus_late:0; if(_fk!=null&&_rk!=null){ var _impRaw=Math.round(((_fk-_rk)+_lk)*100)/100; const _imp=Math.round((_impRaw-_carryIn)*100)/100; var _carryBox=(_carryIn>1)?('<div style="margin:4px 0 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px">'+'<b style="color:#b45309">↩️ ยอดยกมาจาก '+beDate(_carryFrom)+' '+TH(_carryIn)+'<span class="muted"> · K+ หลัง 15:30 เมื่อวาน บิล '+esc(_carryBills.join(", "))+' (ปกติ)</span></b></div>'):"";
         if(_carryIn>1 && _imp<=1){ html+=_carryBox; } else if(_imp>1){ html+=_carryBox; const Q4=String.fromCharCode(39); if(_otherAcct.length){ const _mb=_otherAcct.map(function(x){return x.matched_bill_no;}).filter(Boolean).join(', '); const _allm=_otherAcct.every(function(x){return x.status==='matched';}); html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ ติดธงรับเข้าบัญชีอื่นแล้ว '+TH(_otherAcctSum)+(_allm?(' — จับคู่บิลแล้ว'+(_mb?(' '+esc(_mb)):'')):' — รอออกบิล/จับคู่')+'</b><div class="muted" style="margin:2px 0 0">ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' บันทึกเป็นเงินรับเข้าบัญชีอื่นเรียบร้อย ไม่ต้องติดธงซ้ำ</div><button class="btn sec" style="padding:3px 10px;margin:6px 0 0;border-color:#fca5a5;color:#b91c1c" onclick="reflagOtherAcct('+Q4+date+Q4+')">↩️ แนบสลิปผิด? ติดธงใหม่</button></div>'; } else { html+='<div style="margin:4px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px"><b style="color:#1d4ed8">🔎 ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' — น่าจะลูกค้าโอนเข้าบัญชีอื่น</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fk)+' − รายงาน '+TH(_rk)+')'+(_lk>0?' + K+หลัง15:30 '+TH(_lk):'')+' = '+TH(_imp)+'</div><button class="btn sec" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_imp+','+Q4+date+Q4+','+Q4+'K+ ฟอร์มเกินรายงาน-โอนบัญชีอื่น ('+beDate(date)+')'+Q4+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } } } })();
     (function(){ const _li=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}).map(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return {hhmm:m?m[1]+':'+m[2]:'',amt:r.amt,name:''};}):[]); if(_li.length){ const _nd=nextISO(date); const Q5=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_li.length+' รายการ รวม '+TH(_li.reduce((s,x)=>s+(x.amt||0),0))+') — ตัดรอบ (นับใน K+ วันนี้แล้ว) จับคู่เลขบิลที่ออก '+beDate(_nd)+'</b><div class="muted" style="margin:2px 0 4px">↩️ ยกไปเป็น <b>ยอดยกมา</b> ของวันที่ '+beDate(_nd)+'</div>'+_li.map(function(x){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), x.amt, 'knv'); var _pm=(!_mb)?((pq&&pq.data)?pq.data:[]).find(function(pp){return /ตัดรอบ/.test(pp.source||'')&&Math.abs((parseFloat(pp.amount)||0)-(x.amt||0))<=1;}):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):(_pm?('<span style="color:#15803d;font-weight:700">✓ จับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="matchKLateBill('+(x.amt||0)+','+Q5+(x.hhmm||'')+Q5+','+Q5+date+Q5+',this)">จับคู่บิล</button>')); return '<div class="kv"><span>'+(x.hhmm||'')+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' '+act+'</b></div>'; }).join('')+'</div>'; } })();
@@ -1042,6 +1069,18 @@ function lateKItems(auDetail, dailyRows){
 function xferBill(xf, amt, col){ if(!xf||!xf.length) return null; for(var i=0;i<xf.length;i++){ var x=xf[i];
   if((col==='knv'||col==='any')&&(x.knv||0)>0&&Math.abs((x.knv||0)-amt)<=1) return normBill(x.bill);
   if((col==='ksk'||col==='any')&&(x.ksk||0)>0&&Math.abs((x.ksk||0)-amt)<=1) return normBill(x.bill); } return null; }
+/* ดัน K+ ที่ไม่มีบิลในฟอร์ม เข้ากล่อง "รอจับคู่" ของวันนั้น — เงินจะได้ไม่หลุดเงียบ */
+async function pushKplusGap(amt, hhmm, dateIso, btn){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ดันเข้ารอจับคู่ได้เฉพาะสิทธิ์การเงินขึ้นไป"); return; }
+  if(!confirm("ดันยอด K+ "+TH(amt)+" บาท ("+(hhmm||"")+") ของวันที่ "+beDate(dateIso)+" เข้ากล่อง “รอจับคู่”?\n\nใช้เมื่อเงินเข้าจริงแล้วแต่หาบิลในฟอร์มไม่เจอ\nเงินจะไปรออยู่ในกล่องรอจับคู่ ให้ตามหาบิลแล้วจับคู่ทีหลังได้")) return;
+  var rec={ date:dateIso, amount:amt, source:"K+/QR", from_name:"K+ "+(hhmm||""), ref:"K+ เข้าจริงแต่ไม่มีบิลในฟอร์ม ("+beDate(dateIso)+(hhmm?" "+hhmm:"")+")", status:"open" };
+  var ins=await sb.from("rev_pending").insert(rec);
+  if(ins.error){ alert("ดันไม่สำเร็จ: "+ins.error.message); return; }
+  if(btn){ btn.outerHTML='<span style="color:#15803d;font-weight:700">✓ ดันแล้ว</span>'; }
+  if(window.loadPending) loadPending();
+  if(window._openDay) renderDay(window._openDay,false);
+}
 async function pushTransferPending(amt, name, dateIso){
   if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
   const rec={ date:dateIso, amount:amt, source:"โอนกสิกร", from_name:(name||""), ref:"โอนเข้าตรง (สเตทเมนต์)", status:"open" };

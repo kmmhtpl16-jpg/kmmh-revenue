@@ -71,7 +71,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.7 (+Shopee สิ้นเดือน)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.8 (เงินสดล้วน · ต้นทุนจาก ACC-BILLING)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -142,7 +142,7 @@ function isoFromExcel(v){
 }
 
 /* หมวดรายจ่ายมาตรฐาน (COGS = ต้นทุนสินค้า) */
-const CATS_DEFAULT=["ค่าซื้อสินค้า","ค่าแรง/เงินเดือน","ค่าขนส่ง","ค่าน้ำ-ไฟ-โทรศัพท์","ค่าเช่า","ค่าธรรมเนียม/ดอกเบี้ย","ภาษี","ซ่อมบำรุง","ของใช้สำนักงาน","การตลาด","อื่นๆ"];
+const CATS_DEFAULT=["ค่าซื้อสินค้า","ค่าแรง/เงินเดือน","ค่าขนส่ง","ค่าน้ำ-ไฟ-โทรศัพท์","ค่าเช่า","ดอกเบี้ยจ่าย (ธนาคาร)","ค่าธรรมเนียม/ดอกเบี้ย","ภาษี","ซ่อมบำรุง","ของใช้สำนักงาน","การตลาด","อื่นๆ"];
 function loadCustomCats(){ try{ const a=JSON.parse(localStorage.getItem("rev_custom_cats")||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
 function saveCustomCats(a){ try{ localStorage.setItem("rev_custom_cats",JSON.stringify(a)); }catch(e){} }
 /* รวมหมวดมาตรฐาน + หมวดที่ผู้ใช้เพิ่มเอง โดยให้ "อื่นๆ" อยู่ท้ายสุดเสมอ */
@@ -381,7 +381,7 @@ async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e,pc,pv,tp,adv,uob]=await Promise.all([
+    const [d,a,e,pc,pv,tp,adv,uob,mc]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
@@ -392,7 +392,9 @@ async function reloadAll(){
       /* 🅰️ จ่ายล่วงหน้า: โหลดทุกงวด (ข้ามช่วงวันที่) เพราะบิลมาเดือนถัดไป */
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("is_advance",true) : Promise.resolve({data:[]})),
       /* 🏦 เงินกู้ UOB: บิลที่จ่ายด้วยกู้ UOB (ทุกงวด) */
-      (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("uob_loan",true) : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("uob_loan",true) : Promise.resolve({data:[]})),
+      /* 📈 ต้นทุนขายรายเดือน (กรอกจาก ACC-BILLING) */
+      (ROLE==="owner" ? sb.from("rev_monthly_cogs").select("*") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
@@ -409,6 +411,7 @@ async function reloadAll(){
     STATE.exp=(e.data||[]).concat(STATE.petty.map(pcToExpRow));
     STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
     STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
+    STATE.mcogs={}; (mc&&!mc.error?(mc.data||[]):[]).forEach(function(r){ STATE.mcogs[r.month]=r; });
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
     await loadPayeeMap();
     renderAll();
@@ -619,7 +622,7 @@ function renderExpense(){
   });
 
   // ตารางรายจ่ายที่บันทึกแล้ว
-  const expsAll=[...STATE.exp].filter(x=>x.source!=="shopee_income"&&x.source!=="settlement").sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
+  const expsAll=[...STATE.exp].filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing").sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
   /* สถานะชำระ: บิลซื้อ = paid/credit · รายการอื่น = nonbill */
   const payKey=x=>x.source!=="acc_billing"?"nonbill":(x.pay_status==="paid"?"paid":"credit");
   const exps=expsAll.filter(x=>(!EXPF.cat||x.category===EXPF.cat)&&(!EXPF.pay||payKey(x)===EXPF.pay)&&(!EXPF.src||srcKeys(x).includes(EXPF.src)));
@@ -777,17 +780,9 @@ function renderExpense(){
       <button class="btn sm gray" onclick="addCustomCat()">🏷️ เพิ่มหมวด</button>
       <input id="m_desc" placeholder="รายละเอียด" style="min-width:180px">
       <input id="m_amt" type="number" step="0.01" placeholder="จำนวนเงิน" style="width:130px">
-      <label><input type="checkbox" id="m_cogs"> เป็นต้นทุนสินค้า (COGS)</label>
       <button class="btn" onclick="addManualExp()">บันทึก</button>
     </div>
     ${loadCustomCats().length?`<div class="muted" style="margin-top:8px">หมวดที่เพิ่มเอง: ${loadCustomCats().map(c=>`<span class="chip mn" style="margin:2px">${esc(c)} <a href="#" onclick="delCustomCat('${esc(c).replace(/'/g,"\\'")}');return false" style="color:#c00;text-decoration:none">✕</a></span>`).join(" ")}</div>`:""}
-  </div>
-
-  <div class="card">
-    <h3>📥 อัปรายงานซื้อจาก ACC-BILLING (Excel)</h3>
-    <div class="muted" style="margin-bottom:6px">ส่งออก “รายงานซื้อ แยกตามวันที่” จาก ACC-BILLING เป็น Excel แล้วเลือกไฟล์ที่นี่ — ระบบอ่านรายบิลแยกตามวันให้อัตโนมัติ (ไฟล์รูปแบบอื่นจะให้จับคู่คอลัมน์เอง)</div>
-    <input type="file" id="accfile" accept=".xlsx,.xls,.csv" onchange="loadAcc(this)">
-    <div id="acc_map"></div>
   </div>
 
   <div class="card">
@@ -848,7 +843,7 @@ function renderExpense(){
 
 async function addStmtExp(date,amt,btn,selId,ref){
   const cat=document.getElementById(selId).value;
-  const isCogs=cat==="ค่าซื้อสินค้า";
+  const isCogs=false; /* เงินสดล้วน: ไม่ติดธงต้นทุนจากเงินออกอีก (ต้นทุนขายรับจาก ACC-BILLING รายเดือน) */
   btn.disabled=true; btn.textContent="…";
   const {error}=await sb.from("rev_expenses").insert([{exp_date:date,category:cat,description:ref,amount:amt,source:"statement",ref:ref,is_cogs:isCogs,created_by:"owner"}]);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); btn.disabled=false; btn.textContent="➕ ลงรายจ่าย"; return; }
@@ -858,7 +853,7 @@ async function addStmtExp(date,amt,btn,selId,ref){
 window.bookAllKnown=async function(){
   var L=window.WD_KNOWN||[]; if(!L.length) return;
   if(!confirm("ลงรายจ่ายอัตโนมัติ "+L.length+" รายการที่ระบบจำหมวดได้แล้ว?\n\n(บัญชีใหม่ที่ยังไม่เคยจัด จะไม่ถูกแตะ — ต้องจัดเอง)")) return;
-  var rows=L.map(function(w){ return {exp_date:w.date,category:w.cat,description:w.ref,amount:w.amt,source:"statement",ref:w.ref,is_cogs:w.cat==="ค่าซื้อสินค้า",created_by:"owner"}; });
+  var rows=L.map(function(w){ return {exp_date:w.date,category:w.cat,description:w.ref,amount:w.amt,source:"statement",ref:w.ref,is_cogs:false,created_by:"owner"}; });
   var ins=await sb.from("rev_expenses").insert(rows);
   if(ins.error){ alert("ลงไม่สำเร็จ: "+ins.error.message); return; }
   for(var i=0;i<L.length;i++){ await rememberPayee(L[i].ref,L[i].cat,L[i].cat==="ค่าซื้อสินค้า",L[i].date); }
@@ -1119,9 +1114,8 @@ window.undoUobRepay=async function(id){
 async function addManualExp(){
   const date=document.getElementById("m_date").value, cat=document.getElementById("m_cat").value;
   const desc=document.getElementById("m_desc").value.trim(), amt=r2(document.getElementById("m_amt").value);
-  const cogs=document.getElementById("m_cogs").checked;
   if(!date||!(amt>0)){ alert("กรอกวันที่และจำนวนเงินให้ถูกต้อง"); return; }
-  const {error}=await sb.from("rev_expenses").insert([{exp_date:date,category:cat,description:desc,amount:amt,source:"manual",is_cogs:cogs,created_by:"owner"}]);
+  const {error}=await sb.from("rev_expenses").insert([{exp_date:date,category:cat,description:desc,amount:amt,source:"manual",is_cogs:false,created_by:"owner"}]);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   await reloadAll(); tab("expense");
 }
@@ -1328,7 +1322,7 @@ async function saveAcc(){
 let chartMon=null;
 function renderMonthly(){
   const el=document.getElementById("p_monthly");
-  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement");
+  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing");
   const months=[...new Set(EX.map(x=>monthKey(x.exp_date)))].sort();
   const cats=[...new Set(EX.map(x=>x.category))];
   const grid={}; months.forEach(m=>{grid[m]={};cats.forEach(c=>grid[m][c]=0);});
@@ -1363,7 +1357,7 @@ function renderCash(){
   const rev={},exp={}; months.forEach(m=>{rev[m]=0;exp[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
   STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
-  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
+  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
   let cum=0;
   let body=months.map(m=>{ const net=rev[m]-exp[m]; cum+=net;
     return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td><td class="n neg">${TH0(exp[m])}</td><td class="n ${net>=0?'pos':'neg'}">${TH0(net)}</td><td class="n">${TH0(cum)}</td></tr>`;
@@ -1402,8 +1396,8 @@ function renderGross(){
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null){ rev[m]+=num(a.machine_net); aud[m]++; } });
   STATE.audit.filter(a=>a.status==="วันหยุด").forEach(a=>{ const m=monthKey(a.date); if(hol[m]!=null) hol[m]++; });
   STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
-  /* "ซื้อในงวด" = รายจ่ายติดธงต้นทุน — ยังไม่ใช่ต้นทุนขาย */
-  STATE.exp.filter(x=>x.is_cogs&&x.source!=="settlement").forEach(x=>{ const m=monthKey(x.exp_date); if(buy[m]!=null) buy[m]+=num(x.amount); });
+  /* "เงินจ่ายซื้อ (เงินสด)" = ค่าซื้อสินค้าที่จ่ายจริงในงวด (กระแสเงินสด ไม่ใช่ต้นทุนขาย) */
+  STATE.exp.filter(x=>x.category==="ค่าซื้อสินค้า"&&x.source!=="settlement"&&x.source!=="acc_billing").forEach(x=>{ const m=monthKey(x.exp_date); if(buy[m]!=null) buy[m]+=num(x.amount); });
 
   /* จำนวนวันของเดือนนั้น ที่อยู่ในช่วงวันที่ที่เลือก (ใช้เช็คความครบของข้อมูล) */
   const from=gFrom(), to=gTo();
@@ -1415,10 +1409,9 @@ function renderGross(){
     rngD[m]=a>b?0:Math.round((new Date(b)-new Date(a))/86400000)+1;
   });
 
-  const estPct=r2(document.getElementById("gp_est")?document.getElementById("gp_est").value:0);
-  const useEst=estPct>0;
-  /* ต้นทุนขาย: ใช้ % ประมาณกับ "ทุกเดือน" — ถ้าไม่ใส่ % = คำนวณไม่ได้ (null) ไม่เดาให้ */
-  const cogsOf=m=>useEst?rev[m]*estPct/100:null;
+  /* ต้นทุนขาย = ตัวเลขที่กรอกจากรายงาน ACC-BILLING รายเดือน (ตาราง rev_monthly_cogs) — หน้านี้ไม่คิดเอง */
+  const MC=STATE.mcogs||{};
+  const cogsOf=m=>{ const r=MC[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; };
 
   const incomplete=months.filter(m=>(aud[m]+hol[m])<rngD[m]);
   let warn="";
@@ -1427,11 +1420,8 @@ function renderGross(){
       incomplete.map(m=>`${beMonth(m)}: ตรวจแล้ว ${aud[m]} วัน${hol[m]?" (+วันหยุด "+hol[m]+")":""} จาก ${rngD[m]} วันในช่วงที่เลือก`).join(" · ")+
       `<br>ยอดขายที่เห็นจึงต่ำกว่าจริง อย่าเพิ่งใช้ตัดสินใจ</div>`;
   }
-  const basisNote=useEst
-    ? `<div class="note" style="background:#ecfdf5;border-color:#6ee7b7">✅ ต้นทุนขายคำนวณจาก <b>ยอดขาย × ${estPct}%</b> (ค่าประมาณ ใช้กับทุกเดือน)</div>`
-    : `<div class="note" style="background:#fffbeb;border-color:#fcd34d">⚠️ <b>ยังคำนวณกำไรขั้นต้นไม่ได้</b> — “ซื้อในงวด” ไม่ใช่ “ต้นทุนขาย” (ของที่ซื้อมายังอยู่ในสต๊อก ยังไม่ได้ขาย)<br>
-       สูตรจริง: <b>ต้นทุนขาย = สต๊อกต้นงวด + ซื้อในงวด − สต๊อกปลายงวด</b><br>
-       ตอนนี้ยังไม่มีมูลค่าสต๊อกในระบบ → ใส่ “% ต้นทุนโดยประมาณ” ด้านล่างเพื่อดูกำไรคร่าวๆ ได้</div>`;
+  const missing=months.filter(m=>cogsOf(m)==null&&rev[m]>0);
+  const basisNote=`<div class="note" style="background:#eff6ff;border-color:#93c5fd">📈 <b>กำไรขั้นต้น = ยอดขาย POS − ต้นทุนขาย</b> · ต้นทุนขาย <b>กรอกจากรายงาน ACC-BILLING</b> เดือนละ 1 ตัว (ช่องแก้ไขในคอลัมน์ “ต้นทุนขาย”) — หน้านี้ไม่คิดต้นทุนเอง${missing.length?`<br>⏳ ยังไม่กรอกต้นทุนขาย: <b>${missing.map(beMonth).join(" · ")}</b>`:""}</div>`;
 
   let body=months.map(m=>{
     const cg=cogsOf(m);
@@ -1440,45 +1430,59 @@ function renderGross(){
     return `<tr><td>${beMonth(m)} ${part?'<span class="chip" style="background:#dc2626;color:#fff">ข้อมูลไม่ครบ</span>':''}</td>
       <td class="n pos">${TH0(rev[m])}</td>
       <td class="n" style="color:#a16207">${buy[m]>0?TH0(buy[m]):"—"}</td>
-      <td class="n neg">${cg==null?"—":TH0(cg)}${cg!=null?' <span class="chip kp">ประมาณ</span>':''}</td>
+      <td class="n"><input type="number" step="0.01" min="0" id="mc_${m}" value="${cg==null?'':cg}" placeholder="กรอก" onchange="saveMonthlyCogs('${m}')" style="width:118px;text-align:right"></td>
       <td class="n ${gp==null?'':(gp>=0?'pos':'neg')}">${gp==null?"—":TH0(gp)}</td>
       <td class="n">${mg==null?"—":mg.toFixed(1)+"%"}</td></tr>`;
   }).join("");
 
   const tR=months.reduce((s,m)=>s+rev[m],0);
   const tB=months.reduce((s,m)=>s+buy[m],0);
-  const tC=useEst?months.reduce((s,m)=>s+cogsOf(m),0):null;
-  const tGP=tC==null?null:tR-tC, tMg=(tGP==null||tR<=0)?null:(tGP/tR*100);
+  const entered=months.filter(m=>cogsOf(m)!=null);
+  const tC=entered.reduce((s,m)=>s+cogsOf(m),0);
+  const tGP=entered.length?entered.reduce((s,m)=>s+(rev[m]-cogsOf(m)),0):null;
+  const revEnt=entered.reduce((s,m)=>s+rev[m],0);
+  const tMg=(tGP==null||revEnt<=0)?null:(tGP/revEnt*100);
 
   el.innerHTML=`
   <div class="card">
     <h3>📈 กำไรขั้นต้น (ยอดขาย − ต้นทุนขาย)</h3>
     ${warn}
     ${basisNote}
-    <div class="row" style="margin-bottom:8px">
-      <label>ประมาณต้นทุน % ของยอดขาย (เว้นว่าง = ไม่คำนวณกำไร)</label>
-      <input type="number" id="gp_est" step="1" min="0" max="100" style="width:90px" value="${estPct||''}" oninput="renderGross()"> %
-    </div>
     ${months.length?`<div class="scroll"><table>
-      <thead><tr><th>เดือน</th><th class="n">ยอดขาย</th><th class="n">ซื้อในงวด</th><th class="n">ต้นทุนขาย</th><th class="n">กำไรขั้นต้น</th><th class="n">% กำไร</th></tr></thead>
+      <thead><tr><th>เดือน</th><th class="n">ยอดขาย POS</th><th class="n">เงินจ่ายซื้อ (เงินสด)</th><th class="n">ต้นทุนขาย (ACC-BILLING)</th><th class="n">กำไรขั้นต้น</th><th class="n">% กำไร</th></tr></thead>
       <tbody>${body}</tbody>
-      <tfoot><tr class="tot"><td>รวม</td><td class="n">${TH0(tR)}</td><td class="n">${TH0(tB)}</td>
-        <td class="n">${tC==null?"—":TH0(tC)}</td><td class="n">${tGP==null?"—":TH0(tGP)}</td>
+      <tfoot><tr class="tot"><td>รวม${entered.length&&entered.length<months.length?" (กำไรเฉพาะเดือนที่กรอก)":""}</td><td class="n">${TH0(tR)}</td><td class="n">${TH0(tB)}</td>
+        <td class="n">${entered.length?TH0(tC):"—"}</td><td class="n ${tGP==null?'':(tGP>=0?'pos':'neg')}">${tGP==null?"—":TH0(tGP)}</td>
         <td class="n">${tMg==null?"—":tMg.toFixed(1)+"%"}</td></tr></tfoot>
     </table></div>
-    <div class="muted" style="margin-top:6px">“ซื้อในงวด” = เงินที่จ่ายซื้อของเข้าสต๊อก · “ต้นทุนขาย” = ต้นทุนเฉพาะของที่ขายออกไปจริง · สองอันนี้ไม่เท่ากัน เดือนที่สั่งของเยอะ “ซื้อ” จะสูงแต่ไม่ได้แปลว่าขาดทุน</div>
+    <div class="muted" style="margin-top:6px">“เงินจ่ายซื้อ (เงินสด)” = เงินที่จ่ายซื้อของจริงในเดือน (กระแสเงินสด) · “ต้นทุนขาย” = ต้นทุนเฉพาะของที่ขายออกไปจริง กรอกจากรายงาน ACC-BILLING · สองอันนี้ไม่เท่ากัน</div>
     <canvas id="cGross" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีข้อมูลยอดขายในช่วงนี้</div>`}
   </div>`;
   if(months.length){
     const ctx=document.getElementById("cGross"); if(chartGross) chartGross.destroy();
     const ds=[
       {type:"bar",label:"ยอดขาย",data:months.map(m=>rev[m]),backgroundColor:"#bbf7d0"},
-      {type:"bar",label:"ซื้อในงวด",data:months.map(m=>buy[m]),backgroundColor:"#fde68a"}
+      {type:"bar",label:"เงินจ่ายซื้อ (เงินสด)",data:months.map(m=>buy[m]),backgroundColor:"#fde68a"}
     ];
-    if(useEst) ds.push({type:"line",label:"กำไรขั้นต้น (ประมาณ)",data:months.map(m=>rev[m]-cogsOf(m)),borderColor:"#16a34a",backgroundColor:"#16a34a",tension:.2});
+    if(entered.length) ds.push({type:"line",label:"กำไรขั้นต้น",data:months.map(m=>cogsOf(m)==null?null:rev[m]-cogsOf(m)),borderColor:"#16a34a",backgroundColor:"#16a34a",tension:.2,spanGaps:true});
     chartGross=new Chart(ctx,{data:{labels:months.map(beMonth),datasets:ds},options:{scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
   }
 }
+window.saveMonthlyCogs=async function(m){
+  const inp=document.getElementById("mc_"+m); if(!inp||!sb) return;
+  const raw=String(inp.value||"").trim();
+  try{
+    if(raw===""){ await sb.from("rev_monthly_cogs").delete().eq("month",m); if(STATE.mcogs) delete STATE.mcogs[m]; }
+    else{
+      const val=r2(inp.value);
+      const row={month:m,cogs:val,updated_by:ROLE||"owner",updated_at:new Date().toISOString()};
+      const {error}=await sb.from("rev_monthly_cogs").upsert(row,{onConflict:"month"});
+      if(error){ alert("บันทึกต้นทุนขายไม่สำเร็จ: "+error.message); return; }
+      if(!STATE.mcogs) STATE.mcogs={}; STATE.mcogs[m]=row;
+    }
+    renderGross();
+  }catch(e){ alert("ผิดพลาด: "+e.message); }
+};
 
 /* ================= BOOT ================= */
 (async function(){

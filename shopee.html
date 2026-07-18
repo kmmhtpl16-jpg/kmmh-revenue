@@ -414,6 +414,13 @@ async function ensureCreditBills(){
   }
   return {created:created,synced:synced};
 }
+/* ลายเซ็นชุดออเดอร์ (deterministic) — ใช้ทำ batch_ref ให้ไม่ชนกันเวลาบิลเดียว/วันจ่ายเดียว
+   แต่คนละรอบนำเข้า (ออเดอร์คนละชุด) จะได้ batch คนละตัว ไม่โดน dedup ข้ามยอดหาย */
+function _oSig(orders){
+  var s=orders.map(function(o){return o.order_no;}).sort().join("|");
+  var h=5381; for(var i=0;i<s.length;i++){ h=((h*33)^s.charCodeAt(i))>>>0; }
+  return ("00000000"+h.toString(16)).slice(-8);
+}
 /* ตัดชำระอัตโนมัติ — คืน {posted:[], waiting:[], nobill:[], skipped:[]} */
 async function autoPostCredit(){
   if(!sbReady()) return null;
@@ -453,9 +460,11 @@ async function autoPostCredit(){
     var netRecv=r2(orders.reduce(function(s,o){ return s+num(o.payout_net); },0));
     var feeAmt =r2(Math.abs(orders.reduce(function(s,o){ return s+num(o.payout_fee); },0)));
     var payDate=orders.map(function(o){return o.payout_date;}).filter(Boolean).sort().pop()||todayISO();
-    var batch="SHOPEE-"+bno+"-"+payDate;
+    var sig=_oSig(orders);
+    var batch="SHOPEE-"+bno+"-"+payDate+"-"+sig;
 
-    // กันซ้ำระดับ batch (เผื่อ credit_posted ไม่ถูกติ๊กเพราะ error กลางทาง)
+    // กันซ้ำระดับ batch = "ชุดออเดอร์นี้เคยลงไปแล้วหรือยัง" (batch ผูกลายเซ็นชุดออเดอร์
+    // จึงไม่ชนกับ payout ก้อนอื่นของบิลเดียว/วันเดียว — กันเคสยอดหาย 984)
     var dup=await sb.from("rev_credit_payments").select("id").eq("batch_ref",batch).limit(1);
     if(dup.data&&dup.data.length){ await _markPosted(orders,batch); res.skipped.push({bill_no:bno,why:"ลงรอบนี้ไปแล้ว"}); continue; }
 
@@ -467,7 +476,7 @@ async function autoPostCredit(){
     if(ins.error) throw new Error("ตัดบิล "+bno+" ไม่ได้: "+ins.error.message);
 
     if(feeAmt>0.01){
-      var fref="shopee-fee-"+bno+"-"+payDate;
+      var fref="shopee-fee-"+bno+"-"+payDate+"-"+sig;
       var fd=await sb.from("rev_expenses").select("id").eq("ref",fref).limit(1);
       if(!(fd.data&&fd.data.length)){
         var ex=await sb.from("rev_expenses").insert([{
@@ -489,6 +498,45 @@ async function _markPosted(orders,batch){
   for(var i=0;i<nos.length;i+=100){
     await sb.from("shopee_orders").update({credit_posted:true,credit_batch:batch,credit_posted_at:new Date().toISOString()}).in("order_no",nos.slice(i,i+100));
   }
+}
+/* ตาข่ายกันพลาด (self-heal): ไล่ทุกบิล shopee-sync เทียบยอดที่ "ควรจ่ายแล้ว"
+   (Σ billed ของออเดอร์ที่ Shopee จ่ายแล้ว, ปิดพอดีถ้าจ่ายครบ) กับ paid_amount ที่บันทึกจริง
+   ถ้าน้อยกว่า = มีออเดอร์ที่ถูกติ๊ก posted แต่ยอดไม่เข้า → ลงรายการเติมให้ครบ แล้ว recompute
+   idempotent เพราะเติมเฉพาะ "ส่วนที่ขาด" — รอบต่อไปขาด=0 จะไม่ทำอะไร */
+async function reconcileShopeeBills(){
+  if(!sbReady()) return {fixed:0,amount:0};
+  var r=await sb.from("shopee_orders").select("bill_no,paid,billed_amount,payout_date").not("bill_no","is",null);
+  if(r.error) throw new Error(r.error.message);
+  var byBill={};
+  (r.data||[]).forEach(function(o){
+    var k=o.bill_no; if(!byBill[k]) byBill[k]={all:[],paid:[]};
+    byBill[k].all.push(o); if(o.paid) byBill[k].paid.push(o);
+  });
+  var nos=Object.keys(byBill); if(!nos.length) return {fixed:0,amount:0};
+  var bills=await _billsByNo(nos);
+  var fixed=0, total=0;
+  for(var i=0;i<nos.length;i++){
+    var bno=nos[i], b=bills[bno];
+    if(!b || b.source!=="shopee-sync") continue; // แตะเฉพาะบิลที่โปรแกรม Shopee ดูแลเอง
+    var grp=byBill[bno];
+    var allPaid=grp.all.length>0 && grp.all.every(function(o){return !!o.paid;});
+    var billedPaid=r2(grp.paid.reduce(function(s,o){return s+num(o.billed_amount);},0));
+    var tot=num(b.total_amount);
+    var expected=allPaid ? r2(tot) : r2(Math.min(billedPaid,tot));
+    var short=r2(expected-num(b.paid_amount));
+    if(short>0.01){
+      var payDate=grp.paid.map(function(o){return o.payout_date;}).filter(Boolean).sort().pop()||todayISO();
+      var ins=await sb.from("rev_credit_payments").insert([{
+        bill_id:b.id, pay_date:payDate, amount:short, method:CREDIT_METHOD,
+        ref:"Shopee เติมยอดที่ตกหล่น (ระบบตรวจสอบยอดคงเหลืออัตโนมัติ)",
+        batch_ref:"SHOPEE-RECON-"+bno+"-"+payDate, confirmed_by:"shopee-reconcile"
+      }]);
+      if(ins.error) throw new Error("เติมยอดบิล "+bno+" ไม่ได้: "+ins.error.message);
+      await _recomputeBill(b.id);
+      fixed++; total=r2(total+short);
+    }
+  }
+  return {fixed:fixed,amount:total};
 }
 /* ตรวจว่ายอด 2 โปรแกรมตรงกันไหม */
 async function creditCheck(){
@@ -521,9 +569,13 @@ async function creditSync(manual){
   try{
     await ensureCreditBills();
     var res=await autoPostCredit();
+    var rec=await reconcileShopeeBills();
     if(res && res.posted.length){
       var t=res.posted.reduce(function(s,p){return s+p.give;},0), f=res.posted.reduce(function(s,p){return s+p.fee;},0);
-      msg.innerHTML='<div class="okbox">💰 ตัดชำระลูกหนี้ SHOPEE อัตโนมัติ '+res.posted.length+' บิล รวม '+fmt(t)+' บาท · ลงค่าธรรมเนียม '+fmt(f)+' บาท (ต้นทุนขาย)</div>';
+      var recMsg=(rec&&rec.fixed)?' · 🩹 เติมยอดตกหล่น '+rec.fixed+' บิล '+fmt(rec.amount)+' บาท':'';
+      msg.innerHTML='<div class="okbox">💰 ตัดชำระลูกหนี้ SHOPEE อัตโนมัติ '+res.posted.length+' บิล รวม '+fmt(t)+' บาท · ลงค่าธรรมเนียม '+fmt(f)+' บาท (ต้นทุนขาย)'+recMsg+'</div>';
+    } else if(rec && rec.fixed){
+      msg.innerHTML='<div class="okbox">🩹 ตรวจพบยอดตกหล่น เติมให้ครบแล้ว '+rec.fixed+' บิล รวม '+fmt(rec.amount)+' บาท</div>';
     } else if(manual){ msg.innerHTML='<div class="muted">ไม่มีรายการใหม่ให้ตัดชำระ</div>'; }
     await creditRender(res);
     reload();

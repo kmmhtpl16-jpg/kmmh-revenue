@@ -217,7 +217,7 @@
       var rows=(r.data||[]), n=0;
       for(var i=0;i<rows.length;i++){
         var bn=matchBillNo(rows[i].customer, rows[i].total_amount);
-        if(bn){ var u=await sb.from("rev_credit_bills").update({bill_no:bn}).eq("id",rows[i].id); if(!u.error) n++; }
+        if(bn){ var _P=_machinePos(),_pn=(_P&&_P.billCust?String(_P.billCust[bn]||"").trim():""),_upd={bill_no:bn}; if(_pn&&_pn!==rows[i].customer)_upd.customer=_pn; var u=await sb.from("rev_credit_bills").update(_upd).eq("id",rows[i].id); if(!u.error) n++; }
       }
       if(n>0) loadCreditBills();
       return n;

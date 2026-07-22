@@ -166,6 +166,20 @@ var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ console.warn("sb init",e); }
 function sbReady(){ return (typeof sb!=="undefined" && sb); }
+/* ── บัตรผ่าน owner อัตโนมัติ (เหมือน index.html) ── */
+var LOGIN_FN_URL=SB_URL+"/functions/v1/login"; var OWNER_PIN="0402";
+async function ensureOwnerSession(){
+  if(!sb) return false;
+  try{
+    var s=(await sb.auth.getSession()).data.session;
+    var role=null; if(s){ try{ role=JSON.parse(atob(s.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata.role; }catch(_e){} }
+    if(s && role==="owner") return true;
+    var resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:OWNER_PIN})});
+    var j=await resp.json();
+    if(resp.ok && j && j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; }
+  }catch(e){ console.error("ensureOwnerSession",e); }
+  return false;
+}
 
 /* ---------- helpers ---------- */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
@@ -645,7 +659,7 @@ window.cancelBillingNote=async function(id){
 /* ---------- boot ---------- */
 function boot(){
   document.getElementById("cb_date").value=todayISO();
-  loadNotes(); loadRegister();
+  ensureOwnerSession().then(function(){ loadNotes(); loadRegister(); });
 }
 window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
 (function(){ try{ var _r=localStorage.getItem("rev_role"); if(_r&&["cashier","finance","owner"].indexOf(_r)>=0){ ROLE=_r; var _g=document.getElementById("gate"); if(_g)_g.style.display="none"; applyGating(); boot(); } }catch(e){} })();

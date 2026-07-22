@@ -171,6 +171,22 @@ const SB_URL = "https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY = "sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 let sb = null;
 try { sb = window.supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn("supabase init failed", e); }
+/* ── บัตรผ่าน owner อัตโนมัติ: ถ้า session ที่ค้างไม่ใช่ owner (พนักงาน/หมดอายุ) ให้มินต์ owner ใหม่ทับ ── */
+const LOGIN_FN_URL = SB_URL + "/functions/v1/login";
+const OWNER_PIN = "0402";
+async function ensureOwnerSession(){
+  if(!sb) return false;
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    let role=null;
+    if(session){ try{ role = JSON.parse(atob(session.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata?.role; }catch(_e){} }
+    if(session && role==="owner") return true;
+    const resp = await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:OWNER_PIN})});
+    const j = await resp.json();
+    if(resp.ok && j && j.access_token){ await sb.auth.setSession({access_token:j.access_token, refresh_token:j.refresh_token}); return true; }
+  }catch(e){ console.error("ensureOwnerSession", e); }
+  return false;
+}
 function beDate(s){ if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); }
 function pad2(n){ return String(n).padStart(2,"0"); }
 function isoFromExcel(v){
@@ -774,8 +790,7 @@ function renderItems(det, edit, _deps, _pays){ det=det||{};
   if(edit) h+='<button class="btn sec" type="button" style="padding:3px 9px;margin-top:4px" onclick="addCnRow()">+ เพิ่มใบลดหนี้</button>';
   (function(){ var _pp=(!edit && _pays)?_pays:[]; if(_pp.length){ var _pt=0;
     h+='<div style="font-weight:700;margin:14px 0 4px;color:#15803d">💰 จ่ายหนี้ (ลูกหนี้จ่ายคืนหนี้เก่า — รับเข้าวันนี้)</div>';
-    var _canFin=(ROLE==="finance"||ROLE==="owner");
-    h+='<table><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>'+_pp.map(function(pp){ var bi=pp.rev_credit_bills||{}; _pt+=num(pp.amount); return '<tr><td>'+esc(bi.customer||"—")+'</td><td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td><td class="num" style="color:#15803d;font-weight:600">'+TH(pp.amount)+'</td><td>'+esc(pp.method||"")+'</td><td style="font-size:11px;color:#64748b">'+esc(pp.ref||"")+'</td><td>'+(_canFin?'<button class="btn sec" style="padding:2px 7px;font-size:11px;color:#b91c1c" title="ยกเลิกการตัดยอดนี้ (ถอนออกจากบิล)" onclick="unpayCredit(\''+pp.id+'\')">✕ ยกเลิก</button>':'<span class="muted" style="font-size:11px">🔒</span>')+'</td></tr>'; }).join("")+'<tr class="tot"><td colspan="2">รวมจ่ายหนี้</td><td class="num" style="color:#15803d">'+TH(_pt)+'</td><td colspan="3"></td></tr></tbody></table>';
+    h+='<table><thead><tr><th>ลูกค้า</th><th>บิลที่ตัด</th><th>ยอดจ่าย</th><th>วิธี</th><th>หมายเหตุ</th></tr></thead><tbody>'+_pp.map(function(pp){ var bi=pp.rev_credit_bills||{}; _pt+=num(pp.amount); return '<tr><td>'+esc(bi.customer||"—")+'</td><td>'+esc(bi.bill_no||("บิล "+beDate(bi.bill_date)))+'</td><td class="num" style="color:#15803d;font-weight:600">'+TH(pp.amount)+'</td><td>'+esc(pp.method||"")+'</td><td style="font-size:11px;color:#64748b">'+esc(pp.ref||"")+'</td></tr>'; }).join("")+'<tr class="tot"><td colspan="2">รวมจ่ายหนี้</td><td class="num" style="color:#15803d">'+TH(_pt)+'</td><td colspan="2"></td></tr></tbody></table>';
   } })();
   const ex=det.ex||[];
   h+='<div style="font-weight:700;margin:14px 0 4px">💸 คืนเงิน/มัดจำ'+(edit?' — แก้ไขได้':'')+'</div>';
@@ -792,7 +807,7 @@ async function renderDay(date, edit){
   window._openDay = edit ? null : date;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
   const _dShift=function(iso,n){ const p=String(iso).slice(0,10).split("-"); const dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
-  const [a,d,pq,dp,pyq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)), sb.from("rev_credit_payments").select("id,bill_id,amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",date) ]);
+  const [a,d,pq,dp,pyq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)), sb.from("rev_credit_payments").select("amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",date) ]);
   const au=a.data, da=d.data;
   const _deps=(dp&&dp.data)?dp.data:[];
   const _pays=(pyq&&pyq.data)?pyq.data:[];
@@ -835,33 +850,6 @@ async function renderDay(date, edit){
     html+=figRow("ใบลดหนี้",au.cn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     (function(){ var _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; var _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:(au.kplus_today!=null?au.kplus_today:null)); if(_fk==null||_rk==null){ html+=kCmp(_fk,_rk); return; } var _lti=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}):[]); var _lsum=_lti.reduce(function(s,x){return s+(+x.amt||0);},0); var _d=Math.round((_fk-_rk)*100)/100; if(_d<0 && Math.abs(_d)<=_lsum+1){ html+='<div class="kv"><span>K+ ฟอร์มแคชเชียร์ vs รายงาน</span><b style="color:#1d4ed8">'+TH(_fk)+' vs '+TH(_rk)+'</b></div><div class="muted" style="color:#1d4ed8">ℹ️ รายงานมากกว่าฟอร์ม '+TH0(-_d)+' — เป็น K+ หลัง 15:30 (ตัดรอบ) บิลออกวันถัดไป ปกติ ดูรายการด้านล่าง</div>'; } else { html+=kCmp(_fk,(_carryIn>1?Math.round((_rk+_carryIn)*100)/100:_rk)); } })();
-    /* 🚩 รายงาน K+ มากกว่าฟอร์ม = เงินเข้าจริงแต่ฟอร์มไม่มีบิลรองรับ
-       เดิมขึ้นแค่ข้อความเตือน ไม่บอกว่ารายการไหน และไม่ดันเข้ารอจับคู่ → เงินหลุดเงียบ
-       ตอนนี้: จับ K+ รายตัวกับเลขบิลในฟอร์มแบบตัวต่อตัว เหลือตัวไหน = กางให้เห็น + ปุ่มดันเข้ารอจับคู่ */
-    (function(){
-      var _rows=(da&&da.kplus_rows)?da.kplus_rows:null; if(!_rows||!_rows.length) return;
-      var _xf=((au.detail&&au.detail.xfer)||[]).filter(function(x){ return (+x.knv||0)>0; });
-      var _pool=_xf.map(function(x){ return {amt:(+x.knv||0), bill:normBill(x.bill), used:false}; });
-      var _miss=[];
-      _rows.forEach(function(r,i){
-        var amt=(+r.amt||0); if(amt<=0) return;
-        var hit=null;
-        for(var j=0;j<_pool.length;j++){ if(!_pool[j].used && Math.abs(_pool[j].amt-amt)<=1){ _pool[j].used=true; hit=_pool[j]; break; } }
-        if(!hit) _miss.push({i:i, amt:amt, t:String(r.t||""), name:String(r.name||"")});
-      });
-      if(!_miss.length) return;
-      var _mt=_miss.reduce(function(s,x){ return s+x.amt; },0);
-      var Q6=String.fromCharCode(39);
-      html+='<div style="margin:6px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px">'+
-        '<b style="color:#b91c1c">🚩 K+ เข้าจริงแต่ไม่มีบิลในฟอร์ม '+_miss.length+' รายการ · รวม '+TH(_mt)+'</b>'+
-        '<div class="muted" style="margin:2px 0 6px">เงินเข้าบัญชีแล้วแต่แคชเชียร์ไม่ได้ลงบิลของยอดนี้ในฟอร์ม — เช็กว่าเป็นบิลไหน ถ้ายังหาไม่เจอให้ดันเข้า “รอจับคู่” ไว้ก่อน เงินจะได้ไม่หลุด</div>'+
-        _miss.map(function(x){
-          var _pm=((pq&&pq.data)?pq.data:[]).find(function(pp){ return Math.abs((parseFloat(pp.amount)||0)-x.amt)<=1 && /K\+/.test(pp.source||""); });
-          var act=_pm?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):(_pm.status==="open"?' · รอจับคู่':''))+'</span>')
-                     :('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushKplusGap('+x.amt+','+Q6+(x.t||"")+Q6+','+Q6+date+Q6+',this)">ดันเข้ารอจับคู่</button>');
-          return '<div class="kv"><span>'+esc(x.t||"-")+(x.name?' · '+esc(x.name):'')+'</span><b>'+TH(x.amt)+' '+act+'</b></div>';
-        }).join("")+'</div>';
-    })();
     (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; const _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:null); const _lk=(au.detail&&au.detail.kplus_late!=null)?au.detail.kplus_late:0; if(_fk!=null&&_rk!=null){ var _impRaw=Math.round(((_fk-_rk)+_lk)*100)/100; const _imp=Math.round((_impRaw-_carryIn)*100)/100; var _carryBox=(_carryIn>1)?('<div style="margin:4px 0 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px">'+'<b style="color:#b45309">↩️ ยอดยกมาจาก '+beDate(_carryFrom)+' '+TH(_carryIn)+'<span class="muted"> · K+ หลัง 15:30 เมื่อวาน บิล '+esc(_carryBills.join(", "))+' (ปกติ)</span></b></div>'):"";
         if(_carryIn>1 && _imp<=1){ html+=_carryBox; } else if(_imp>1){ html+=_carryBox; const Q4=String.fromCharCode(39); if(_otherAcct.length){ const _mb=_otherAcct.map(function(x){return x.matched_bill_no;}).filter(Boolean).join(', '); const _allm=_otherAcct.every(function(x){return x.status==='matched';}); html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ ติดธงรับเข้าบัญชีอื่นแล้ว '+TH(_otherAcctSum)+(_allm?(' — จับคู่บิลแล้ว'+(_mb?(' '+esc(_mb)):'')):' — รอออกบิล/จับคู่')+'</b><div class="muted" style="margin:2px 0 0">ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' บันทึกเป็นเงินรับเข้าบัญชีอื่นเรียบร้อย ไม่ต้องติดธงซ้ำ</div><button class="btn sec" style="padding:3px 10px;margin:6px 0 0;border-color:#fca5a5;color:#b91c1c" onclick="reflagOtherAcct('+Q4+date+Q4+')">↩️ แนบสลิปผิด? ติดธงใหม่</button></div>'; } else { html+='<div style="margin:4px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px"><b style="color:#1d4ed8">🔎 ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' — น่าจะลูกค้าโอนเข้าบัญชีอื่น</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fk)+' − รายงาน '+TH(_rk)+')'+(_lk>0?' + K+หลัง15:30 '+TH(_lk):'')+' = '+TH(_imp)+'</div><button class="btn sec" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_imp+','+Q4+date+Q4+','+Q4+'K+ ฟอร์มเกินรายงาน-โอนบัญชีอื่น ('+beDate(date)+')'+Q4+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } } } })();
     (function(){ const _li=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}).map(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return {hhmm:m?m[1]+':'+m[2]:'',amt:r.amt,name:''};}):[]); if(_li.length){ const _nd=nextISO(date); const Q5=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_li.length+' รายการ รวม '+TH(_li.reduce((s,x)=>s+(x.amt||0),0))+') — ตัดรอบ (นับใน K+ วันนี้แล้ว) จับคู่เลขบิลที่ออก '+beDate(_nd)+'</b><div class="muted" style="margin:2px 0 4px">↩️ ยกไปเป็น <b>ยอดยกมา</b> ของวันที่ '+beDate(_nd)+'</div>'+_li.map(function(x){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), x.amt, 'knv'); var _pm=(!_mb)?((pq&&pq.data)?pq.data:[]).find(function(pp){return /ตัดรอบ/.test(pp.source||'')&&Math.abs((parseFloat(pp.amount)||0)-(x.amt||0))<=1;}):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):(_pm?('<span style="color:#15803d;font-weight:700">✓ จับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="matchKLateBill('+(x.amt||0)+','+Q5+(x.hhmm||'')+Q5+','+Q5+date+Q5+',this)">จับคู่บิล</button>')); return '<div class="kv"><span>'+(x.hhmm||'')+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' '+act+'</b></div>'; }).join('')+'</div>'; } })();
@@ -1071,18 +1059,6 @@ function lateKItems(auDetail, dailyRows){
 function xferBill(xf, amt, col){ if(!xf||!xf.length) return null; for(var i=0;i<xf.length;i++){ var x=xf[i];
   if((col==='knv'||col==='any')&&(x.knv||0)>0&&Math.abs((x.knv||0)-amt)<=1) return normBill(x.bill);
   if((col==='ksk'||col==='any')&&(x.ksk||0)>0&&Math.abs((x.ksk||0)-amt)<=1) return normBill(x.bill); } return null; }
-/* ดัน K+ ที่ไม่มีบิลในฟอร์ม เข้ากล่อง "รอจับคู่" ของวันนั้น — เงินจะได้ไม่หลุดเงียบ */
-async function pushKplusGap(amt, hhmm, dateIso, btn){
-  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
-  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ดันเข้ารอจับคู่ได้เฉพาะสิทธิ์การเงินขึ้นไป"); return; }
-  if(!confirm("ดันยอด K+ "+TH(amt)+" บาท ("+(hhmm||"")+") ของวันที่ "+beDate(dateIso)+" เข้ากล่อง “รอจับคู่”?\n\nใช้เมื่อเงินเข้าจริงแล้วแต่หาบิลในฟอร์มไม่เจอ\nเงินจะไปรออยู่ในกล่องรอจับคู่ ให้ตามหาบิลแล้วจับคู่ทีหลังได้")) return;
-  var rec={ date:dateIso, amount:amt, source:"K+/QR", from_name:"K+ "+(hhmm||""), ref:"K+ เข้าจริงแต่ไม่มีบิลในฟอร์ม ("+beDate(dateIso)+(hhmm?" "+hhmm:"")+")", status:"open" };
-  var ins=await sb.from("rev_pending").insert(rec);
-  if(ins.error){ alert("ดันไม่สำเร็จ: "+ins.error.message); return; }
-  if(btn){ btn.outerHTML='<span style="color:#15803d;font-weight:700">✓ ดันแล้ว</span>'; }
-  if(window.loadPending) loadPending();
-  if(window._openDay) renderDay(window._openDay,false);
-}
 async function pushTransferPending(amt, name, dateIso){
   if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
   const rec={ date:dateIso, amount:amt, source:"โอนกสิกร", from_name:(name||""), ref:"โอนเข้าตรง (สเตทเมนต์)", status:"open" };
@@ -1233,21 +1209,6 @@ function mpShortHtml(diff){
       '<option value="part">แบ่งชำระ — ปิดเท่าที่เงินถึง (ที่เหลือค้าง)</option>'+
     '</select></div>';
 }
-/* ✕ ยกเลิกการตัดยอดลูกหนี้ทีละรายการ (การเงิน+เจ้าของ) — ใช้ตอนตัดผิดบิล/ตัดซ้ำ */
-window.unpayCredit=async function(pid){
-  if(!sb) return;
-  if(ROLE!=="finance"&&ROLE!=="owner"){ alert("ยกเลิกการตัดยอดได้เฉพาะสิทธิ์การเงินขึ้นไป\nแจ้งการเงินหรือเจ้าของให้ถอนให้ได้เลยค่ะ"); return; }
-  var r=await sb.from("rev_credit_payments").select("id,bill_id,amount,pay_date,method,ref,confirmed_by,rev_credit_bills(bill_no,customer,total_amount,paid_amount)").eq("id",pid).single();
-  if(r.error||!r.data){ alert("ไม่พบรายการนี้ (อาจถูกถอนไปแล้ว)"); return; }
-  var p=r.data, bi=p.rev_credit_bills||{};
-  var back=Math.round((num(bi.paid_amount)-num(p.amount))*100)/100;
-  if(!confirm("ยกเลิกการตัดยอดนี้?\n\nลูกค้า: "+(bi.customer||"—")+"\nบิล: "+(bi.bill_no||"—")+" (ยอดบิล "+TH(bi.total_amount)+")\nยอดที่จะถอน: "+TH(p.amount)+" ("+(p.method||"")+")"+(p.confirmed_by?"\nลงโดย: "+p.confirmed_by:"")+"\n\n→ บิลนี้จะกลับไปค้าง "+TH(Math.round((num(bi.total_amount)-back)*100)/100)+" บาท\n\n⚠️ ถ้าเงินเข้าจริงแต่ตัดผิดบิล ให้ไปตัดบิลที่ถูกต้องต่อในหน้า “ลูกหนี้ลงบัญชี” ด้วยนะคะ")) return;
-  var d=await sb.from("rev_credit_payments").delete().eq("id",pid);
-  if(d.error){ alert("ถอนไม่สำเร็จ: "+d.error.message); return; }
-  if(p.bill_id) await mpRecompute(p.bill_id);
-  if(window.loadPending) loadPending();
-  if(window._openDay) renderDay(window._openDay,false);
-};
 async function mpRecompute(id){
   var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
   var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
@@ -1258,54 +1219,22 @@ async function mpRecompute(id){
 }
 
 /* ---------- บิลขาย KM ---------- */
-var MP_KM_OPEN=[], MP_KM_DONE=[], MP_HC="";
 window.matchKM=async function(id){
   if(!sb) return; MP_PID=id; MP_P=await mpLoadPend(id); if(!MP_P){ alert("ไม่พบรายการ"); return; }
-  /* 2 query แยกกัน: บิลค้าง = ครบทุกใบเสมอ (ห้ามโดน limit ตัด) · บิลปิดแล้ว = เอาไว้ให้ "ค้นแล้วเจอ" พอ 500 ใบล่าสุด */
-  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount,status").neq("status","paid").order("bill_date",{ascending:true});
+  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount").neq("status","paid").order("bill_date",{ascending:true});
   if(r.error){ alert("โหลดบิลไม่ได้: "+r.error.message); return; }
-  var rd=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount,status").eq("status","paid").order("bill_date",{ascending:false}).limit(500);
   await loadPayerMap();
   var _h=payerHint(MP_P.from_name), _hc=_h?_h.customer:"";
-  MP_HC=_hc;
-  var _mk=function(b){ b._rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; return b; };
-  var _open=(r.data||[]).map(_mk).filter(function(b){ return b._rem>0.01; });
-  var _done=(rd.data||[]).map(_mk).concat((r.data||[]).map(_mk).filter(function(b){ return b._rem<=0.01; }));
-  _done.sort(function(a,b){ return (a.bill_date<b.bill_date)?1:-1; });
-  if(_hc){ _open.sort(function(a,b){ var ah=nameMatch(_hc,a.customer)?0:1, bh=nameMatch(_hc,b.customer)?0:1; if(ah!==bh) return ah-bh; return (a.bill_date<b.bill_date)?-1:1; }); }
-  MP_KM_OPEN=_open; MP_KM_DONE=_done;
+  var _list=(r.data||[]).filter(function(b){ return Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100>0.01; });
+  if(_hc){ _list.sort(function(a,b){ var ah=nameMatch(_hc,a.customer)?0:1, bh=nameMatch(_hc,b.customer)?0:1; if(ah!==bh) return ah-bh; return (a.bill_date<b.bill_date)?-1:1; }); }
+  var rows=_list.map(function(b){ var rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; var hit=_hc&&nameMatch(_hc,b.customer); return '<tr'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
   mpOpen('<h3>จับคู่ '+TH(MP_P.amount)+' ฿ — เลือกบิลขาย (เก่าสุดบน)</h3>'+
     '<div class="mpmut">จาก '+esc(MP_P.from_name||"")+' · ติ๊กบิลที่เงินก้อนนี้ปิด</div>'+
     (_hc?('<div style="margin-top:6px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 8px;font-size:12.5px;color:#6d28d9">🔁 บัญชีนี้เคยจ่ายในชื่อ <b>'+esc(_hc)+'</b>'+(_h.hit_count>1?(' ('+_h.hit_count+' ครั้ง)'):'')+' — ยกบิลของลูกค้ารายนี้ขึ้นบนให้แล้ว</div>'):'')+
-    '<div style="margin-top:8px"><input id="mpKMq" type="search" placeholder="🔎 ค้นชื่อลูกค้า / เลขบิล (เช่น นาคำน้อย หรือ 0068)" oninput="mpKMRender()" style="width:100%;padding:6px 9px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px"></div>'+
-    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody id="mpKMrows"></tbody></table></div>'+
+    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
     '<div class="mpbar"><span id="mpKMmsg">เลือก 0 บิล</span><b id="mpKMsum" style="color:#2563eb">0.00 ฿</b></div>'+
     '<div id="mpKMshort"></div>'+
     '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button><button class="btn" id="mpKMdo" disabled onclick="mpDoKM()">✓ จับคู่ &amp; ปิดบิล</button></div>');
-  mpKMRender();
-};
-/* ค้นหา + วาดรายการบิลในกล่องจับคู่ · ไม่ค้น = โชว์เฉพาะบิลค้าง · ค้น = โชว์บิลที่ปิดแล้วด้วย (แบบจาง ติ๊กไม่ได้) */
-window.mpKMRender=function(){
-  var qEl=document.getElementById("mpKMq"), q=qEl?String(qEl.value||"").trim():"";
-  var nq=normName(q), lq=q.toLowerCase();
-  var hitB=function(b){ if(!q) return true;
-    return String(b.bill_no||"").toLowerCase().indexOf(lq)>=0 || (nq.length>0 && normName(b.customer||"").indexOf(nq)>=0); };
-  var open=MP_KM_OPEN.filter(hitB);
-  var done=q?MP_KM_DONE.filter(hitB):[];
-  var rows=open.map(function(b){
-    var hit=MP_HC&&nameMatch(MP_HC,b.customer);
-    return '<tr'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+b._rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(b._rem)+'</td></tr>';
-  }).join("");
-  if(done.length){
-    rows+='<tr><td colspan="5" style="background:#fffbeb;border-top:1px solid #fcd34d;font-size:11.5px;color:#92400e;padding:5px 6px">— บิลที่ตัดยอดครบแล้ว '+done.length+' ใบ (ติ๊กไม่ได้) · <b>ถ้าเงินก้อนนี้ควรเป็นของบิลพวกนี้</b> แปลว่าบิลถูกตัดยอดโดยไม่มีเงินผูก → กด ✕ ถอนการตัดยอดในตาราง “จ่ายหนี้” ของวันนั้นก่อน แล้วบิลจะกลับมาให้จับคู่ตามปกติ —</td></tr>';
-    rows+=done.map(function(b){
-      return '<tr style="opacity:.55;background:#fafaf9"><td style="width:26px;text-align:center">✓</td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+' <span style="color:#15803d;font-size:11px">✓ ตัดยอดแล้ว '+TH(b.paid_amount)+'</span></td>'+
-        '<td class="num" style="font-size:11px;color:#78716c;white-space:nowrap">✓ ปิดแล้ว</td></tr>';
-    }).join("");
-  }
-  if(!rows) rows='<tr><td colspan="5" class="mpmut" style="padding:10px">ไม่พบบิลที่ค้น "'+esc(q)+'"<br><span style="font-size:11.5px">ถ้าแน่ใจว่ามีบิลนี้ อาจสะกดชื่อลูกค้าผิดตอนดูดเข้าระบบ — เช็กในหน้า “ลูกหนี้ลงบัญชี” แล้วกด ✏️ แก้ชื่อ (อย่าสร้างบิลใหม่ จะกลายเป็นบิลซ้ำ)</span></td></tr>';
-  document.getElementById("mpKMrows").innerHTML=rows;
-  mpSumKM();
 };
 window.mpSumKM=function(){
   var ck=[].slice.call(document.querySelectorAll(".mpkb:checked"));
@@ -1412,8 +1341,8 @@ readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");docu
 render();
 const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISOString().slice(0,10);
 const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);
-loadDeposits(); loadPending(); loadMonthStatus();
+ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); });
 </script>
-<script src="credit.js?v=20260715a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+<script src="credit.js?v=20260704j"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 </body>
 </html>

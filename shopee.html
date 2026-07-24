@@ -188,7 +188,7 @@ var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 var LOGIN_FN_URL=SB_URL+"/functions/v1/login";
 var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY);}catch(e){}
-async function ensureRevSession(pin){ if(!sb) return false; try{ var s=await sb.auth.getSession(); if(s&&s.data&&s.data.session) return true; var resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:pin})}); var j=await resp.json(); if(resp.ok&&j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; } }catch(e){ console.error("ensureRevSession",e); } return false; }
+async function ensureRevSession(pin){ if(!sb) return false; try{ var s=await sb.auth.getSession(); var _role=null; if(s&&s.data&&s.data.session){ try{ _role=JSON.parse(atob(s.data.session.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata?.role; }catch(_e){} if(_role==="owner") return true; } var resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:pin})}); var j=await resp.json(); if(resp.ok&&j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; } }catch(e){ console.error("ensureRevSession",e); } return false; }
 function sbReady(){ return !!sb; }
 /* ---------- helpers ---------- */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }

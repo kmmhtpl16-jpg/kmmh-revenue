@@ -355,7 +355,9 @@ async function ensureRevSession(pin){
   if(!sb) return false;
   try{
     const {data:{session}}=await sb.auth.getSession();
-    if(session) return true;
+    let _role=null;
+    if(session){ try{ _role=JSON.parse(atob(session.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata?.role; }catch(_e){} }
+    if(session && _role==="owner") return true;
     const resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin})});
     const j=await resp.json();
     if(resp.ok && j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; }

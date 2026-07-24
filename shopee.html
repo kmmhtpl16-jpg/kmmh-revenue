@@ -567,6 +567,10 @@ async function creditSync(manual){
   document.getElementById("creditCard").classList.remove("hide");
   if(box) box.innerHTML='<span class="muted">กำลังตรวจ…</span>';
   try{
+    // ตัดชำระ/สร้างบิลลูกหนี้ = เขียนตาราง rev_credit_bills/rev_credit_payments/rev_expenses (owner-only ตาม RLS เฟส2A)
+    // ต้องมี session owner สดก่อนเสมอ ไม่งั้นโดน "new row violates row-level security policy" (เหมือน pushToFinance)
+    var _own=await ensureRevSession("0402");
+    if(!_own) throw new Error("ต้องเป็นเจ้าของ (owner) เพื่อสร้าง/ตัดชำระบิลลูกหนี้ — ลองใหม่อีกครั้ง หรือรีเฟรชหน้าแล้วเข้าใหม่ด้วย PIN 0402");
     await ensureCreditBills();
     var res=await autoPostCredit();
     var rec=await reconcileShopeeBills();

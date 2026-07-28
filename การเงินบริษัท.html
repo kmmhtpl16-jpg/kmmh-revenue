@@ -120,7 +120,7 @@ const LOGIN_FN_URL=SB_URL+"/functions/v1/login";
 const OWNER_PIN="0402";
 const ROLE_PINS={"0402":"owner","9989":"finance"};
 let ROLE=null;
-let sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY);}catch(e){console.warn("sb init",e);}
+let sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}});}catch(e){console.warn("sb init",e);}
 
 const num=v=>(typeof v==="number")?v:(parseFloat(String(v==null?"":v).replace(/,/g,""))||0);
 const r2=n=>Math.round((+n||0)*100)/100;

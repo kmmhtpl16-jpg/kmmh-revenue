@@ -73,7 +73,7 @@ const PIN="0402";
 
 const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
-const sb = window.supabase.createClient(SB_URL, SB_KEY);
+const sb = window.supabase.createClient(SB_URL, SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}});
 // บัตรผ่านจริง: ใช้ session ที่ล็อกอินจากหน้าหลักไว้ (เก็บใน localStorage โดเมนเดียวกัน) หรือมินต์ใหม่จาก PIN
 const LOGIN_FN_URL = SB_URL + "/functions/v1/login";
 async function ensureRevSession(pin){

@@ -170,10 +170,11 @@ let DATA = { form:null, pos:null };
 const SB_URL = "https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY = "sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 let sb = null;
-try { sb = window.supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn("supabase init failed", e); }
+try { sb = window.supabase.createClient(SB_URL, SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); } catch(e) { console.warn("supabase init failed", e); }
 /* ── บัตรผ่าน owner อัตโนมัติ: ถ้า session ที่ค้างไม่ใช่ owner (พนักงาน/หมดอายุ) ให้มินต์ owner ใหม่ทับ ── */
 const LOGIN_FN_URL = SB_URL + "/functions/v1/login";
 const OWNER_PIN = "0402";
+window.ensureOwnerSession=ensureOwnerSession;
 async function ensureOwnerSession(){
   if(!sb) return false;
   try{
@@ -664,6 +665,7 @@ if(fbk) fbk.addEventListener("change", e=>{
   r.readAsText(file,"utf-8");
 });
 async function loadDeposits(){
+  try{ if(window.ensureOwnerSession) await ensureOwnerSession(); }catch(e){}
   const list=document.getElementById("deplist"), cnt=document.getElementById("depcount");
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
   list.textContent="กำลังโหลด…";
@@ -807,6 +809,7 @@ async function renderDay(date, edit){
   window._openDay = edit ? null : date;
   box.innerHTML='<div class="muted" style="margin-top:8px">กำลังโหลด '+beDate(date)+'…</div>';
   const _dShift=function(iso,n){ const p=String(iso).slice(0,10).split("-"); const dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
+  try{ if(window.ensureOwnerSession) await ensureOwnerSession(); }catch(e){}
   const [a,d,pq,dp,pyq]=await Promise.all([ sb.from("rev_audit").select("*").eq("date",date).maybeSingle(), sb.from("rev_daily").select("*").eq("date",date).maybeSingle(), sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date), sb.from("rev_deposits").select("customer,customer_code,amount,received_date,status").gte("received_date",_dShift(date,-7)).lte("received_date",_dShift(date,120)), sb.from("rev_credit_payments").select("amount,method,ref,pay_date,rev_credit_bills(customer,bill_no,bill_date)").eq("pay_date",date) ]);
   const au=a.data, da=d.data;
   const _deps=(dp&&dp.data)?dp.data:[];
@@ -900,7 +903,9 @@ async function renderDay(date, edit){
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
     else html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn r-fin" style="padding:5px 16px;margin-right:6px" onclick="editDay(\''+date+'\')">✏️ แก้ไข</button><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
   } else if(da){ html+='<div class="muted" style="margin-top:6px">มีข้อมูล K+/ธนาคารแล้ว แต่ยังไม่ได้ยืนยันผลตรวจ</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>';
-  } else { html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>'; }
+  } else { var _perm=true; try{ var _io=await sb.rpc('is_owner'); _perm=!!(_io&&_io.data); }catch(e){}
+    if(!_perm) html+='<div style="margin-top:6px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px;color:#b91c1c;font-size:13px"><b>\u26a0 อ่านข้อมูลไม่ได้ เพราะบัตรผ่านไม่ใช่เจ้าของ</b><div style="font-size:12px;margin-top:2px">เซสชันถูกแอปอื่นในเว็บเดียวกันทับ (ระบบซ่อนข้อมูลด้วย RLS ไม่ใช่ข้อมูลหาย) \u2014 กดปุ่มนี้แล้วเปิดวันนี้ใหม่</div><button class="btn" style="margin-top:6px;padding:4px 12px" onclick="location.reload()">\u21bb เข้าสิทธิ์ใหม่ / รีเฟรช</button></div>';
+    else html+='<div class="muted" style="margin-top:6px">ยังไม่มีข้อมูลของวันนี้</div><div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="markHoliday(\''+date+'\')">🏖️ วันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div>'; }
   html+='</div>'; box.innerHTML=html; if(window.applyGating)applyGating();
 }
 async function saveDay(date){
@@ -943,6 +948,7 @@ async function confirmSuggest(id, bill){ if(!sb) return; const by=prompt("ยื
   try{ var _pr=await sb.from("rev_pending").select("from_name").eq("id",id).single(); var _br=await sb.from("rev_credit_bills").select("customer").eq("bill_no",bill).single(); if(_pr.data&&_br.data) await rememberPayer(_pr.data.from_name,_br.data.customer,bill); }catch(e){}
   loadPending(); }
 async function loadPending(){
+  try{ if(window.ensureOwnerSession) await ensureOwnerSession(); }catch(e){}
   const list=document.getElementById("pendlist"), cnt=document.getElementById("pendcount"); if(!list) return;
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
   const {data,error}=await sb.from("rev_pending").select("*").eq("status","open").order("date",{ascending:true});

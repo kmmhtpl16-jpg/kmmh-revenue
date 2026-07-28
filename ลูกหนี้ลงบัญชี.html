@@ -164,7 +164,7 @@ function submitPin(){
 /* ---------- Supabase (เหมือน index.html) ---------- */
 var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
-var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ console.warn("sb init",e); }
+var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); }catch(e){ console.warn("sb init",e); }
 function sbReady(){ return (typeof sb!=="undefined" && sb); }
 /* ── บัตรผ่าน owner อัตโนมัติ (เหมือน index.html) ── */
 var LOGIN_FN_URL=SB_URL+"/functions/v1/login"; var OWNER_PIN="0402";

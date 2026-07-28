@@ -703,7 +703,7 @@ async function useDeposit(id, remaining, billDefault, amtDefault){
   if(e2){ alert("อ่านยอดไม่ได้: "+e2.message); return; }
   const newUsed=(parseFloat(dep.used_amount)||0)+amt; const closed=newUsed >= (parseFloat(dep.amount)||0)-0.01;
   const {error:e3}=await sb.from("rev_deposits").update({used_amount:newUsed, status:closed?"matched":"open", matched_bill_no:bill.trim(), matched_date:new Date().toISOString().slice(0,10), confirmed_by:(by||"").trim()}).eq("id",id);
-  if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; } loadDeposits();
+  if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; } loadDeposits(); if(window.refreshOpenDay) refreshOpenDay(); if(window.loadPending) loadPending();
 }
 async function refundDeposit(id, remaining){
   if(!sb) return;
@@ -867,6 +867,34 @@ async function renderDay(date, edit){
       if(!_ref.length) return;
       html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🔁 คืนเงินลูกค้า '+_ref.length+' ราย — ลูกค้าโอนเข้า แล้วร้านโอนคืน (เช็กว่าถูกต้อง)</b>'+_ref.map(function(x){ var net=Math.round(((+x.d.dep||0)-(+x.w.wd||0))*100)/100; var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +x.d.dep, 'any'); return '<div style="border-top:1px solid #fecaca;margin-top:6px;padding-top:6px"><div><b>'+esc(x.wn)+'</b>'+(_mb?(' <span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):'')+'</div><div class="kv"><span>โอนเข้า '+TH(x.d.dep)+' → ร้านโอนคืน '+TH(x.w.wd)+'</span><b style="color:#15803d">สุทธิเข้าจริง '+TH(net)+'</b></div></div>';}).join('')+'<div class="muted" style="margin-top:6px">ℹ️ ยอดบิลยังเป็นรายได้ตามจริง · เงินคืนนี้คือลูกค้าโอนเกิน/มีมัดจำอยู่แล้ว ร้านจึงโอนคืนส่วนเกิน — อธิบายว่าทำไมยอดฝากเข้าบัญชีสุทธิน้อยกว่ายอดโอนเข้า</div></div>';
     })();
+    /* \u2500\u2500 บิลที่ตัดมัดจำ (RA): ไม่มีเงินเข้าบัญชีวันนี้ ต้องมีใบมัดจำในทะเบียน + หักมัดจำผูกบิล \u2500\u2500 */
+    try{
+      var _raX=((au.detail&&au.detail.xfer)||[]).filter(function(x){ return x.ra && (((+x.knv||0)+(+x.ksk||0))>0.005); });
+      if(_raX.length){
+        var _raNos=[]; _raX.forEach(function(x){ if(_raNos.indexOf(x.ra)<0) _raNos.push(x.ra); });
+        var _dq2=await sb.from("rev_deposits").select("id,deposit_no,customer,amount,used_amount,status").in("deposit_no",_raNos);
+        var _dmap={}; (_dq2.data||[]).forEach(function(d0){ _dmap[d0.deposit_no]=d0; });
+        var _dids=(_dq2.data||[]).map(function(d0){ return d0.id; });
+        var _uses=[]; if(_dids.length){ var _uq=await sb.from("rev_deposit_uses").select("deposit_id,bill_no,amount").in("deposit_id",_dids); _uses=(_uq.data||[]); }
+        var Q7=String.fromCharCode(39), _bad=0;
+        var _raRows=_raX.map(function(x){
+          var amt=Math.round((((+x.knv||0)+(+x.ksk||0)))*100)/100, bill=normBill(x.bill), dep=_dmap[x.ra];
+          var head='<td style="white-space:nowrap"><b>'+esc(bill)+'</b></td><td style="font-size:12px">'+esc(x.cust||'')+'</td><td class="num">'+TH(amt)+'</td>';
+          if(!dep){ _bad++;
+            return '<tr style="background:#fef2f2">'+head+'<td style="color:#b91c1c;font-size:12.5px">\u26a0 ยังไม่มีใบมัดจำ '+esc(x.ra)+' ในทะเบียน \u2014 เงินก้อนนี้ยังไม่ถูกบันทึกเป็นมัดจำ</td><td style="font-size:12px;color:#4338ca">ไปที่ \ud83d\udc8e ยอดเงินรอจับคู่ \u2192 \u25be เลือก \u2192 \ud83d\udcb0 ยอดมัดจำ</td></tr>'; }
+          var used=_uses.filter(function(u){ return u.deposit_id===dep.id && normBill(u.bill_no)===bill; }).reduce(function(t,u){ return t+num(u.amount); },0);
+          var rem=Math.round((num(dep.amount)-num(dep.used_amount))*100)/100;
+          if(used>=amt-0.01){
+            return '<tr style="background:#f0fdf4">'+head+'<td style="color:#15803d;font-size:12.5px">\u2713 หักมัดจำ '+esc(x.ra)+' แล้ว '+TH(used)+'</td><td style="font-size:12px;color:#64748b">มัดจำใบนี้เหลือ '+TH(rem)+'</td></tr>'; }
+          _bad++;
+          return '<tr style="background:#fffbeb">'+head+'<td style="color:#b45309;font-size:12.5px">\u26a0 ยังไม่ได้หักมัดจำ '+esc(x.ra)+' (ใบนี้เหลือ '+TH(rem)+')</td><td><button class="btn sec" style="padding:2px 9px;margin:0" onclick="useDeposit('+Q7+dep.id+Q7+','+rem+','+Q7+bill+Q7+','+Math.min(amt,rem)+')">หักมัดจำ</button></td></tr>';
+        }).join("");
+        html+='<div style="margin-top:10px;border:1px solid '+(_bad?'#fecaca':'#bbf7d0')+';background:'+(_bad?'#fef2f2':'#f0fdf4')+';border-radius:8px;padding:8px">'+
+          '<div style="font-weight:700;font-size:13px;color:'+(_bad?'#b91c1c':'#15803d')+'">'+(_bad?('\u26a0 บิลที่ตัดมัดจำ \u2014 ยังหาเงินเข้าไม่เจอ '+_bad+' บิล'):'\u2713 บิลที่ตัดมัดจำ \u2014 ผูกเงินมัดจำครบแล้ว')+'</div>'+
+          '<div class="muted" style="font-size:12px;margin:2px 0 4px">บิลกลุ่มนี้ไม่มีเงินโอนเข้าบัญชีในวันนี้ เพราะลูกค้าจ่ายด้วยมัดจำที่วางไว้ก่อนหน้า \u2014 ต้องมีใบมัดจำในทะเบียนก่อน แล้วกด "หักมัดจำ" ผูกกับบิลทีละใบ (มัดจำจะลดลงตามยอดที่หัก)</div>'+
+          '<table><thead><tr><th>เลขบิล</th><th>ลูกค้า</th><th class="num">ยอดที่ตัดมัดจำ</th><th>สถานะ</th><th></th></tr></thead><tbody>'+_raRows+'</tbody></table></div>';
+      }
+    }catch(e){ console.warn("raDepositCheck",e); }
     html+='<div style="border-top:1px dashed #e7e5e4;margin:12px 0 4px"></div>';
     html+=renderItems(au.detail, edit, _deps, _pays);
     if(edit) html+='<div style="text-align:right;margin-top:14px;border-top:1px dashed #e7e5e4;padding-top:10px"><button class="btn" style="padding:5px 16px;margin-right:6px" onclick="saveDay(\''+date+'\')">💾 บันทึก</button><button class="btn sec" style="padding:5px 12px" onclick="showDayDetail(\''+date+'\')">ยกเลิก</button></div>';
@@ -925,18 +953,33 @@ async function loadPending(){
   const _mainSum=sum-_othSum-_carSum;
   cnt.textContent=data.length+" รายการ · "+TH(sum)+" บาท";
   var _openEmpty=!data.length;
-  let _bills=[]; try{ const _minD=data.reduce(function(m,d){return d.date<m?d.date:m;},data[0].date); const _a2=await sb.from("rev_audit").select("date,detail").gte("date",_minD); (_a2.data||[]).forEach(function(a){ const xf=(a.detail&&a.detail.xfer)||[]; xf.forEach(function(x){ _bills.push({date:a.date,bill:x.bill,knv:(+x.knv||0),ksk:(+x.ksk||0),cust:x.cust||""}); }); }); }catch(e){}
+  let _bills=[]; try{ const _minD=data.reduce(function(m,d){return d.date<m?d.date:m;},data[0].date); const _a2=await sb.from("rev_audit").select("date,detail").gte("date",_minD); (_a2.data||[]).forEach(function(a){ const xf=(a.detail&&a.detail.xfer)||[]; xf.forEach(function(x){ _bills.push({date:a.date,bill:x.bill,knv:(+x.knv||0),ksk:(+x.ksk||0),cust:x.cust||"",ra:x.ra||""}); }); }); }catch(e){}
   const _Q=String.fromCharCode(39);
   function _sg(P){ var amt=parseFloat(P.amount)||0; var c=_bills.filter(function(b){ return b.date>=P.date && (Math.abs(b.ksk-amt)<=1||Math.abs(b.knv-amt)<=1); }); if(!c.length) return ''; var nm=P.from_name||''; var _h=payerHint(nm); var _hc=_h?_h.customer:'';
-    c.sort(function(a,b){ var ah=(_hc&&nameMatch(_hc,a.cust))?0:1, bh=(_hc&&nameMatch(_hc,b.cust))?0:1; if(ah!==bh) return ah-bh; var an=nameMatch(nm,a.cust)?0:1, bn=nameMatch(nm,b.cust)?0:1; if(an!==bn) return an-bn; return a.date<b.date?-1:1; }); var sgb=c[0]; var ok=nameMatch(nm,sgb.cust); return '<div class="sugg" style="margin-top:4px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:4px 7px;font-size:12px">💡 น่าจะตรงบิล <b>'+esc(sgb.bill)+'</b> ('+beDate(sgb.date)+(sgb.cust?(' · '+esc(sgb.cust)+(ok?' ✓ชื่อตรง':'')):'')+') <button class="btn" style="padding:1px 9px;margin:0 3px" onclick="confirmSuggest('+_Q+P.id+_Q+','+_Q+esc(sgb.bill)+_Q+')">ใช่</button><button class="btn sec" style="padding:1px 9px;margin:0" onclick="this.closest('+_Q+'.sugg'+_Q+').style.display='+_Q+'none'+_Q+'">ไม่</button></div>'; }
+    c.sort(function(a,b){ var ah=(_hc&&nameMatch(_hc,a.cust))?0:1, bh=(_hc&&nameMatch(_hc,b.cust))?0:1; if(ah!==bh) return ah-bh; var an=nameMatch(nm,a.cust)?0:1, bn=nameMatch(nm,b.cust)?0:1; if(an!==bn) return an-bn; return a.date<b.date?-1:1; });
+    var top=c.slice(0,3).map(function(b){ return '<div class="mpmut">\u00b7 '+esc(b.bill)+' '+beDate(b.date)+(b.cust?(' \u00b7 '+esc(b.cust)+(nameMatch(nm,b.cust)?' \u2713ชื่อตรง':'')):'')+'</div>'; }).join("");
+    return '<div style="margin-bottom:8px"><b>\ud83e\uddfe ยอดนี้ตรงกับบิลในชีตโอน</b>'+top+
+      '<div class="mpmut" style="margin-top:4px;color:#4338ca">ถ้าใช่ กด \u25be เลือก \u2192 \ud83e\uddfe จับคู่บิล KM แล้วเลือกบิลเอง</div></div>'; }
+  function _sgRA(P){ var amt=parseFloat(P.amount)||0; var G={};
+    _bills.forEach(function(b){ if(b.ra && b.date>=P.date){ (G[b.ra]=G[b.ra]||[]).push(b); } });
+    var best=null;
+    for(var k in G){ var g=G[k]; var s2=Math.round(g.reduce(function(t,b){return t+(b.knv||0)+(b.ksk||0);},0)*100)/100;
+      if(Math.abs(s2-amt)<=1){ best={ra:k,g:g,sum:s2}; break; } }
+    if(!best) return '';
+    var li=best.g.map(function(b){ return esc(b.bill)+' '+TH((b.knv||0)+(b.ksk||0))+' ('+beDate(b.date)+')'; }).join(' \u00b7 ');
+    return '<div style="margin-bottom:8px"><b>\ud83d\udcb0 น่าจะเป็นเงินมัดจำ '+esc(best.ra)+'</b>'+
+      '<div class="mpmut" style="margin-top:2px">ในชีตโอนมีบิลที่ตัดมัดจำใบนี้ '+best.g.length+' บิล รวม '+TH(best.sum)+' \u2014 '+li+'</div>'+
+      '<div class="mpmut" style="margin-top:4px;color:#4338ca">ขั้นตอนที่ถูก: กด \u25be เลือก \u2192 \ud83d\udcb0 ยอดมัดจำ (บันทึกเงินก้อนนี้เข้าทะเบียนมัดจำ) แล้วไปกด \"หักมัดจำ\" ทีละบิลในหน้ารายละเอียดวันที่</div></div>';
+  }
   function _pmBadge(d){
     var h=payerHint(d.from_name); if(!h) return '';
-    return '<div style="margin-top:2px;font-size:11.5px;color:#7c3aed">🔁 เคยเป็น <b>'+esc(h.customer)+'</b>'+(h.hit_count>1?(' · '+h.hit_count+' ครั้ง'):'')+(h.last_bill_no?(' · ล่าสุด '+esc(h.last_bill_no)):'')+'</div>';
+    return '<div style="margin-bottom:8px"><b>\ud83d\udd01 บัญชีนี้เคยจ่ายในชื่อ '+esc(h.customer)+'</b><div class="mpmut">'+(h.hit_count>1?('จับคู่มาแล้ว '+h.hit_count+' ครั้ง \u00b7 '):'')+(h.last_bill_no?('ล่าสุดบิล '+esc(h.last_bill_no)):'')+'</div></div>';
   }
   function _srcS(v){ v=(v||'').trim(); if(!v) return '—'; if(v==='รับเข้าบัญชีอื่น') return 'บัญชีอื่น'; if(v==='ยอดยกมา') return '↩️ ยอดยกมา'; return v.length>3 && v.indexOf('โอน')===0 ? v.slice(3) : v; }
   function _refS(v){ v=(v||'').trim(); if(!v) return '—'; var m=v.match(/\(([^)]*)\)\s*$/); return m?m[1]:v; }
+  HINTS={}; data.forEach(function(d){ var _h=[_sgRA(d),_sg(d),_pmBadge(d)].filter(Boolean).join(''); if(_h) HINTS[d.id]=_h; });
   var openHtml=_openEmpty?'<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>':('<table><thead><tr><th>วันที่</th><th>เข้าทาง</th><th>ใครโอน</th><th>อ้างอิง</th><th>สลิป</th><th style="width:1%;white-space:nowrap;padding-right:6px">ยอด</th><th style="width:1%;padding-left:6px"></th></tr></thead><tbody>'+
-    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':(((d.source||"")==="ยอดยกมา")?' style="background:#fffbeb"':''))+'><td style="white-space:nowrap">'+beDate(d.date)+'</td><td style="white-space:nowrap">'+_srcS(d.source)+'</td><td>'+(d.from_name||'—')+_pmBadge(d)+'</td><td style="white-space:nowrap">'+_refS(d.ref)+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num" style="width:1%;white-space:nowrap;padding-right:6px">'+TH(d.amount)+'</td><td style="width:1%;padding-left:6px"><span style="display:inline-flex;gap:6px;white-space:nowrap"><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchKM(\''+d.id+'\')">🧾 บิลขาย KM</button><button class="btn sec" style="padding:3px 7px;margin:0" onclick="matchBI(\''+d.id+'\')">📄 ใบวางบิล BI</button><button class="btn sec r-owner" title="ปิดยอด — เฉพาะเจ้าของเห็น ไม่นับเป็นรายได้ (เงินที่ไม่มีบิลจับคู่ เช่น คอมมิชชั่น/ส่วนลดจากซัพ)" style="padding:3px 7px;margin:0;border-color:#c4b5fd;color:#6d28d9" onclick="closeOwner(\''+d.id+'\')">🔒 ปิดยอด</button><button class="btn sec r-fin" title="ลบรายการเงินรอจับคู่ (รายการซ้ำ/ลงผิด)" style="padding:3px 8px;margin:0;border-color:#fca5a5;color:#b91c1c" onclick="deletePending(\''+d.id+'\')">✕</button></span>'+_sg(d)+'</td></tr>').join("")+
+    data.map(d=>'<tr'+(((d.source||"")==="รับเข้าบัญชีอื่น")?' style="background:#eff6ff"':(((d.source||"")==="ยอดยกมา")?' style="background:#fffbeb"':''))+'><td style="white-space:nowrap">'+beDate(d.date)+'</td><td style="white-space:nowrap">'+_srcS(d.source)+'</td><td>'+(d.from_name||'—')+'</td><td style="white-space:nowrap">'+_refS(d.ref)+'</td><td>'+(d.slip_path?'<a href="#" style="color:#2563eb" onclick="openSlip(\''+d.slip_path+'\');return false;">📎 ดู</a>':'—')+'</td><td class="num" style="width:1%;white-space:nowrap;padding-right:6px">'+TH(d.amount)+'</td><td style="width:1%;padding-left:6px"><span style="display:inline-flex;gap:6px;white-space:nowrap">'+(HINTS[d.id]?'<button class="btn sec" title="ระบบมีข้อสังเกตให้อ่าน" style="padding:3px 9px;margin:0;border-color:#fde68a;color:#b45309" onclick="showHint(\''+d.id+'\')">\ud83d\udca1</button>':'')+'<button class="btn sec" title="เลือกวิธีจัดการเงินก้อนนี้" style="padding:3px 10px;margin:0;border-color:#c7d2fe;color:#4338ca" onclick="pickAction(\''+d.id+'\')">▾ เลือก</button><button class="btn sec r-owner" title="ปิดยอด — เฉพาะเจ้าของเห็น ไม่นับเป็นรายได้ (เงินที่ไม่มีบิลจับคู่ เช่น คอมมิชชั่น/ส่วนลดจากซัพ)" style="padding:3px 10px;margin:0;border-color:#c4b5fd;color:#6d28d9" onclick="closeOwner(\''+d.id+'\')">🔒 ปิดยอด</button></span>'+'</td></tr>').join("")+
     '<tr class="tot"><td colspan="5">รวมรอจับคู่ (ไม่รวมบัญชีอื่น/ยอดยกมา)</td><td class="num" style="white-space:nowrap;padding-right:6px">'+TH(_mainSum)+'</td><td></td></tr>'+(_othSum>0?'<tr class="tot" style="background:#eff6ff"><td colspan="5">🏷️ แยกหมวด: รับเข้าบัญชีอื่น</td><td class="num" style="white-space:nowrap;padding-right:6px">'+TH(_othSum)+'</td><td></td></tr>':'')+(_carSum>0?'<tr class="tot" style="background:#fffbeb"><td colspan="5">↩️ ยอดยกมา (เงินเข้าตั้งแต่วันก่อน ไม่ใช่เงินเข้าใหม่)</td><td class="num" style="white-space:nowrap;padding-right:6px">'+TH(_carSum)+'</td><td></td></tr>':'')+'</tbody></table>');
   list.innerHTML=openHtml+(await _matchedHtml())+(await _ownerClosedHtml());
 }
@@ -1033,6 +1076,18 @@ window.unmatchPending=async function(id){
       }
     }
   }
+  /* ถ้าเคยลงเป็น "ยอดมัดจำ" ต้องถอนออกจากทะเบียนมัดจำด้วย (ถ้ายังไม่ถูกหักไปใช้) */
+  try{
+    if(p.match_batch){
+      var _dq=await sb.from("rev_deposits").select("id,deposit_no,used_amount").eq("note","จากเงินรอจับคู่ "+p.match_batch);
+      var _dd=(_dq.data||[]);
+      if(_dd.length){
+        if(num(_dd[0].used_amount)>0.009){ alert("ยกเลิกไม่ได้: มัดจำ "+_dd[0].deposit_no+" ถูกหักไปใช้กับบิลแล้ว\nต้องยกเลิกการหักมัดจำก่อน"); return; }
+        var _dl=await sb.from("rev_deposits").delete().eq("id",_dd[0].id);
+        if(_dl.error){ alert("ถอนทะเบียนมัดจำไม่สำเร็จ: "+_dl.error.message); return; }
+      }
+    }
+  }catch(e){}
   /* ถ้าเงินก้อนนี้เคยยกยอดส่วนเกินไปวันถัดไป ต้องลบแถวยอดยกมาที่ยังไม่ถูกจับคู่ ไม่งั้นเงินงอก */
   try{
     var _cq=await sb.from("rev_pending").select("id,status,amount").eq("carry_from_id",id);
@@ -1155,6 +1210,14 @@ async function addPending(){
 async function openSlip(path){ if(!sb||!path) return; const r=await sb.storage.from("revenue-slips").createSignedUrl(path,3600); if(r.error||!r.data){ alert("เปิดสลิปไม่ได้: "+((r.error&&r.error.message)||"")); return; } window.open(r.data.signedUrl,"_blank"); }
 /* ===== เฟส B: จับคู่เงินรอจับคู่ กับ บิลขาย KM / ใบวางบิล BI ===== */
 var MP_PID=null, MP_P=null;
+var HINTS={};
+window.showHint=function(id){
+  var h=HINTS[id]; if(!h){ alert("ไม่มีข้อสังเกตสำหรับรายการนี้"); return; }
+  mpOpen('<h3>\ud83d\udca1 ข้อสังเกตจากระบบ</h3>'+
+    '<div class="mpmut" style="margin-bottom:8px">เป็นแค่ข้อเสนอแนะให้ตรวจสอบ \u2014 ระบบไม่จับคู่ให้เอง คนตัดสินใจและกดเลือกวิธีจัดการเอง</div>'+
+    '<div style="border-top:1px solid #e5e7eb;padding-top:8px">'+h+'</div>'+
+    '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button></div>');
+};
 function mpToday(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
 function mpBatch(){ return "MP"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase(); }
 function mpOpen(html){ document.getElementById("mpBody").innerHTML=html; document.getElementById("mpOv").classList.add("on"); if(window.applyGating)applyGating(); }
@@ -1275,6 +1338,74 @@ window.mpDoKM=async function(){
   var carried=(diff<-0.009)? await mpCarryOver(-diff, pdate, batch, by, closedNos.length+" บิล") : null;
   await rememberPayer(MP_P.from_name, ck[0].getAttribute("data-cust"), nos[0]||null);
   mpClose(); alert("ปิด "+closedNos.length+" บิล"+(mode==="fee"?" · ลงค่าธรรมเนียม "+TH(diff):mode==="disc"?" · ส่วนลด "+TH(diff):mode==="part"?" · แบ่งชำระ":"")+(carried?" · ยกยอดส่วนเกิน "+TH(carried)+" ไปรอจับคู่ "+beDate(nextISO(pdate)):"")); loadPending();
+};
+
+
+
+/* ---------- เมนู ▾ เลือก (รวมทุกวิธีจัดการเงินรอจับคู่ไว้ปุ่มเดียว) ---------- */
+window.pickAction=async function(id){
+  if(!sb) return;
+  var p=await mpLoadPend(id); if(!p){ alert("ไม่พบรายการ"); return; }
+  MP_PID=id; MP_P=p;
+  var Q=String.fromCharCode(39);
+  function opt(fn,ic,t,sub,cls){
+    return '<div class="mprow'+(cls?(' '+cls):'')+'" onclick="mpClose();'+fn+'('+Q+id+Q+')"><div><b>'+ic+' '+t+'</b><div class="mpmut">'+sub+'</div></div><div style="color:#94a3b8;font-size:18px">\u203a</div></div>';
+  }
+  mpOpen('<h3>เลือกวิธีจัดการ '+TH(p.amount)+' \u0e3f</h3>'+
+    '<div class="mpmut">'+beDate(p.date)+' \u00b7 '+esc(p.from_name||'')+' \u00b7 '+esc(p.source||'')+'</div>'+
+    '<div style="margin-top:8px">'+
+      opt('depositFromPending','\ud83d\udcb0','ยอดมัดจำ','ลูกค้าวางเงินก่อน ยังไม่ออกบิล \u2014 เก็บเข้าทะเบียนมัดจำค้าง')+
+      opt('matchKM','\ud83e\uddfe','จับคู่บิล KM','ปิดบิลขาย \u2014 เลือกได้หลายใบ / แบ่งยอดต่อใบได้')+
+      opt('matchBI','\ud83d\udcc4','จับคู่ใบวางบิล BI','ปิดใบวางบิลที่ออกไว้แล้ว')+
+      opt('refundPending','\u21a9\ufe0f','คืนเงิน','โอนคืนลูกค้า (โอนผิด / ยกเลิกออเดอร์)')+
+      opt('deletePending','\u2715','ลบรายการ','รายการซ้ำ / ลงผิด \u2014 สิทธิ์การเงินขึ้นไป','r-fin')+
+    '</div>'+
+    '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button></div>');
+};
+/* ---------- \ud83d\udcb0 ลงทะเบียนมัดจำ (เงินเข้าก่อน ยังไม่ออกบิล) ---------- */
+window.depositFromPending=async function(id){
+  if(!sb) return;
+  var p=await mpLoadPend(id); if(!p){ alert("ไม่พบรายการ"); return; }
+  if(p.status!=="open"){ alert("รายการนี้ไม่ได้อยู่ในสถานะรอจับคู่แล้ว"); return; }
+  var no=prompt("เลขที่ใบรับมัดจำ (RA\u2026) \u2014 ยังไม่มีเลขเว้นว่างได้:",""); if(no===null) return; no=(no||"").trim().toUpperCase();
+  var guess=String(p.from_name||"").replace(/^จาก\s+\S+\s+/,"").replace(/\++\s*$/,"").trim();
+  var cust=prompt("ชื่อลูกค้าที่วางมัดจำ:",guess); if(cust===null) return; cust=(cust||"").trim();
+  if(!cust){ alert("ต้องระบุชื่อลูกค้า"); return; }
+  var by=prompt("ผู้ยืนยัน:",""); if(by===null) return; by=(by||"").trim();
+  var batch=mpBatch();
+  var dno=no||("(ไม่มีเลข) "+p.date+" "+Math.round(num(p.amount)));
+  var ex=await sb.from("rev_deposits").select("id,deposit_no,customer,amount,used_amount").eq("deposit_no",dno);
+  if(ex.error){ alert("อ่านทะเบียนมัดจำไม่ได้: "+ex.error.message); return; }
+  if(ex.data&&ex.data.length){
+    if(!confirm("เลขที่ "+dno+" มีในทะเบียนมัดจำอยู่แล้ว ("+(ex.data[0].customer||"")+" "+TH(ex.data[0].amount)+")\n\nกด OK = ผูกเงินก้อนนี้กับใบเดิม (ไม่สร้างซ้ำ)")) return;
+  } else {
+    var ins=await sb.from("rev_deposits").insert([{deposit_no:dno,customer:cust,amount:num(p.amount),received_date:p.date,status:"open",used_amount:0,confirmed_by:by||null,note:"จากเงินรอจับคู่ "+batch}]);
+    if(ins.error){ alert("บันทึกมัดจำไม่สำเร็จ: "+ins.error.message); return; }
+  }
+  var up=await sb.from("rev_pending").update({status:"matched",matched_bill_no:"มัดจำ "+dno,matched_date:mpToday(),confirmed_by:by||null,match_batch:batch,
+    note:"\ud83d\udcb0 ลงทะเบียนมัดจำ "+dno+" | "+cust+" | โดย "+(by||"-")+" "+mpToday()}).eq("id",id).eq("status","open");
+  if(up.error){ alert("อัปเดตรายการรอจับคู่ไม่สำเร็จ: "+up.error.message); return; }
+  alert("\u2713 ลงทะเบียนมัดจำ "+dno+" "+TH(p.amount)+" บาทแล้ว\nดูได้ในกล่อง \ud83d\udccc ทะเบียนมัดจำค้าง \u2014 พอออกบิลค่อยกด \"หักมัดจำ\"");
+  if(window.loadDeposits) loadDeposits();
+  loadPending();
+};
+/* ---------- \u21a9\ufe0f คืนเงินลูกค้า (โอนผิด / ยกเลิกออเดอร์) ---------- */
+window.refundPending=async function(id){
+  if(!sb) return;
+  var p=await mpLoadPend(id); if(!p){ alert("ไม่พบรายการ"); return; }
+  if(p.status!=="open"){ alert("รายการนี้ไม่ได้อยู่ในสถานะรอจับคู่แล้ว"); return; }
+  var why=prompt("เหตุผลที่คืนเงิน (เช่น ลูกค้าโอนผิด / ยกเลิกออเดอร์):",""); if(why===null) return; why=(why||"").trim();
+  if(!why){ alert("ต้องระบุเหตุผล"); return; }
+  var d=prompt("วันที่โอนคืน (YYYY-MM-DD):",mpToday()); if(d===null) return; d=String(d||"").slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ alert("รูปแบบวันที่ไม่ถูกต้อง"); return; }
+  var by=prompt("ผู้ยืนยัน:",""); if(by===null) return; by=(by||"").trim();
+  if(!confirm("บันทึกว่าเงิน "+TH(p.amount)+" บาทก้อนนี้โอนคืนลูกค้าแล้ว?\n\nรายการจะออกจาก \"รอจับคู่\" (ยกเลิกได้ที่รายการจับคู่แล้ว)")) return;
+  var batch=mpBatch();
+  var up=await sb.from("rev_pending").update({status:"matched",matched_bill_no:"\u21a9\ufe0f คืนเงิน",matched_date:d,confirmed_by:by||null,match_batch:batch,
+    note:"\u21a9\ufe0f คืนเงินลูกค้า | "+why+" | คืนวันที่ "+d+" | โดย "+(by||"-")}).eq("id",id).eq("status","open");
+  if(up.error){ alert("บันทึกไม่สำเร็จ: "+up.error.message); return; }
+  alert("\u2713 บันทึกคืนเงิน "+TH(p.amount)+" บาทแล้ว\n\u26a0\ufe0f อย่าลืมลงเงินโอนออกในหน้าการเงินบริษัทให้ตรงสเตทเมนต์");
+  loadPending();
 };
 
 /* ---------- ใบวางบิล BI ---------- */

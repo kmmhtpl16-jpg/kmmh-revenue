@@ -271,7 +271,19 @@
       allocs.push({bill_id:cand[i].id, bill_no:cand[i].bill_no, customer:cand[i].customer, bill_date:cand[i].bill_date, give:give});
       cand[i]._paid+=give; left=Math.round((left-give)*100)/100;
     }
-    return {allocs:allocs, leftover:Math.round(left*100)/100};
+    /* ไม่มีบิลค้าง = จ่ายครบไปแล้ว หรือไม่เคยมีบิลของลูกค้ารายนี้เลย — แยกให้ชัด */
+    var allPaid=false, noBill=false;
+    if(!allocs.length){
+      try{
+        var q2=await sb.from("rev_credit_bills").select("bill_no,customer,status");
+        var all=(q2.data||[]);
+        var hit;
+        if(pr.bill_no){ hit=all.filter(function(b){ return String(b.bill_no||"").trim()===String(pr.bill_no).trim(); }); }
+        else { var nn2=normName(pr.customer); hit=all.filter(function(b){ var bn=normName(b.customer); return nn2 && bn && (nn2.indexOf(bn)>=0||bn.indexOf(nn2)>=0); }); }
+        if(hit.length) allPaid=true; else noBill=true;
+      }catch(e){}
+    }
+    return {allocs:allocs, leftover:Math.round(left*100)/100, allPaid:allPaid, noBill:noBill};
   }
   /* หาเงินจริงในสเตทเมนต์ที่ตรงกับข้อเสนอนี้ (ยอด+ช่องทาง ตรง และยังไม่ถูกจับคู่) */
   async function obMoney(pr){
@@ -279,7 +291,12 @@
     var r=await sb.from("rev_pending").select("id,date,amount,source,from_name,status").eq("status","open");
     var c=(r.data||[]).filter(function(x){ return Math.abs(num(x.amount)-num(pr.amount))<0.01 && String(x.source||"")===String(pr.method||""); });
     if(c.length>1){ var same=c.filter(function(x){ return String(x.date).slice(0,10)===String(pr.form_date).slice(0,10); }); if(same.length) c=same; }
-    if(!c.length) return {kind:"none"};
+    if(!c.length){
+      var r2=await sb.from("rev_pending").select("id,date,amount,source,from_name,status,matched_bill_no,matched_date").eq("status","matched");
+      var u=(r2.data||[]).filter(function(x){ return Math.abs(num(x.amount)-num(pr.amount))<0.01 && String(x.source||"")===String(pr.method||""); });
+      if(u.length) return {kind:"used", p:u[0]};
+      return {kind:"none"};
+    }
     if(c.length>1) return {kind:"many", list:c};
     return {kind:"one", p:c[0]};
   }
@@ -311,8 +328,8 @@
     var card=document.createElement("div");
     card.className="card"; card.id="obcard"; card.style.display="none";
     card.innerHTML=[
-      '<h2>📋 รอยืนยันตัดยอด (จากชีตบิลเก่า) <span class="badge" id="obcount" style="background:#fef3c7;color:#92400e">…</span></h2>',
-      '<div class="muted" style="margin-bottom:8px;font-size:12px">ชีต “บิลเก่า” จะ<b>ไม่ตัดยอดเอง</b> — เสนอมาให้ตรวจก่อน แล้วคนกดยืนยัน · ฝั่ง<b>โอน</b>ต้องเจอเงินเข้าจริงในสเตทเมนต์ก่อนถึงจะยืนยันได้ (กันบิลปิดโดยไม่มีเงิน) · <b>เงินสด</b>ยืนยันได้เลย</div>',
+      '<h2>📋 จ่ายหนี้เก่าจากชีต “บิลเก่า” — รอจัดการ <span class="badge" id="obcount" style="background:#fef3c7;color:#92400e">…</span></h2>',
+      '<div class="muted" style="margin-bottom:8px;font-size:12px">รายการนี้เป็น<b>ตัวเตือน</b>ว่าฟอร์มแจ้งจ่ายหนี้เก่าไว้ — <b>ระบบไม่ตัดยอดให้</b> · วิธีที่ถูก: ไปตัดที่กล่อง <b>💎 ยอดเงินรอจับคู่</b> (▾ เลือก → 🧾 จับคู่บิล KM) เมื่อเงินเข้าบัญชีจริง · จัดการเสร็จแล้ว (หรือตัดไปแล้ว/ลงซ้ำ) ให้กด <b>✕ ยกเลิกรายการ</b> เพื่อล้างออกจากรายการนี้</div>',
       '<div id="oblist" class="muted">กำลังโหลด…</div>'
     ].join("");
     var cc=document.getElementById("creditcard");
@@ -339,18 +356,18 @@
       var billTxt=pl.allocs.length? pl.allocs.map(function(a){ return esc(a.bill_no||("บิล "+beDate(a.bill_date)))+" "+fmt(a.give); }).join(" + ")
                                   : '<span style="color:#b91c1c">ไม่พบบิลค้างของลูกค้ารายนี้</span>';
       var st, ok=false;
-      if(mo.kind==="cash"){ st='<span style="color:#166534">💵 เงินสด — ไม่ต้องรอสเตทเมนต์</span>'; ok=true; }
+      if(mo.kind==="cash"){ st='<span style="color:#166534">💵 เงินสด — ไม่มีในสเตทเมนต์</span>'; ok=true; }
       else if(mo.kind==="one"){ st='<span style="color:#166534">🟢 พบเงินเข้า '+beDate(mo.p.date)+' '+fmt(mo.p.amount)+' ('+esc(mo.p.source||"")+')<br><span class="muted" style="font-size:11px">'+esc(mo.p.from_name||"")+'</span></span>'; ok=true; }
       else if(mo.kind==="many"){ st='<span style="color:#92400e">🟡 พบเงินเข้ายอดตรงกัน '+mo.list.length+' รายการ — ระบบเลือกให้ไม่ได้<br><span class="muted" style="font-size:11px">จับคู่เองที่กล่อง “ยอดเงินรอจับคู่”</span></span>'; }
+      else if(mo.kind==="used"){ st='<span style="color:#6d28d9">✔ เงินก้อนนี้จับคู่ไปแล้ว'+(mo.p.matched_bill_no?(' → บิล '+esc(mo.p.matched_bill_no)):'')+(mo.p.matched_date?(' ('+beDate(mo.p.matched_date)+')'):'')+'<br><span class="muted" style="font-size:11px">= จัดการแล้ว กด ✕ ยกเลิกรายการ ได้เลย</span></span>'; }
       else { st='<span style="color:#b91c1c">🔴 ยังไม่พบเงินเข้าในสเตทเมนต์<br><span class="muted" style="font-size:11px">อัปสเตทเมนต์ของวันนั้นก่อน หรือเงินอาจเข้าบัญชีอื่น</span></span>'; }
-      if(!pl.allocs.length) ok=false;
+      if(!pl.allocs.length && pl.allPaid) billTxt='<span style="color:#6d28d9">✔ บิลของลูกค้ารายนี้จ่ายครบแล้ว<br><span class="muted" style="font-size:11px">= ตัดยอดไปแล้ว กด ✕ ยกเลิกรายการ</span></span>';
+      else if(!pl.allocs.length && pl.noBill) billTxt='<span style="color:#b45309">⚠ ไม่พบบิลของลูกค้ารายนี้ในทะเบียนลูกหนี้<br><span class="muted" style="font-size:11px">เช็กชื่อลูกค้า/เลขบิลในฟอร์มก่อน</span></span>';
       out.push('<tr><td>'+beDate(pr.form_date)+'</td><td><b>'+who+'</b></td><td class="num" style="font-weight:600">'+fmt(pr.amount)+'</td><td>'+esc(pr.method)+'</td>'+
         '<td>'+billTxt+(pl.leftover>0.005?'<br><span style="color:#b91c1c;font-size:11px">เหลือ '+fmt(pl.leftover)+' ไม่พบบิล</span>':"")+'</td>'+
         '<td>'+st+'</td>'+
         '<td style="white-space:nowrap">'+
-          (ok?'<button class="btn" style="padding:3px 9px" onclick="__obConfirm(\''+pr.id+'\')">✓ ยืนยันตัดยอด</button>'
-             :'<button class="btn sec" style="padding:3px 9px" disabled title="ยืนยันไม่ได้จนกว่าจะเจอเงินเข้าจริง + มีบิลค้างให้ตัด">✓ ยืนยันตัดยอด</button>')+
-          ' <button class="btn sec" style="padding:3px 7px;color:#b91c1c" onclick="__obReject(\''+pr.id+'\')">ไม่ใช่</button>'+
+          '<button class="btn sec" style="padding:3px 9px;border-color:#fca5a5;color:#b91c1c" onclick="__obReject(\''+pr.id+'\')">✕ ยกเลิกรายการ</button>'+
         '</td></tr>');
     }
     box.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="num">ยอดจ่าย</th><th>วิธี</th><th>จะตัดบิล</th><th>เงินจริง</th><th></th></tr></thead><tbody>'+out.join("")+'</tbody></table>';

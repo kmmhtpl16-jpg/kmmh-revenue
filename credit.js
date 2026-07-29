@@ -364,7 +364,7 @@
       if(!pl.allocs.length && pl.allPaid) billTxt='<span style="color:#6d28d9">✔ บิลของลูกค้ารายนี้จ่ายครบแล้ว<br><span class="muted" style="font-size:11px">= ตัดยอดไปแล้ว กด ✕ ยกเลิกรายการ</span></span>';
       else if(!pl.allocs.length && pl.noBill) billTxt='<span style="color:#b45309">⚠ ไม่พบบิลของลูกค้ารายนี้ในทะเบียนลูกหนี้<br><span class="muted" style="font-size:11px">เช็กชื่อลูกค้า/เลขบิลในฟอร์มก่อน</span></span>';
       out.push('<tr><td>'+beDate(pr.form_date)+'</td><td><b>'+who+'</b></td><td class="num" style="font-weight:600">'+fmt(pr.amount)+'</td><td>'+esc(pr.method)+'</td>'+
-        '<td>'+billTxt+(pl.leftover>0.005?'<br><span style="color:#b91c1c;font-size:11px">เหลือ '+fmt(pl.leftover)+' ไม่พบบิล</span>':"")+'</td>'+
+        '<td>'+billTxt+((pl.allocs.length&&pl.leftover>0.005)?'<br><span style="color:#b91c1c;font-size:11px">เหลือ '+fmt(pl.leftover)+' ไม่พบบิล</span>':"")+'</td>'+
         '<td>'+st+'</td>'+
         '<td style="white-space:nowrap">'+
           '<button class="btn sec" style="padding:3px 9px;border-color:#fca5a5;color:#b91c1c" onclick="__obReject(\''+pr.id+'\')">✕ ยกเลิกรายการ</button>'+

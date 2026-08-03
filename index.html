@@ -70,6 +70,7 @@
 </head>
 <body>
 <div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?')){try{localStorage.removeItem('rev_role');}catch(e){}try{sessionStorage.removeItem('rev_dash_ok');sessionStorage.removeItem('rev_role');}catch(e){}location.reload();}">👤 <span id="roleBarTxt"></span> · ออก</div>
+<div id="taOv" style="display:none;position:fixed;inset:0;background:rgba(28,25,23,.55);z-index:9500;align-items:flex-start;justify-content:center;padding:26px 12px;overflow:auto"><div style="background:#fff;border-radius:16px;max-width:580px;width:100%;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.28)"><div id="taBody"></div></div></div>
 <div id="pinGate"><div class="box">
   <div style="font-size:34px">🔒</div>
   <h2 style="margin:8px 0 2px;font-size:19px">ตรวจรายได้ KMMH</h2>
@@ -154,6 +155,7 @@ function submitPin(){
   const rb=document.getElementById("roleBar"); if(rb){ document.getElementById("roleBarTxt").textContent=ROLE_LABEL[r]; rb.style.display="block"; }
   try{localStorage.setItem("rev_role",r);}catch(e){}
   applyGating();
+  try{ if(window.taskAlertRun) setTimeout(taskAlertRun,300); }catch(e){}
 }
 function applyGating(){
   const showFin=(ROLE==="finance"||ROLE==="owner"), showOwner=(ROLE==="owner");
@@ -1499,7 +1501,86 @@ readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");docu
 render();
 const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISOString().slice(0,10);
 const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);
-ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); });
+
+/* ── 🔔 เตือนงานค้าง "ยังจับคู่ไม่ครบ" ตอนแคชเชียร์เข้าระบบ (3 ส.ค.69) ── */
+var TA_DAYS=45;
+function taClose(){ var o=document.getElementById("taOv"); if(o) o.style.display="none"; }
+function taGo(d){ taClose(); try{ if(window.showDayDetail) showDayDetail(d); }catch(e){} var b=document.getElementById("dayDetail"); if(b&&b.scrollIntoView) b.scrollIntoView({behavior:"smooth",block:"start"}); }
+function taGoPend(){ taClose(); var c=document.getElementById("pendcard"); if(c&&c.scrollIntoView) c.scrollIntoView({behavior:"smooth",block:"start"}); }
+window.taClose=taClose; window.taGo=taGo; window.taGoPend=taGoPend; window.taskAlertRun=taskAlertRun;
+async function taskAlertRun(){
+  try{
+    if(ROLE!=="cashier") return;
+    if(!sb) return;
+    try{ if(window.ensureOwnerSession) await ensureOwnerSession(); }catch(e){}
+    var Q=String.fromCharCode(39);
+    var _sh=function(iso,n){ var p=String(iso).slice(0,10).split("-"); var dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
+    var today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+    var from=_sh(today,-TA_DAYS);
+    var q=await Promise.all([
+      sb.from("rev_daily").select("date,bank_rows").gte("date",from).lte("date",today),
+      sb.from("rev_audit").select("date,status,detail").gte("date",from),
+      sb.from("rev_pending").select("date,amount,source,status,matched_bill_no,from_name").gte("date",from)
+    ]);
+    var dailies=(q[0]&&q[0].data)||[], audits=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[];
+    var auMap={}; audits.forEach(function(a){ auMap[a.date]=a; });
+    var pByDate={}; pends.forEach(function(p){ (pByDate[p.date]=pByDate[p.date]||[]).push(p); });
+    function _norm(s){ return String(s||"").replace(/['\"]/g,"").slice(0,60); }
+    var unm=[];
+    dailies.forEach(function(da){
+      var rows=(da.bank_rows||[]).filter(function(r){ return (+r.dep>0 && !r.kp); });
+      if(!rows.length) return;
+      var au=auMap[da.date]||null;
+      var rf=(au&&au.detail&&Array.isArray(au.detail.refunds))?au.detail.refunds.slice():[];
+      var used=rf.map(function(){ return false; });
+      var _nx=auMap[_sh(da.date,1)];
+      var xf=((au&&au.detail&&au.detail.xfer)||[]).concat((_nx&&_nx.detail&&_nx.detail.xfer)||[]);
+      var hol=!!(au&&au.status==="\u0e27\u0e31\u0e19\u0e2b\u0e22\u0e38\u0e14");
+      var pl=pByDate[da.date]||[];
+      rows.forEach(function(r){
+        var nd=_norm(r.detail), hit=-1;
+        for(var i=0;i<rf.length;i++){ if(!used[i] && Math.abs((+rf[i].amt||0)-(+r.dep||0))<0.01 && (rf[i].detail||"")===nd){ hit=i; break; } }
+        if(hit>=0){ used[hit]=true; return; }
+        var mb=hol?null:xferBill(xf,(+r.dep||0),"ksk");
+        if(mb) return;
+        var pp=pl.filter(function(p){ return p.source!=="\u0e23\u0e31\u0e1a\u0e40\u0e02\u0e49\u0e32\u0e1a\u0e31\u0e0d\u0e0a\u0e35\u0e2d\u0e37\u0e48\u0e19" && Math.abs((parseFloat(p.amount)||0)-(+r.dep||0))<=1; })[0];
+        if(pp) return;
+        unm.push({date:da.date,amt:(+r.dep||0)});
+      });
+    });
+    var op=pends.filter(function(p){ return p.status==="open"; });
+    if(!unm.length && !op.length){ taClose(); return; }
+    var g1={}; unm.forEach(function(x){ (g1[x.date]=g1[x.date]||[]).push(x); });
+    var d1=Object.keys(g1).sort();
+    var s1=unm.reduce(function(s,x){ return s+x.amt; },0);
+    var g2={}; op.forEach(function(p){ (g2[p.date]=g2[p.date]||[]).push(p); });
+    var d2=Object.keys(g2).sort();
+    var s2=op.reduce(function(s,p){ return s+(parseFloat(p.amount)||0); },0);
+    var h='<div style="font-size:20px;font-weight:800;color:#b45309">\u26a0\ufe0f \u0e22\u0e31\u0e07\u0e21\u0e35\u0e40\u0e07\u0e34\u0e19\u0e17\u0e35\u0e48\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48\u0e44\u0e21\u0e48\u0e04\u0e23\u0e1a</div>'+
+            '<div class="muted" style="margin:4px 0 12px">\u0e15\u0e23\u0e27\u0e08\u0e22\u0e49\u0e2d\u0e19\u0e2b\u0e25\u0e31\u0e07 '+TA_DAYS+' \u0e27\u0e31\u0e19 \u00b7 \u0e0a\u0e48\u0e27\u0e22\u0e40\u0e04\u0e25\u0e35\u0e22\u0e23\u0e4c\u0e43\u0e2b\u0e49\u0e04\u0e23\u0e1a\u0e14\u0e49\u0e27\u0e22\u0e19\u0e30\u0e04\u0e30</div>';
+    if(d1.length){
+      h+='<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:10px;margin-bottom:10px">'+
+         '<b style="color:#4338ca">\ud83d\udcb3 \u0e40\u0e07\u0e34\u0e19\u0e42\u0e2d\u0e19\u0e40\u0e02\u0e49\u0e32\u0e15\u0e23\u0e07\u0e17\u0e35\u0e48\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e23\u0e39\u0e49\u0e27\u0e48\u0e32\u0e40\u0e1b\u0e47\u0e19\u0e1a\u0e34\u0e25\u0e44\u0e2b\u0e19 '+unm.length+' \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23 \u00b7 '+TH(s1)+' \u0e1a\u0e32\u0e17</b>'+
+         '<div class="muted" style="margin:2px 0 6px">\u0e01\u0e14\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e40\u0e1b\u0e34\u0e14\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14 \u2192 \u0e43\u0e2a\u0e48\u0e40\u0e25\u0e02\u0e1a\u0e34\u0e25 \u0e2b\u0e23\u0e37\u0e2d\u0e01\u0e14 "\u0e14\u0e31\u0e19\u0e40\u0e02\u0e49\u0e32\u0e23\u0e2d\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48"</div>'+
+         d1.map(function(dt){ var g=g1[dt]; return '<div class="kv"><span><a href="#" onclick="taGo('+Q+dt+Q+');return false;" style="color:#2563eb;font-weight:700">'+beDate(dt)+'</a> <span class="muted">'+g.length+' \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23</span></span><b>'+TH(g.reduce(function(s,x){ return s+x.amt; },0))+'</b></div>'; }).join('')+
+         '</div>';
+    }
+    if(d2.length){
+      h+='<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px;margin-bottom:10px">'+
+         '<b style="color:#b45309">\ud83e\uddfe \u0e40\u0e07\u0e34\u0e19\u0e23\u0e2d\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48 (\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e1c\u0e39\u0e01\u0e1a\u0e34\u0e25) '+op.length+' \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23 \u00b7 '+TH(s2)+' \u0e1a\u0e32\u0e17</b>'+
+         '<div class="muted" style="margin:2px 0 6px">\u0e2d\u0e22\u0e39\u0e48\u0e43\u0e19\u0e15\u0e32\u0e23\u0e32\u0e07 "\ud83d\udcb8 \u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19\u0e23\u0e2d\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48" \u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07 \u2014 \u0e01\u0e14 \u25be \u0e40\u0e25\u0e37\u0e2d\u0e01 \u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48\u0e1a\u0e34\u0e25</div>'+
+         d2.slice(0,12).map(function(dt){ var g=g2[dt]; return '<div class="kv"><span>'+beDate(dt)+' <span class="muted">'+g.length+' \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23</span></span><b>'+TH(g.reduce(function(s,p){ return s+(parseFloat(p.amount)||0); },0))+'</b></div>'; }).join('')+
+         (d2.length>12?('<div class="muted">\u2026 \u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 '+(d2.length-12)+' \u0e27\u0e31\u0e19</div>'):'')+
+         '<div style="text-align:right;margin-top:6px"><button class="btn sec" style="padding:4px 12px" onclick="taGoPend()">\u0e44\u0e1b\u0e15\u0e32\u0e23\u0e32\u0e07\u0e40\u0e07\u0e34\u0e19\u0e23\u0e2d\u0e08\u0e31\u0e1a\u0e04\u0e39\u0e48</button></div>'+
+         '</div>';
+    }
+    h+='<div style="text-align:right;margin-top:6px"><button class="btn" style="padding:6px 18px" onclick="taClose()">\u0e23\u0e31\u0e1a\u0e17\u0e23\u0e32\u0e1a \u00b7 \u0e1b\u0e34\u0e14</button></div>';
+    document.getElementById("taBody").innerHTML=h;
+    document.getElementById("taOv").style.display="flex";
+  }catch(e){ console.error("taskAlertRun", e); }
+}
+
+ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} });
 </script>
 <script src="credit.js?v=20260728b"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 </body>

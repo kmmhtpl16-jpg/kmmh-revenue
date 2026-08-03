@@ -71,7 +71,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.8 (เงินสดล้วน · ต้นทุนจาก ACC-BILLING)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.9 (เงินสดล้วน · ต้นทุนจาก ACC-BILLING · กระทบยอดใบสำคัญจ่ายรวมเงินเบิกสด)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -267,8 +267,13 @@ function buildPayrollMatch(){
     });
     const pcTot=STATE.exp.filter(x=>x.source==="petty_cash"&&x.exp_date===v.vdate&&pcCode(x.acc_code)==="5211-10")
                          .reduce((s,x)=>s+num(x.amount),0);
+    /* 💵 เงินเบิกสดที่จ่ายวันเดียวกับใบ แต่ไม่ได้อยู่ในใบสัปดาห์นี้ (เช่น คนรายเดือนที่หักรอบสิ้นเดือน)
+       พนักงานลงเงินสดย่อยรหัส 5211-10 เป็นก้อนเดียวรวมเงินเบิกไปด้วย → ต้องบวกฝั่ง "ควรจ่าย" ให้ตรงกัน */
+    const advRows=(STATE.cashAdv||[]).filter(a=>a.date===v.vdate);
+    const advTot=r2(advRows.reduce((s,a)=>s+num(a.amt),0));
     const noStmt=!stmt.some(sx=>sx.exp_date>=lo&&sx.exp_date<=hi);
-    cards.push({v,det,trTot,cashTot,pcTot,noStmt,diff:r2(num(v.total_amount)-(trTot+pcTot))});
+    cards.push({v,det,trTot,cashTot,pcTot,advRows,advTot,noStmt,
+                diff:r2(num(v.total_amount)+advTot-(trTot+pcTot))});
   });
   return {map,cards};
 }
@@ -378,12 +383,12 @@ const gFrom=()=>document.getElementById("from").value;
 const gTo=()=>document.getElementById("to").value;
 
 /* ================= ข้อมูล ================= */
-let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[],advances:[],uobLoans:[]};
+let STATE={daily:[],audit:[],exp:[],petty:[],vouchers:[],vouchersAll:[],trips:[],payMatch:{},payCards:[],advances:[],uobLoans:[],cashAdv:[]};
 async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e,pc,pv,tp,adv,uob,mc]=await Promise.all([
+    const [d,a,e,pc,pv,tp,adv,uob,mc,ded,dty,emp]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
@@ -396,7 +401,11 @@ async function reloadAll(){
       /* 🏦 เงินกู้ UOB: บิลที่จ่ายด้วยกู้ UOB (ทุกงวด) */
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").eq("uob_loan",true) : Promise.resolve({data:[]})),
       /* 📈 ต้นทุนขายรายเดือน (กรอกจาก ACC-BILLING) */
-      (ROLE==="owner" ? sb.from("rev_monthly_cogs").select("*") : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("rev_monthly_cogs").select("*") : Promise.resolve({data:[]})),
+      /* 💵 เงินเบิกสดของพนักงาน (deductions ชนิด "เบิกเงินสด") — ใช้กระทบยอดใบสำคัญจ่ายเท่านั้น ไม่นับเป็นรายจ่าย */
+      (ROLE==="owner" ? sb.from("deductions").select("amount,deduct_date,deduct_cycle,employee_id,deduction_type_id").gte("deduct_date",dShift(from,-45)).lte("deduct_date",dShift(to,45)) : Promise.resolve({data:[]})),
+      (ROLE==="owner" ? sb.from("deduction_types").select("id,name") : Promise.resolve({data:[]})),
+      (ROLE==="owner" ? sb.from("employees").select("id,nickname") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
@@ -414,6 +423,12 @@ async function reloadAll(){
     STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
     STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
     STATE.mcogs={}; (mc&&!mc.error?(mc.data||[]):[]).forEach(function(r){ STATE.mcogs[r.month]=r; });
+    /* 💵 เงินเบิกสด: กรองเฉพาะชนิด "เบิกเงินสด" แล้วแปะชื่อเล่นไว้โชว์ในการ์ดกระทบยอด */
+    var DT={}; (dty&&!dty.error?(dty.data||[]):[]).forEach(function(t){ DT[t.id]=t.name; });
+    var EN={}; (emp&&!emp.error?(emp.data||[]):[]).forEach(function(x){ EN[x.id]=x.nickname; });
+    STATE.cashAdv=(ded&&!ded.error?(ded.data||[]):[])
+      .filter(function(x){ return /เบิกเงินสด/.test(String(DT[x.deduction_type_id]||"")); })
+      .map(function(x){ return {date:x.deduct_date, amt:num(x.amount), nick:EN[x.employee_id]||"—", cycle:x.deduct_cycle}; });
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
     await loadPayeeMap();
     renderAll();
@@ -684,6 +699,10 @@ function renderExpense(){
       <div class="muted" style="margin-top:6px">
         โอนออก (จับคู่ได้) <b>${TH(c.trTot)}</b> + เงินสดย่อย (เงินเดือนวันเดียวกัน) <b>${TH(c.pcTot)}</b> = <b>${TH(r2(c.trTot+c.pcTot))}</b> ${badge}
       </div>
+      ${(c.advTot>0)?`<div class="muted" style="margin-top:4px">
+        เทียบกับ ใบสำคัญจ่าย <b>${TH(c.v.total_amount)}</b> + 💵 เงินเบิกสดวันเดียวกัน (ไม่อยู่ในใบ) <b>${TH(c.advTot)}</b> = <b>${TH(r2(num(c.v.total_amount)+c.advTot))}</b>
+        <div style="margin-top:4px">${c.advRows.map(a=>`<span class="chip mn" style="margin:2px;background:#fef3c7">${esc(a.nick)} ${TH(a.amt)}${a.cycle==="month_end"?" · หักสิ้นเดือน":""}</span>`).join("")}</div>
+      </div>`:""}
       <details style="margin-top:6px"><summary class="muted" style="cursor:pointer">ดูรายคน (${c.det.length})</summary>
         <div style="margin-top:6px;font-size:13px;line-height:1.9">
           ${c.det.map(d=>`<span class="chip mn" style="margin:2px">${esc(d.nick)} ${TH(d.amt)} · ${stMark[d.st]}</span>`).join("")}
@@ -803,7 +822,7 @@ function renderExpense(){
 
   ${vCards?`<div class="card">
     <h3>💼 กระทบยอดใบสำคัญจ่าย (payroll)</h3>
-    <div class="note">ใบสำคัญจ่าย <b>ไม่ถูกนับเป็นรายจ่าย</b> เพราะเงินออกจริงบันทึกไว้แล้วในสเตทเมนต์ + เงินสดย่อย · การ์ดนี้ใช้เช็คว่าจ่ายครบตามใบหรือไม่ และติดป้ายชื่อพนักงานให้แถวเงินโอนออกอัตโนมัติ</div>
+    <div class="note">ใบสำคัญจ่าย <b>ไม่ถูกนับเป็นรายจ่าย</b> เพราะเงินออกจริงบันทึกไว้แล้วในสเตทเมนต์ + เงินสดย่อย · การ์ดนี้ใช้เช็คว่าจ่ายครบตามใบหรือไม่ และติดป้ายชื่อพนักงานให้แถวเงินโอนออกอัตโนมัติ<br>💵 ถ้ามีพนักงานมาเบิกเงินสดวันเดียวกัน (โดยเฉพาะคนรายเดือนที่หักรอบสิ้นเดือน) เงินก้อนนั้นรวมอยู่ในเงินสดย่อยรหัส 5211-10 ด้วย ระบบจะบวกเข้าฝั่ง "ควรจ่าย" ให้เอง และโชว์ชื่อคนเบิกไว้ใต้การ์ด</div>
     ${vCards}
   </div>`:""}
 

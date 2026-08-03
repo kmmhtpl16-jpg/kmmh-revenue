@@ -295,11 +295,116 @@
       var r2=await sb.from("rev_pending").select("id,date,amount,source,from_name,status,matched_bill_no,matched_date").eq("status","matched");
       var u=(r2.data||[]).filter(function(x){ return Math.abs(num(x.amount)-num(pr.amount))<0.01 && String(x.source||"")===String(pr.method||""); });
       if(u.length) return {kind:"used", p:u[0]};
+      /* เงินอาจเข้าทาง K+/QR ซึ่งไม่เคยลง rev_pending — ต้องไปหาใน rev_daily.kplus_rows (แก้ 3ส.ค.69) */
+      var kp=await obKplus(pr);
+      if(kp) return kp;
       return {kind:"none"};
     }
     if(c.length>1) return {kind:"many", list:c};
     return {kind:"one", p:c[0]};
   }
+
+  /* ---------- หาเงินที่เข้าทาง K+/QR (เก็บใน rev_daily.kplus_rows ไม่ได้อยู่ใน rev_pending) ----------
+     เหตุผล: ก่อนหน้านี้ตัวหาเงินอ่านแค่ rev_pending → บิลเก่าที่ลูกค้าจ่ายผ่าน K+ ขึ้น "ไม่พบเงิน" ตลอด
+     (เคส KM6907-0428 อ.เจริญก่อสร้าง 20,930 · K+ 28/07/2569 12:30 ยอด 25,785) */
+  function dShift(iso,n){ var d=new Date(String(iso).slice(0,10)+"T00:00:00"); d.setDate(d.getDate()+n); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+  async function obKplus(pr){
+    try{
+      var fd=String(pr.form_date||"").slice(0,10); if(!fd) return null;
+      var r=await sb.from("rev_daily").select("date,kplus_rows").gte("date",dShift(fd,-3)).lte("date",dShift(fd,1));
+      var want=num(pr.amount), exact=[], over=[];
+      (r.data||[]).forEach(function(d){
+        var rows=d.kplus_rows||[]; if(!rows.length) return;
+        rows.forEach(function(x){
+          var amt=num(x.amt!=null?x.amt:x.amount); if(amt<=0) return;
+          var m=String(x.t||"").match(/(\d{2}:\d{2})/);
+          var it={date:String(d.date).slice(0,10), amt:amt, hhmm:m?m[1]:""};
+          if(Math.abs(amt-want)<0.01) exact.push(it);
+          else if(amt>want+0.01) over.push(it);
+        });
+      });
+      /* ตัดตัวที่เคยถูกบันทึกจับคู่ไปแล้วออก (กันเสนอซ้ำ) */
+      var used={};
+      try{
+        var q=await sb.from("rev_pending").select("date,amount,source").gte("date",dShift(fd,-3)).lte("date",dShift(fd,1)).like("source","K+%");
+        (q.data||[]).forEach(function(x){ used[String(x.date).slice(0,10)+"#"+num(x.amount).toFixed(2)]=1; });
+      }catch(e){}
+      function fresh(a){ return a.filter(function(it){ return !used[it.date+"#"+it.amt.toFixed(2)]; }); }
+      exact=fresh(exact); over=fresh(over);
+      if(exact.length) return {kind:"kplus", list:exact.slice(0,5)};
+      /* ยอดรวมก้อนเดียว (ลูกค้าจ่ายบิลเก่า+บิลใหม่พร้อมกัน) — ให้คนเลือกเองว่าก้อนไหน */
+      over.sort(function(a,b){ return a.amt-b.amt; });
+      var sameDay=over.filter(function(it){ return it.date===fd; });
+      if(sameDay.length) over=sameDay;
+      if(over.length) return {kind:"kpluspart", list:over.slice(0,5)};
+      return null;
+    }catch(e){ console.warn("obKplus",e); return null; }
+  }
+
+  /* ตัดบิลเก่าด้วยเงิน K+ — ต้องมีรายการ K+ จริงเป็นหลักฐานเสมอ */
+  window.__obCutKplus=async function(id, date, amt, hhmm){
+    var C=OB_CACHE[id]; if(!C){ alert("ไม่พบข้อเสนอ"); return; }
+    var pr=C.pr;
+    var pl=await obPlan(pr);
+    if(!pl.allocs.length){ alert("ตอนนี้ไม่พบบิลค้างของลูกค้ารายนี้แล้ว (อาจถูกตัดไปแล้ว) — กด \u2715 ยกเลิกรายการ ได้เลยค่ะ"); loadOldBillProposals(); return; }
+    var diff=Math.round((num(amt)-num(pr.amount))*100)/100;
+    var bl=pl.allocs.map(function(a){ return "\u2022 "+(a.bill_no||beDate(a.bill_date))+" ("+(a.customer||"")+") \u0e15\u0e31\u0e14 "+fmt(a.give); }).join("\n");
+    var msg="\u0e15\u0e31\u0e14\u0e1a\u0e34\u0e25\u0e40\u0e01\u0e48\u0e32\u0e14\u0e49\u0e27\u0e22\u0e40\u0e07\u0e34\u0e19 K+ ?\n\n"+
+      "\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32: "+(pr.customer||pr.bill_no||"")+"\n"+
+      "\u0e22\u0e2d\u0e14\u0e08\u0e48\u0e32\u0e22\u0e15\u0e32\u0e21\u0e1f\u0e2d\u0e23\u0e4c\u0e21: "+fmt(pr.amount)+"\n"+
+      "\u0e40\u0e07\u0e34\u0e19 K+ \u0e17\u0e35\u0e48\u0e43\u0e0a\u0e49: "+beDate(date)+" "+(hhmm||"")+" "+fmt(amt)+"\n"+
+      (diff>0.005?("\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e48\u0e32\u0e07 "+fmt(diff)+" = \u0e1a\u0e34\u0e25\u0e2d\u0e37\u0e48\u0e19\u0e02\u0e2d\u0e07\u0e27\u0e31\u0e19\u0e19\u0e31\u0e49\u0e19 (\u0e44\u0e21\u0e48\u0e15\u0e31\u0e14\u0e43\u0e19\u0e04\u0e23\u0e31\u0e49\u0e07\u0e19\u0e35\u0e49)\n"):"")+
+      "\n\u0e08\u0e30\u0e15\u0e31\u0e14\u0e1a\u0e34\u0e25:\n"+bl+
+      (pl.leftover>0.005?("\n\n\u26a0\ufe0f \u0e40\u0e2b\u0e25\u0e37\u0e2d "+fmt(pl.leftover)+" \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e1a\u0e34\u0e25\u0e43\u0e2b\u0e49\u0e15\u0e31\u0e14"):"");
+    if(!confirm(msg)) return;
+    var by=prompt("\u0e1c\u0e39\u0e49\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19 (\u0e0a\u0e37\u0e48\u0e2d\u0e04\u0e38\u0e13):",""); if(by===null) return; by=(by||"").trim();
+    var batch="OBK"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
+    var refTxt="\u0e1a\u0e34\u0e25\u0e40\u0e01\u0e48\u0e32 \u00b7 K+ "+beDate(date)+" "+(hhmm||"")+" \u0e22\u0e2d\u0e14 "+fmt(amt)+(diff>0.005?(" (\u0e23\u0e27\u0e21\u0e1a\u0e34\u0e25\u0e2d\u0e37\u0e48\u0e19 "+fmt(diff)+")"):"");
+    var payments=pl.allocs.map(function(a){
+      return {bill_id:a.bill_id, pay_date:String(date).slice(0,10), amount:a.give, method:"K+",
+              ref:refTxt, batch_ref:batch, confirmed_by:by||null};
+    });
+    var ins=await sb.from("rev_credit_payments").insert(payments);
+    if(ins.error){ alert("\u0e15\u0e31\u0e14\u0e22\u0e2d\u0e14\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08: "+ins.error.message); return; }
+    var ids={}; payments.forEach(function(p){ ids[p.bill_id]=1; });
+    for(var k in ids){ await recomputeBillCredit(k); }
+    /* บันทึกร่องรอยไว้ใน rev_pending เป็น matched เลย (K+ นับในยอดวันแล้ว ไม่นับซ้ำ) */
+    try{
+      await sb.from("rev_pending").insert({ date:String(date).slice(0,10), amount:num(amt), source:"K+",
+        from_name:(hhmm||""), ref:"K+ \u0e08\u0e48\u0e32\u0e22\u0e2b\u0e19\u0e35\u0e49\u0e40\u0e01\u0e48\u0e32", status:"matched",
+        matched_bill_no:pl.allocs.map(function(a){return a.bill_no;}).filter(Boolean).join(", ")||null,
+        matched_date:todayISO(), confirmed_by:by||null, match_batch:batch,
+        note:"K+ \u0e19\u0e31\u0e1a\u0e43\u0e19\u0e22\u0e2d\u0e14\u0e27\u0e31\u0e19\u0e41\u0e25\u0e49\u0e27 \u0e44\u0e21\u0e48\u0e19\u0e31\u0e1a\u0e0b\u0e49\u0e33" });
+    }catch(e){ console.warn("kplus trace",e); }
+    await sb.from("rev_oldbill_proposals").update({ status:"confirmed", batch_ref:batch, confirmed_by:by||null,
+      confirmed_at:new Date().toISOString(), plan:pl.allocs, leftover:pl.leftover }).eq("id",id);
+    alert("\u2713 \u0e15\u0e31\u0e14\u0e22\u0e2d\u0e14\u0e41\u0e25\u0e49\u0e27 "+payments.length+" \u0e1a\u0e34\u0e25 ("+fmt(payments.reduce(function(s,p){return s+p.amount;},0))+" \u0e1a\u0e32\u0e17)");
+    loadOldBillProposals(); loadCreditBills();
+    if(window.loadPending) loadPending();
+    if(window._openDay && window.renderDay) renderDay(window._openDay,false);
+  };
+
+  /* ---------- ใช้มัดจำตัดบิล → ต้องลงรับชำระในทะเบียนลูกหนี้ด้วย (แก้ 3ส.ค.69) ----------
+     เดิม: กดใช้มัดจำ → เขียนแค่ rev_deposit_uses → บิลลงบัญชียัง open เต็มจำนวน
+     (เคส อุดรไทยพิพัฒน์ 964 / บิล KM6906-0588 969) */
+  window.__creditCutFromDeposit=async function(billNo, amount, payDate, by, depositNo){
+    try{
+      if(!sbReady()||!billNo) return {skipped:true};
+      var q=await sb.from("rev_credit_bills").select("id,bill_no,total_amount,paid_amount,status").eq("bill_no",String(billNo).trim());
+      var bills=(q.data||[]);
+      if(!bills.length) return {skipped:true};                 /* ไม่ใช่บิลลงบัญชี = ปกติ ไม่ต้องทำอะไร */
+      if(bills.length>1) return {skipped:true, dup:true};       /* เลขบิลซ้ำ อย่าเดา */
+      var b=bills[0];
+      var batch="DEP"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
+      var ins=await sb.from("rev_credit_payments").insert([{ bill_id:b.id, pay_date:String(payDate||todayISO()).slice(0,10),
+        amount:num(amount), method:"\u0e2b\u0e31\u0e01\u0e21\u0e31\u0e14\u0e08\u0e33",
+        ref:"\u0e2b\u0e31\u0e01\u0e08\u0e32\u0e01\u0e21\u0e31\u0e14\u0e08\u0e33"+(depositNo?(" "+depositNo):""), batch_ref:batch, confirmed_by:by||null }]);
+      if(ins.error) return {error:ins.error.message};
+      await recomputeBillCredit(b.id);
+      if(window.loadCreditBills) loadCreditBills();
+      return {ok:true, bill_no:b.bill_no};
+    }catch(e){ return {error:String(e&&e.message||e)}; }
+  };
 
   window.__creditOldBills=async function(wb, formDate){
     try{
@@ -360,7 +465,19 @@
       else if(mo.kind==="one"){ st='<span style="color:#166534">🟢 พบเงินเข้า '+beDate(mo.p.date)+' '+fmt(mo.p.amount)+' ('+esc(mo.p.source||"")+')<br><span class="muted" style="font-size:11px">'+esc(mo.p.from_name||"")+'</span></span>'; ok=true; }
       else if(mo.kind==="many"){ st='<span style="color:#92400e">🟡 พบเงินเข้ายอดตรงกัน '+mo.list.length+' รายการ — ระบบเลือกให้ไม่ได้<br><span class="muted" style="font-size:11px">จับคู่เองที่กล่อง “ยอดเงินรอจับคู่”</span></span>'; }
       else if(mo.kind==="used"){ st='<span style="color:#6d28d9">✔ เงินก้อนนี้จับคู่ไปแล้ว'+(mo.p.matched_bill_no?(' → บิล '+esc(mo.p.matched_bill_no)):'')+(mo.p.matched_date?(' ('+beDate(mo.p.matched_date)+')'):'')+'<br><span class="muted" style="font-size:11px">= จัดการแล้ว กด ✕ ยกเลิกรายการ ได้เลย</span></span>'; }
-      else { st='<span style="color:#b91c1c">🔴 ยังไม่พบเงินเข้าในสเตทเมนต์<br><span class="muted" style="font-size:11px">อัปสเตทเมนต์ของวันนั้นก่อน หรือเงินอาจเข้าบัญชีอื่น</span></span>'; }
+      else if(mo.kind==="kplus"||mo.kind==="kpluspart"){
+        var _part=(mo.kind==="kpluspart");
+        var _btns=mo.list.map(function(k){
+          var _d=Math.round((num(k.amt)-num(pr.amount))*100)/100;
+          return '<div style="margin-top:3px"><b>'+beDate(k.date)+' '+esc(k.hhmm||"")+' \u00b7 '+fmt(k.amt)+'</b>'+
+                 (_d>0.005?(' <span class="muted" style="font-size:11px">(\u0e21\u0e32\u0e01\u0e01\u0e27\u0e48\u0e32 '+fmt(_d)+' = \u0e19\u0e48\u0e32\u0e08\u0e30\u0e23\u0e27\u0e21\u0e1a\u0e34\u0e25\u0e2d\u0e37\u0e48\u0e19)</span>'):'')+
+                 ' <button class="btn sec" style="padding:2px 8px;margin-left:6px;border-color:#86efac;color:#166534" onclick="__obCutKplus(\''+pr.id+'\',\''+k.date+'\','+num(k.amt)+',\''+esc(k.hhmm||"")+'\')">\u2713 \u0e15\u0e31\u0e14\u0e1a\u0e34\u0e25\u0e14\u0e49\u0e27\u0e22\u0e40\u0e07\u0e34\u0e19\u0e19\u0e35\u0e49</button></div>';
+        }).join("");
+        st=(_part?'<span style="color:#92400e">\ud83d\udfe1 \u0e1e\u0e1a\u0e40\u0e07\u0e34\u0e19 K+ \u0e01\u0e49\u0e2d\u0e19\u0e17\u0e35\u0e48\u0e21\u0e32\u0e01\u0e01\u0e27\u0e48\u0e32 \u2014 \u0e19\u0e48\u0e32\u0e08\u0e30\u0e08\u0e48\u0e32\u0e22\u0e23\u0e27\u0e21\u0e01\u0e31\u0e1a\u0e1a\u0e34\u0e25\u0e43\u0e2b\u0e21\u0e48</span>'
+                 :'<span style="color:#166534">\ud83d\udfe2 \u0e1e\u0e1a\u0e40\u0e07\u0e34\u0e19\u0e40\u0e02\u0e49\u0e32\u0e17\u0e32\u0e07 K+ \u0e22\u0e2d\u0e14\u0e15\u0e23\u0e07</span>')+_btns+
+           '<div class="muted" style="font-size:11px">K+ \u0e19\u0e31\u0e1a\u0e43\u0e19\u0e22\u0e2d\u0e14\u0e02\u0e2d\u0e07\u0e27\u0e31\u0e19\u0e41\u0e25\u0e49\u0e27 \u2014 \u0e01\u0e14\u0e15\u0e31\u0e14\u0e1a\u0e34\u0e25\u0e44\u0e21\u0e48\u0e17\u0e33\u0e43\u0e2b\u0e49\u0e19\u0e31\u0e1a\u0e40\u0e07\u0e34\u0e19\u0e0b\u0e49\u0e33</div>';
+      }
+      else { st='<span style="color:#b91c1c">🔴 ยังไม่พบเงินเข้าในสเตทเมนต์ (รวม K+ แล้ว)<br><span class="muted" style="font-size:11px">อัปสเตทเมนต์/รายงาน K+ ของวันนั้นก่อน หรือเงินอาจเข้าบัญชีอื่น</span></span>'; }
       if(!pl.allocs.length && pl.allPaid) billTxt='<span style="color:#6d28d9">✔ บิลของลูกค้ารายนี้จ่ายครบแล้ว<br><span class="muted" style="font-size:11px">= ตัดยอดไปแล้ว กด ✕ ยกเลิกรายการ</span></span>';
       else if(!pl.allocs.length && pl.noBill) billTxt='<span style="color:#b45309">⚠ ไม่พบบิลของลูกค้ารายนี้ในทะเบียนลูกหนี้<br><span class="muted" style="font-size:11px">เช็กชื่อลูกค้า/เลขบิลในฟอร์มก่อน</span></span>';
       out.push('<tr><td>'+beDate(pr.form_date)+'</td><td><b>'+who+'</b></td><td class="num" style="font-weight:600">'+fmt(pr.amount)+'</td><td>'+esc(pr.method)+'</td>'+

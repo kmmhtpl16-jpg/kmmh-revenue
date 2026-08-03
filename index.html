@@ -707,7 +707,17 @@ async function useDeposit(id, remaining, billDefault, amtDefault){
   if(e2){ alert("อ่านยอดไม่ได้: "+e2.message); return; }
   const newUsed=(parseFloat(dep.used_amount)||0)+amt; const closed=newUsed >= (parseFloat(dep.amount)||0)-0.01;
   const {error:e3}=await sb.from("rev_deposits").update({used_amount:newUsed, status:closed?"matched":"open", matched_bill_no:bill.trim(), matched_date:new Date().toISOString().slice(0,10), confirmed_by:(by||"").trim()}).eq("id",id);
-  if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; } loadDeposits(); if(window.refreshOpenDay) refreshOpenDay(); if(window.loadPending) loadPending();
+  if(e3){ alert("อัปเดตไม่สำเร็จ: "+e3.message); return; }
+  /* ถ้าบิลที่หักมัดจำเป็นบิลลงบัญชี ต้องลงรับชำระในทะเบียนลูกหนี้ด้วย (แก้ 3ส.ค.69) */
+  try{
+    if(window.__creditCutFromDeposit){
+      const _cut=await window.__creditCutFromDeposit(bill.trim(), amt, new Date().toISOString().slice(0,10), (by||"").trim(), null);
+      if(_cut && _cut.ok) alert("✓ หักมัดจำแล้ว และตัดยอดบิล "+_cut.bill_no+" ในทะเบียนลูกหนี้ให้ด้วยแล้ว");
+      else if(_cut && _cut.dup) alert("⚠️ เลขบิล "+bill.trim()+" มีซ้ำในทะเบียนลูกหนี้ — ไม่ได้ตัดยอดให้ กรุณาตรวจเอง");
+      else if(_cut && _cut.error) alert("⚠️ หักมัดจำสำเร็จ แต่ตัดยอดในทะเบียนลูกหนี้ไม่สำเร็จ: "+_cut.error);
+    }
+  }catch(e){ console.warn("depositCut",e); }
+  loadDeposits(); if(window.refreshOpenDay) refreshOpenDay(); if(window.loadPending) loadPending();
 }
 async function refundDeposit(id, remaining){
   if(!sb) return;
@@ -1583,6 +1593,6 @@ async function taskAlertRun(){
 
 ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} });
 </script>
-<script src="credit.js?v=20260728b"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+<script src="credit.js?v=20260803a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 </body>
 </html>

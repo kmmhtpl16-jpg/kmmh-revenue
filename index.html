@@ -1504,6 +1504,7 @@ const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISO
 
 /* ── 🔔 เตือนงานค้าง "ยังจับคู่ไม่ครบ" ตอนแคชเชียร์เข้าระบบ (3 ส.ค.69) ── */
 var TA_DAYS=45;
+var TA_FROM_MIN="2026-07-01"; /* \u0e21\u0e34.\u0e22.69 = \u0e0a\u0e48\u0e27\u0e07\u0e17\u0e14\u0e2a\u0e2d\u0e1a\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21 \u0e44\u0e21\u0e48\u0e19\u0e31\u0e1a */
 function taClose(){ var o=document.getElementById("taOv"); if(o) o.style.display="none"; }
 function taGo(d){ taClose(); try{ if(window.showDayDetail) showDayDetail(d); }catch(e){} var b=document.getElementById("dayDetail"); if(b&&b.scrollIntoView) b.scrollIntoView({behavior:"smooth",block:"start"}); }
 function taGoPend(){ taClose(); var c=document.getElementById("pendcard"); if(c&&c.scrollIntoView) c.scrollIntoView({behavior:"smooth",block:"start"}); }
@@ -1516,7 +1517,7 @@ async function taskAlertRun(){
     var Q=String.fromCharCode(39);
     var _sh=function(iso,n){ var p=String(iso).slice(0,10).split("-"); var dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
     var today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
-    var from=_sh(today,-TA_DAYS);
+    var from=_sh(today,-TA_DAYS); if(from<TA_FROM_MIN) from=TA_FROM_MIN;
     var q=await Promise.all([
       sb.from("rev_daily").select("date,bank_rows").gte("date",from).lte("date",today),
       sb.from("rev_audit").select("date,status,detail").gte("date",from),

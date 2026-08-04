@@ -25,6 +25,8 @@
   function todayISO(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
   function shiftISO(iso,n){ var p=String(iso).slice(0,10).split("-"); var d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
   function role(){ try{ return localStorage.getItem("rev_role")||sessionStorage.getItem("rev_role")||null; }catch(e){ return null; } }
+  /* แต่ละหน้าประกาศ sb ด้วย let/const → ไม่ขึ้นเป็น window.sb ต้องอ่านจาก global lexical scope */
+  function SB(){ try{ if(typeof sb!=="undefined" && sb) return sb; }catch(e){} return window.sb||null; }
   function onPage(name){ return (location.pathname||"").indexOf(name)>=0; }
 
   /* ---------- UI ---------- */
@@ -97,11 +99,12 @@
     var fromExp=shiftISO(today,-EXP_DAYS), fromAud=shiftISO(today,-AUDIT_DAYS), fromPend=shiftISO(today,-PEND_DAYS);
     var fromAll = fromExp<fromPend?fromExp:fromPend;
 
+    var S=SB();
     var q=await Promise.all([
-      sb.from("rev_daily").select("date,bank_rows,kplus_total,bank_dep_total").gte("date",fromAll).lte("date",today),
-      sees.exp ? sb.from("rev_expenses").select("exp_date,amount,ref,source").gte("exp_date",fromExp).in("source",["statement","settlement"]) : Promise.resolve({data:[]}),
-      sb.from("rev_pending").select("date,amount,source,from_name,status").eq("status","open").gte("date",fromPend),
-      sb.from("rev_audit").select("date,status,kplus_today,bank_dep_today").gte("date",fromAud).lte("date",today)
+      S.from("rev_daily").select("date,bank_rows,kplus_total,bank_dep_total").gte("date",fromAll).lte("date",today),
+      sees.exp ? S.from("rev_expenses").select("exp_date,amount,ref,source").gte("exp_date",fromExp).in("source",["statement","settlement"]) : Promise.resolve({data:[]}),
+      S.from("rev_pending").select("date,amount,source,from_name,status").eq("status","open").gte("date",fromPend),
+      S.from("rev_audit").select("date,status,kplus_today,bank_dep_today").gte("date",fromAud).lte("date",today)
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[];
 
@@ -191,7 +194,7 @@
 
   async function run(){
     try{
-      if(!window.sb || !role()) return;
+      if(!SB() || !role()) return;
       try{ if(window.ensureOwnerSession) await window.ensureOwnerSession(); else if(window.ensureRevSession) await window.ensureRevSession("0402"); }catch(e){}
       inject();
       render(await collect());
@@ -203,7 +206,7 @@
   var tries=0;
   var t=setInterval(function(){
     tries++;
-    if(window.sb || tries>40){ clearInterval(t); setTimeout(run, 600); }
+    if(SB() || tries>40){ clearInterval(t); setTimeout(run, 600); }
   }, 250);
   setInterval(run, REFRESH_MS);
 })();

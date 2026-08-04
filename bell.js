@@ -27,7 +27,8 @@
   function role(){ try{ return localStorage.getItem("rev_role")||sessionStorage.getItem("rev_role")||null; }catch(e){ return null; } }
   /* แต่ละหน้าประกาศ sb ด้วย let/const → ไม่ขึ้นเป็น window.sb ต้องอ่านจาก global lexical scope */
   function SB(){ try{ if(typeof sb!=="undefined" && sb) return sb; }catch(e){} return window.sb||null; }
-  function onPage(name){ return (location.pathname||"").indexOf(name)>=0; }
+  function onPage(name){ var p=location.pathname||""; try{ p=decodeURIComponent(p); }catch(e){}
+    return p.indexOf(name)>=0; }
 
   /* ---------- UI ---------- */
   function inject(){
@@ -72,9 +73,23 @@
   }
 
   /* ---------- ไปยังจุดที่ต้องทำ ---------- */
+  /* เปิดแท็บรายจ่าย + ขยายช่วงวันให้ครอบรายการค้างทั้งหมด แล้วโหลดใหม่ */
+  function openExpenseTab(){
+    var pn=document.getElementById("bellPanel"); if(pn) pn.style.display="none";
+    try{ if(window.tab) window.tab("expense"); }catch(e){}
+    /* ตั้งช่วงวันให้ครอบ 90 วันย้อนหลัง ไม่งั้นรายการเก่าไม่โผล่ (ตารางอ่านเฉพาะช่วงที่โหลด) */
+    try{
+      var f=document.getElementById("from"), t=document.getElementById("to");
+      if(f&&t){
+        var today=todayISO(), want=shiftISO(today,-EXP_DAYS);
+        if(!f.value || f.value>want){ f.value=want; t.value=today; if(window.reloadAll) window.reloadAll(); }
+      }
+    }catch(e){}
+    setTimeout(function(){ var el=document.getElementById("p_expense"); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); }, 300);
+  }
   window.__bellGoExp=function(){
-    if(onPage("การเงินบริษัท")){ var el=document.getElementById("p_expense"); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); document.getElementById("bellPanel").style.display="none"; return; }
-    location.href="การเงินบริษัท.html#p_expense";
+    if(onPage("การเงินบริษัท")){ openExpenseTab(); return; }
+    location.href="การเงินบริษัท.html#bell-expense";
   };
   window.__bellGoPend=function(){
     if(onPage("index")||location.pathname.replace(/\/$/,"").split("/").pop()===""||onPage("kmmh-revenue/")){
@@ -197,6 +212,7 @@
       if(!SB() || !role()) return;
       try{ if(window.ensureOwnerSession) await window.ensureOwnerSession(); else if(window.ensureRevSession) await window.ensureRevSession("0402"); }catch(e){}
       inject();
+      if(location.hash==="#bell-expense" && onPage("การเงินบริษัท")){ try{ history.replaceState(null,"",location.pathname); }catch(e){} openExpenseTab(); }
       render(await collect());
     }catch(e){ console.warn("bell", e); }
   }

@@ -1381,6 +1381,8 @@ async function saveAcc(){
 
 /* ================= TAB 3: สรุปรายจ่ายรายเดือน ================= */
 let chartMon=null;
+let MON_MODE="baht";   /* "baht" | "pct" — โหมดแสดงผลตารางรายจ่ายรายเดือน */
+window.setMonMode=function(m){ MON_MODE=m; renderMonthly(); };
 function renderMonthly(){
   const el=document.getElementById("p_monthly");
   const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing");
@@ -1392,21 +1394,39 @@ function renderMonthly(){
   const monTot={}; months.forEach(m=>monTot[m]=cats.reduce((s,c)=>s+grid[m][c],0));
   const grand=EX.reduce((s,x)=>s+num(x.amount),0);
 
+  /* ยอดขายรายเดือน (ฐานคิด %) = ยอดขายวันที่ "ตรวจแล้ว" + ยอดขาย Shopee — เกณฑ์เดียวกับแท็บกระแสเงินสด */
+  const sales={}; months.forEach(m=>sales[m]=0);
+  STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(sales[m]!=null) sales[m]+=num(a.machine_net); });
+  STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(sales[m]!=null) sales[m]+=num(x.amount); });
+  const salesTot=months.reduce((s,m)=>s+sales[m],0);
+  const pct=(v,base)=>(!base||!v)?"—":(Math.round(v/base*1000)/10).toFixed(1)+"%";
+  const cell=(v,base)=>MON_MODE==="pct"?pct(v,base):(v?TH0(v):"—");
+
+  const isPct=MON_MODE==="pct";
   let head=`<tr><th>หมวด</th>`+months.map(m=>`<th class="n">${beMonth(m)}</th>`).join("")+`<th class="n">รวม</th></tr>`;
-  let body=cats.sort((a,b)=>catTot[b]-catTot[a]).map(c=>`<tr><td>${esc(c)}</td>`+months.map(m=>`<td class="n">${grid[m][c]?TH0(grid[m][c]):"—"}</td>`).join("")+`<td class="n">${TH0(catTot[c])}</td></tr>`).join("");
-  let foot=`<tr class="tot"><td>รวมต่อเดือน</td>`+months.map(m=>`<td class="n">${TH0(monTot[m])}</td>`).join("")+`<td class="n">${TH0(grand)}</td></tr>`;
+  let salesRow=`<tr style="background:#f0fdf4"><td><b>ยอดขาย (ฐานคิด %)</b></td>`+months.map(m=>`<td class="n" style="color:#15803d;font-weight:600">${sales[m]?TH0(sales[m]):"—"}</td>`).join("")+`<td class="n" style="color:#15803d;font-weight:700">${TH0(salesTot)}</td></tr>`;
+  let body=cats.sort((a,b)=>catTot[b]-catTot[a]).map(c=>`<tr><td>${esc(c)}</td>`+months.map(m=>`<td class="n">${cell(grid[m][c],sales[m])}</td>`).join("")+`<td class="n">${cell(catTot[c],salesTot)}</td></tr>`).join("");
+  let foot=`<tr class="tot"><td>รวมต่อเดือน</td>`+months.map(m=>`<td class="n">${cell(monTot[m],sales[m])}</td>`).join("")+`<td class="n">${cell(grand,salesTot)}</td></tr>`;
+
+  const btn=(m,label)=>`<button class="btn sm ${MON_MODE===m?'blu':'gray'}" onclick="setMonMode('${m}')">${label}</button>`;
 
   el.innerHTML=`
   <div class="card">
     <h3>📅 สรุปรายจ่ายรายเดือน แยกหมวด</h3>
-    ${months.length?`<div class="scroll"><table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+      ${btn("baht","฿ บาท")}${btn("pct","% ของยอดขาย")}
+      <span class="muted" style="font-size:12px">${isPct?"ตัวเลขในตาราง = % ของยอดขายเดือนนั้น":"ตัวเลขในตาราง = บาท"}</span>
+    </div>
+    <div class="note">ฐานคิด % = <b>ยอดขายที่ “ตรวจแล้ว” + ยอดขาย Shopee</b> (เกณฑ์เดียวกับแท็บกระแสเงินสด) · เดือนที่ยังตรวจไม่ครบ ยอดขายจะต่ำกว่าจริง → % จะสูงเกินจริง</div>
+    ${months.length?`<div class="scroll"><table><thead>${head}</thead><tbody>${salesRow}${body}</tbody><tfoot>${foot}</tfoot></table></div>
     <canvas id="cMon" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีรายจ่ายในช่วงนี้</div>`}
   </div>`;
   if(months.length){
     const ctx=document.getElementById("cMon");
     if(chartMon) chartMon.destroy();
-    chartMon=new Chart(ctx,{type:"bar",data:{labels:months.map(beMonth),datasets:[{label:"รายจ่ายรวม (บาท)",data:months.map(m=>monTot[m]),backgroundColor:"#16a34a"}]},
-      options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>TH0(v)}}}}});
+    const dataArr=isPct?months.map(m=>sales[m]?Math.round(monTot[m]/sales[m]*1000)/10:0):months.map(m=>monTot[m]);
+    chartMon=new Chart(ctx,{type:"bar",data:{labels:months.map(beMonth),datasets:[{label:isPct?"รายจ่ายรวม (% ของยอดขาย)":"รายจ่ายรวม (บาท)",data:dataArr,backgroundColor:isPct?"#2563eb":"#16a34a"}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>isPct?v+"%":TH0(v)}}}}});
   }
 }
 

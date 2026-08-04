@@ -1405,7 +1405,21 @@ function renderMonthly(){
   const isPct=MON_MODE==="pct";
   let head=`<tr><th>หมวด</th>`+months.map(m=>`<th class="n">${beMonth(m)}</th>`).join("")+`<th class="n">รวม</th></tr>`;
   let salesRow=`<tr style="background:#f0fdf4"><td><b>ยอดขาย (ฐานคิด %)</b></td>`+months.map(m=>`<td class="n" style="color:#15803d;font-weight:600">${sales[m]?TH0(sales[m]):"—"}</td>`).join("")+`<td class="n" style="color:#15803d;font-weight:700">${TH0(salesTot)}</td></tr>`;
-  let body=cats.sort((a,b)=>catTot[b]-catTot[a]).map(c=>`<tr><td>${esc(c)}</td>`+months.map(m=>`<td class="n">${cell(grid[m][c],sales[m])}</td>`).join("")+`<td class="n">${cell(catTot[c],salesTot)}</td></tr>`).join("");
+  /* ---- จัดกลุ่มหมวด: ต้นทุน/ซื้อของ vs ค่าใช้จ่ายดำเนินงาน — ให้เห็นว่าแถวไหนไปรวมกับสรุปตัวไหน ---- */
+  const isCostCat=c=>c==="ค่าซื้อสินค้า";
+  /* คืนเงินต้นเงินกู้ไม่ใช่ค่าใช้จ่าย — ยังนับให้เหมือนเดิม แต่ติดธงเตือนให้ไปแก้ (ไม่ซ่อนเงียบ) */
+  const isFlagCat=c=>/^เงินกู้/.test(c)&&!/ดอกเบี้ย/.test(c);
+  const catRow=(c,bar)=>`<tr><td style="border-left:4px solid ${bar};padding-left:8px">${esc(c)}`+
+      (isFlagCat(c)?' <span class="chip" style="background:#fee2e2;color:#b91c1c">⚠️ คืนเงินต้น ไม่ใช่ค่าใช้จ่าย</span>':'')+
+      `</td>`+months.map(m=>`<td class="n">${cell(grid[m][c],sales[m])}</td>`).join("")+`<td class="n">${cell(catTot[c],salesTot)}</td></tr>`;
+  const grpHead=(txt,bg,col)=>`<tr style="background:${bg}"><td colspan="${months.length+2}" style="color:${col};font-weight:700;font-size:12px;padding:5px 8px">${txt}</td></tr>`;
+  const sorted=cats.sort((a,b)=>catTot[b]-catTot[a]);
+  const costCats=sorted.filter(isCostCat), opexCats=sorted.filter(c=>!isCostCat(c));
+  let body=
+      grpHead("🟠 ต้นทุน / ซื้อสินค้า — เทียบกับแถว “ต้นทุนขาย” ด้านล่าง (คนละตัวกัน)","#fffbeb","#b45309")
+    + costCats.map(c=>catRow(c,"#f59e0b")).join("")
+    + grpHead("🔴 ค่าใช้จ่ายดำเนินงาน — รวมเป็นแถว “ค่าใช้จ่ายดำเนินงาน” ด้านล่าง","#fef2f2","#b91c1c")
+    + opexCats.map(c=>catRow(c,"#f87171")).join("");
   /* ---- แถวสรุปกำไร: ต้นทุนขาย (จาก rev_monthly_cogs) · กำไรขั้นต้น · ค่าใช้จ่ายดำเนินงาน · กำไรก่อนภาษี ---- */
   const MCg=STATE.mcogs||{};
   const cogsOfM=m=>{ const r=MCg[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; };

@@ -1045,6 +1045,8 @@ function buildUobHtml(){
   if(ROLE!=="owner") return "";
   const out=loans.filter(b=>!b.uob_repay_date), paid=loans.filter(b=>b.uob_repay_date);
   const outTot=out.reduce((s,b)=>s+num(b.amount),0), intTot=paid.reduce((s,b)=>s+num(b.uob_interest),0);
+  const paidTot=paid.reduce((s,b)=>s+num(b.amount),0);              /* เงินต้นที่ชำระแล้ว */
+  const repaidTot=paid.reduce((s,b)=>s+num(b.uob_repay_amount),0);  /* ยอดโอนคืนจริง (ต้น+ดอก) */
   const outRows=out.length?out.map(b=>`<tr>
       <td>${beDate(b.exp_date)}</td><td>${esc(b.description||b.ref||"")}${b.source==="uob_manual"?' <span class="chip" style="background:#a78bfa;color:#fff">เพิ่มเอง</span>':''}</td>
       <td class="n">${TH(num(b.amount))}</td>
@@ -1056,8 +1058,18 @@ function buildUobHtml(){
       <td class="n">${TH(num(b.amount))}</td><td class="n">${TH(num(b.uob_repay_amount))}</td>
       <td class="n" style="color:#b45309">${TH(num(b.uob_interest))}</td>
       <td><button class="btn sm gray" onclick="undoUobRepay('${b.id}')">↩︎ แยกคืน</button></td></tr>`).join("");
+  const uTile=(label,val,sub,col,bg)=>`<div style="flex:1 1 150px;min-width:150px;background:${bg};border:1px solid ${col}33;border-radius:10px;padding:8px 11px">
+      <div style="font-size:12px;color:#57534e">${label}</div>
+      <div style="font-size:17px;font-weight:700;color:${col};line-height:1.35">${TH(val)}</div>
+      <div style="font-size:11px;color:#78716c">${sub}</div></div>`;
   return `<div class="card" style="border:1px solid #c4b5fd;background:#f5f3ff">
-    <h3 style="color:#5b21b6">🏦 หนี้เงินกู้ UOB คงเหลือ (${out.length} บิล · ${TH(outTot)} บาท)</h3>
+    <h3 style="color:#5b21b6">🏦 เงินกู้ UOB</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px">
+      ${uTile("🔴 ยอดค้างชำระ (เงินต้น)", outTot, out.length+" บิล", "#b91c1c", "#fff")}
+      ${uTile("🟢 ยอดชำระแล้ว (เงินต้น)", paidTot, paid.length+" บิล", "#15803d", "#fff")}
+      ${uTile("🟠 ดอกเบี้ยรวม", intTot, "ลงเป็นค่าใช้จ่ายแล้ว", "#b45309", "#fff")}
+      ${uTile("💸 โอนคืนจริงรวม", repaidTot, "เงินต้น + ดอกเบี้ย", "#5b21b6", "#fff")}
+    </div>
     <div class="note">บิลที่จ่ายซัพด้วยเงินกู้ UOB (เงินต้น = ยอดบิล) · จ่ายคืนโดยกด "🏦 คืนกู้ UOB" ที่รายการเงินออกจากสเตทเมนต์วันที่โอนคืน — ระบบหักส่วนต่างเป็น <b>ดอกเบี้ย</b> อัตโนมัติ (ดอกเบี้ยลงเป็นค่าใช้จ่าย · เงินต้นไม่นับซ้ำต้นทุน · เงินโอนคืนถูกตัดออกจากยอดรวมกันนับซ้ำ)</div>
     <div class="scroll"><table>
       <thead><tr><th>วันที่บิล</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้</th><th></th></tr></thead>
@@ -1072,7 +1084,7 @@ function buildUobHtml(){
       </div>
       <div class="muted" style="font-size:12px;margin-top:4px">ใช้กับหนี้กู้ที่<b>ไม่มีบิลซื้อในระบบ</b> (เช่น ก้อนที่กู้ก่อนเริ่มใช้ระบบ) — บันทึกเป็น<b>หนี้อย่างเดียว ไม่นับเป็นรายจ่าย/ต้นทุน</b> · พอโอนคืนแล้วกด "🏦 คืนกู้ UOB" ที่รายการเงินออกวันที่โอน ระบบจะหักดอกเบี้ยให้เอง</div>
     </div>
-    ${paidRows?`<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">ประวัติจ่ายคืน (${paid.length}) · ดอกเบี้ยรวม ${TH(intTot)} บาท</summary>
+    ${paidRows?`<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">📜 ดูรายละเอียดที่ชำระแล้ว (${paid.length} บิล)</summary>
       <div class="scroll"><table style="margin-top:6px">
         <thead><tr><th>วันที่คืน</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้</th><th class="n">จ่ายคืน</th><th class="n">ดอกเบี้ย</th><th></th></tr></thead>
         <tbody>${paidRows}</tbody></table></div></details>`:""}

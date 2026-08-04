@@ -1385,7 +1385,7 @@ let MON_MODE="baht";   /* "baht" | "pct" — โหมดแสดงผลต�
 window.setMonMode=function(m){ MON_MODE=m; renderMonthly(); };
 function renderMonthly(){
   const el=document.getElementById("p_monthly");
-  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing");
+  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual");
   const months=[...new Set(EX.map(x=>monthKey(x.exp_date)))].sort();
   const cats=[...new Set(EX.map(x=>x.category))];
   const grid={}; months.forEach(m=>{grid[m]={};cats.forEach(c=>grid[m][c]=0);});
@@ -1438,7 +1438,7 @@ function renderCash(){
   const rev={},exp={}; months.forEach(m=>{rev[m]=0;exp[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
   STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
-  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
+  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
   let cum=0;
   let body=months.map(m=>{ const net=rev[m]-exp[m]; cum+=net;
     return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td><td class="n neg">${TH0(exp[m])}</td><td class="n ${net>=0?'pos':'neg'}">${TH0(net)}</td><td class="n">${TH0(cum)}</td></tr>`;

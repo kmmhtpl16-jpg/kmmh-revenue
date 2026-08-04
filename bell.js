@@ -7,6 +7,10 @@
      1) รายจ่ายจากสเตทเมนต์ที่ยังไม่ได้บันทึก   (เจ้าของ/การเงิน)
      2) เงินโอนเข้ารอจับคู่                      (ทุกคน)
      3) วันที่ยังตรวจไม่ครบ (ย้อนหลัง 30 วัน)     (ทุกคน)
+
+   ตัวกรอง: rev_bell_ignore = รายการเงินออกที่ไม่ต้องเตือน (โอนเข้าบัญชีตัวเอง/เงินเดือนที่ลงทางอื่น)
+     kind="exact"   → เทียบ exp_date|amount|ref แบบเป๊ะ (ซ่อนรายการเดียว)
+     kind="keyword" → เทียบ pattern แบบ "มีคำนี้อยู่ในข้อความ" (ซ่อนทุกครั้งที่เจอ)
    ============================================================ */
 (function(){
   "use strict";
@@ -119,21 +123,35 @@
       S.from("rev_daily").select("date,bank_rows,kplus_total,bank_dep_total").gte("date",fromAll).lte("date",today),
       sees.exp ? S.from("rev_expenses").select("exp_date,amount,ref,source").gte("exp_date",fromExp).in("source",["statement","settlement"]) : Promise.resolve({data:[]}),
       S.from("rev_pending").select("date,amount,source,from_name,status").eq("status","open").gte("date",fromPend),
-      S.from("rev_audit").select("date,status,kplus_today,bank_dep_today").gte("date",fromAud).lte("date",today)
+      S.from("rev_audit").select("date,status,kplus_today,bank_dep_today").gte("date",fromAud).lte("date",today),
+      sees.exp ? S.from("rev_bell_ignore").select("kind,exp_date,amount,ref,pattern") : Promise.resolve({data:[]})
     ]);
-    var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[];
+    var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
 
     /* 1) เงินออกจากสเตทเมนต์ที่ยังไม่ได้ลงรายจ่าย — คีย์เดียวกับหน้าการเงินบริษัท */
     if(sees.exp){
       var recorded={};
       exps.forEach(function(x){ recorded[String(x.exp_date).slice(0,10)+"|"+r2(x.amount)+"|"+(x.ref||"")]=1; });
-      var wd=[];
+      /* ตัวกรอง "ไม่ต้องเตือน" — ตั้งจากหน้าการเงินบริษัท (ปุ่ม 🙈) */
+      var igExact={}, igKey=[];
+      igns.forEach(function(g){
+        if(g.kind==="keyword"){ var pt=String(g.pattern||"").trim().toLowerCase(); if(pt) igKey.push(pt); }
+        else igExact[String(g.exp_date).slice(0,10)+"|"+r2(g.amount)+"|"+(g.ref||"")]=1;
+      });
+      function isIgnored(date,amt,ref){
+        if(igExact[String(date).slice(0,10)+"|"+amt+"|"+ref]) return true;
+        var t=String(ref||"").toLowerCase();
+        for(var i=0;i<igKey.length;i++){ if(t.indexOf(igKey[i])>=0) return true; }
+        return false;
+      }
+      var wd=[], hid=0;
       dailies.forEach(function(d){
         if(String(d.date)<fromExp) return;
         (d.bank_rows||[]).forEach(function(r){
           var amt=r2(r.wd); if(amt<=0) return;
           var ref=String(r.detail||"");
           if(recorded[String(d.date).slice(0,10)+"|"+amt+"|"+ref]) return;
+          if(isIgnored(d.date,amt,ref)){ hid++; return; }
           wd.push({date:d.date, amt:amt, ref:ref});
         });
       });
@@ -145,7 +163,8 @@
         out.push({ key:"exp", icon:"💸",
           title:"มีรายจ่ายต้องบันทึก "+wd.length+" รายการ",
           sub:"ใหม่ 7 วันล่าสุด "+fresh.length+" รายการ"+(oldn?(" · ค้างเก่า "+oldn+" รายการ"):"")+
-              " · รวม "+TH(wd.reduce(function(s,x){return s+x.amt;},0))+" บาท",
+              " · รวม "+TH(wd.reduce(function(s,x){return s+x.amt;},0))+" บาท"+
+              (hid?(" · ตั้งไม่เตือนไว้ "+hid+" รายการ"):""),
           items:wd.slice(0,5).map(function(x){ return beDate(x.date)+" · "+TH(x.amt)+" · "+(x.ref||"—"); }),
           more:Math.max(0,wd.length-5), btn:"ไปลงรายจ่าย", act:"__bellGoExp()" });
       }

@@ -388,7 +388,7 @@ async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e,pc,pv,tp,adv,uob,mc,ded,dty,emp]=await Promise.all([
+    const [d,a,e,pc,pv,tp,adv,uob,mc,ded,dty,emp,ign]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
@@ -405,7 +405,9 @@ async function reloadAll(){
       /* 💵 เงินเบิกสดของพนักงาน (deductions ชนิด "เบิกเงินสด") — ใช้กระทบยอดใบสำคัญจ่ายเท่านั้น ไม่นับเป็นรายจ่าย */
       (ROLE==="owner" ? sb.from("deductions").select("amount,deduct_date,deduct_cycle,employee_id,deduction_type_id").gte("deduct_date",dShift(from,-45)).lte("deduct_date",dShift(to,45)) : Promise.resolve({data:[]})),
       (ROLE==="owner" ? sb.from("deduction_types").select("id,name") : Promise.resolve({data:[]})),
-      (ROLE==="owner" ? sb.from("employees").select("id,nickname") : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("employees").select("id,nickname") : Promise.resolve({data:[]})),
+      /* 🙈 กฎ "ไม่ต้องเตือน" ของกระดิ่ง (โอนเข้าบัญชีตัวเอง / เงินเดือนที่ลงทางอื่น) */
+      (ROLE==="owner" ? sb.from("rev_bell_ignore").select("*").order("created_at") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
@@ -423,6 +425,7 @@ async function reloadAll(){
     STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
     STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
     STATE.mcogs={}; (mc&&!mc.error?(mc.data||[]):[]).forEach(function(r){ STATE.mcogs[r.month]=r; });
+    STATE.bellIgnore=(ign&&!ign.error?(ign.data||[]):[]);
     /* 💵 เงินเบิกสด: กรองเฉพาะชนิด "เบิกเงินสด" แล้วแปะชื่อเล่นไว้โชว์ในการ์ดกระทบยอด */
     var DT={}; (dty&&!dty.error?(dty.data||[]):[]).forEach(function(t){ DT[t.id]=t.name; });
     var EN={}; (emp&&!emp.error?(emp.data||[]):[]).forEach(function(x){ EN[x.id]=x.nickname; });
@@ -614,7 +617,14 @@ function renderExpense(){
   const PM=buildPayrollMatch(); STATE.payMatch=PM.map; STATE.payCards=PM.cards;
   // เงินออกจากสเตทเมนต์ที่ยังไม่ได้บันทึก
   const recorded=new Set(STATE.exp.filter(x=>x.source==="statement"||x.source==="settlement").map(x=>x.exp_date+"|"+r2(x.amount)+"|"+(x.ref||"")));
-  let wdHtml="", wdCount=0, _wdNew=0; window.WD_KNOWN=[];
+  let wdHtml="", wdCount=0, _wdNew=0, _wdHid=0; window.WD_KNOWN=[];
+  /* 🙈 กฎ "ไม่ต้องเตือน": kind=exact เทียบวันที่|ยอด|ข้อความเป๊ะ · kind=keyword เทียบ "มีคำนี้อยู่ในข้อความ" */
+  const IGN=STATE.bellIgnore||[];
+  const _igExact=new Set(), _igKey=[];
+  IGN.forEach(g=>{ if(g.kind==="keyword"){ const w=String(g.pattern||"").trim().toLowerCase(); if(w) _igKey.push(w); }
+                   else _igExact.add(String(g.exp_date).slice(0,10)+"|"+r2(g.amount)+"|"+(g.ref||"")); });
+  const isIgnoredWd=(date,amt,ref)=>{ if(_igExact.has(date+"|"+amt+"|"+ref)) return true;
+    const t=String(ref||"").toLowerCase(); return _igKey.some(w=>t.indexOf(w)>=0); };
   // จำหมวดจากประวัติ: ผู้รับคนเดียวกันเคยลงหมวดไหน (statement/manual ที่ไม่ใช่ "อื่นๆ") + ชื่อในใบสำคัญจ่าย = ค่าแรง
   const _histRows=STATE.exp.filter(x=>(x.source==="statement"||x.source==="manual")&&x.category&&x.category!=="อื่นๆ"&&(x.ref||x.description)).sort((a,b)=>(a.exp_date<b.exp_date?1:-1));
   const _vNames=[]; (STATE.vouchersAll||[]).forEach(v=>{ (Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{ if(ln&&ln.full_name) _vNames.push(ln.full_name); }); });
@@ -628,13 +638,15 @@ function renderExpense(){
     (d.bank_rows||[]).filter(r=>num(r.wd)>0).forEach((r,i)=>{
       const amt=r2(r.wd), ref=String(r.detail||""), key=d.date+"|"+amt+"|"+ref, done=recorded.has(key);
       if(done) return;   // ซ่อนรายการที่ลงบันทึกแล้ว เพื่อดันรายการที่ยังไม่ลงขึ้นมา
+      if(isIgnoredWd(d.date,amt,ref)){ _wdHid++; return; }   // 🙈 ตั้งไว้ว่าไม่ต้องเตือน
       wdCount++;
       const _sug=suggestCat(ref); const _defCat=_sug?_sug.cat:"อื่นๆ";
       if(_sug&&_defCat!=="ค่าซื้อสินค้า"){ window.WD_KNOWN.push({date:d.date,amt:amt,ref:ref,cat:_defCat}); } else if(!_sug){ _wdNew++; }
       wdHtml+=`<tr${!_sug?' style="background:#fff7ed"':''}><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}${_sug?' <span class="chip" style="background:#0ea5e9;color:#fff">💡 '+esc(_sug.cat)+'</span>':''}</td><td class="n">${TH(amt)}</td>
         <td><select id="wc_${d.date}_${i}" class="sm">${catOptions(_defCat)}</select>
          <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
-         <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button></td></tr>`;
+         <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button>
+         <button class="btn sm gray" title="ไม่ใช่รายจ่าย (เช่น โอนเข้าบัญชีตัวเอง / เงินเดือนที่ลงทางอื่น) — เลิกเตือนรายการแบบนี้" onclick="ignoreWd('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🙈 ไม่ต้องเตือน</button></td></tr>`;
     });
   });
 
@@ -812,6 +824,7 @@ function renderExpense(){
     ${wdCount?`${window.WD_KNOWN.length?`<div style="margin-bottom:8px"><button class="btn sm" style="background:#16a34a;color:#fff" onclick="bookAllKnown()">➕ ลงทั้งหมดที่ระบบจำได้ (${window.WD_KNOWN.length})</button> <span class="muted">· 🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ (แถวสีส้ม)</span></div>`:(_wdNew?`<div class="muted" style="margin-bottom:8px">🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ</div>`:``)}<div class="scroll"><table>
       <thead><tr><th>วันที่</th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th><th>จัดหมวด</th></tr></thead>
       <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">✓ จัดหมวดครบทุกรายการแล้ว (ไม่มีเงินออกที่ยังไม่ได้ลงรายจ่าย)</div>`}
+    ${(_wdHid||IGN.length)?`<div class="muted" style="margin-top:8px;border-top:1px dashed #e7e5e4;padding-top:7px">🙈 ไม่ต้องเตือน: ซ่อนอยู่ ${_wdHid} รายการในช่วงนี้${IGN.length?` · กฎที่ตั้งไว้ ${IGN.length} ข้อ — ${IGN.map(g=>`<span class="chip mn" style="margin:2px">${g.kind==="keyword"?`คำว่า “${esc(g.pattern)}”`:`${beDate(g.exp_date)} · ${TH(g.amount)}`} <a href="#" onclick="delIgnore('${g.id}');return false" style="color:#c00;text-decoration:none">✕</a></span>`).join(" ")}`:""}</div>`:""}
   </div>
 
   ${tCards?`<div class="card">
@@ -881,6 +894,31 @@ window.bookAllKnown=async function(){
   alert("✓ ลงรายจ่าย "+L.length+" รายการแล้ว");
   await reloadAll(); tab("expense");
 };
+/* ===== 🙈 ตัวกรอง "ไม่ต้องเตือน" (rev_bell_ignore) — ใช้ร่วมกับกระดิ่ง bell.js ===== */
+window.ignoreWd=async function(date,amt,ref){
+  const byWord=confirm("🙈 เลิกเตือนให้ลงรายจ่ายรายการนี้\n\n"+beDate(date)+" · "+TH(amt)+" บาท\n"+ref+
+    "\n\nกด OK = ซ่อนทุกครั้งที่ข้อความมีคำที่ระบุ (เช่น ชื่อบัญชีตัวเอง / ชื่อพนักงานที่จ่ายผ่าน payroll)\nกด Cancel = ซ่อนเฉพาะรายการนี้รายการเดียว");
+  let row;
+  if(byWord){
+    const sug=String(ref||"").replace(/\+\+$/,"").trim();
+    let w=prompt("ถ้าข้อความมีคำนี้ = ไม่ต้องเตือน\n(พิมพ์เฉพาะส่วนที่ซ้ำทุกครั้ง เช่น เลขบัญชีหรือชื่อ)", sug);
+    if(w==null) return; w=String(w).trim(); if(!w) return;
+    if(w.length<4 && !confirm("คำสั้นมาก (\""+w+"\") อาจไปซ่อนรายการอื่นที่ไม่ตั้งใจ ยืนยันหรือไม่?")) return;
+    row={kind:"keyword", pattern:w, note:"ตั้งจากรายการ "+date+" · "+ref, created_by:"owner"};
+  }else{
+    row={kind:"exact", exp_date:date, amount:amt, ref:ref, note:"ซ่อนรายการเดียว", created_by:"owner"};
+  }
+  const ins=await sb.from("rev_bell_ignore").insert([row]);
+  if(ins.error){ alert("บันทึกไม่สำเร็จ: "+ins.error.message); return; }
+  await reloadAll(); tab("expense");
+};
+window.delIgnore=async function(id){
+  if(!confirm("เอากฎ “ไม่ต้องเตือน” ข้อนี้ออก?\n(รายการที่เคยถูกซ่อน จะกลับมาเตือนอีกครั้ง)")) return;
+  const del=await sb.from("rev_bell_ignore").delete().eq("id",id);
+  if(del.error){ alert("ลบไม่สำเร็จ: "+del.error.message); return; }
+  await reloadAll(); tab("expense");
+};
+
 /* ===== จับคู่บิลซื้อ (ACC-BILLING) กับเงินออกจริง — กันนับซ้ำ ===== */
 function unpaidBills(){
   return STATE.exp.filter(x=>x.source==="acc_billing"&&x.pay_status!=="paid");
@@ -1616,6 +1654,6 @@ window.saveMonthlyCogs=async function(m){
   document.getElementById("pin").focus();
 })();
 </script>
-<script src="bell.js?v=20260804a"></script>
+<script src="bell.js?v=20260804b"></script>
 </body>
 </html>

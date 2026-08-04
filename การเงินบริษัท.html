@@ -1406,7 +1406,33 @@ function renderMonthly(){
   let head=`<tr><th>หมวด</th>`+months.map(m=>`<th class="n">${beMonth(m)}</th>`).join("")+`<th class="n">รวม</th></tr>`;
   let salesRow=`<tr style="background:#f0fdf4"><td><b>ยอดขาย (ฐานคิด %)</b></td>`+months.map(m=>`<td class="n" style="color:#15803d;font-weight:600">${sales[m]?TH0(sales[m]):"—"}</td>`).join("")+`<td class="n" style="color:#15803d;font-weight:700">${TH0(salesTot)}</td></tr>`;
   let body=cats.sort((a,b)=>catTot[b]-catTot[a]).map(c=>`<tr><td>${esc(c)}</td>`+months.map(m=>`<td class="n">${cell(grid[m][c],sales[m])}</td>`).join("")+`<td class="n">${cell(catTot[c],salesTot)}</td></tr>`).join("");
-  let foot=`<tr class="tot"><td>รวมต่อเดือน</td>`+months.map(m=>`<td class="n">${cell(monTot[m],sales[m])}</td>`).join("")+`<td class="n">${cell(grand,salesTot)}</td></tr>`;
+  /* ---- แถวสรุปกำไร: ต้นทุนขาย (จาก rev_monthly_cogs) · กำไรขั้นต้น · ค่าใช้จ่ายดำเนินงาน · กำไรก่อนภาษี ---- */
+  const MCg=STATE.mcogs||{};
+  const cogsOfM=m=>{ const r=MCg[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; };
+  const buyOf=m=>grid[m]&&grid[m]["ค่าซื้อสินค้า"]?grid[m]["ค่าซื้อสินค้า"]:0;
+  const cogsTot=months.reduce((s2,m)=>s2+(cogsOfM(m)||0),0);
+  const haveCogs=months.filter(m=>cogsOfM(m)!=null);
+  const gpOf=m=>{ const c=cogsOfM(m); return c==null?null:sales[m]-c; };
+  const opexOf=m=>monTot[m]-buyOf(m);
+  const opexTot=months.reduce((s2,m)=>s2+opexOf(m),0);
+  const gpTot=haveCogs.length?haveCogs.reduce((s2,m)=>s2+(sales[m]-cogsOfM(m)),0):null;
+  const salesWithCogs=haveCogs.reduce((s2,m)=>s2+sales[m],0);
+  /* แถวสรุป: v=null → "—" (ยังไม่กรอกต้นทุนขาย) */
+  const sumCell=(v,base,col)=>{
+    if(v==null) return `<td class="n muted">—</td>`;
+    const txt=MON_MODE==="pct"?pct(v,base):TH0(v);
+    return `<td class="n" style="color:${col};font-weight:600">${txt}</td>`;
+  };
+  const sumRow=(label,fn,totVal,totBase,col,bg)=>`<tr style="background:${bg}"><td><b>${label}</b></td>`+
+      months.map(m=>sumCell(fn(m),sales[m],col)).join("")+
+      sumCell(totVal,totBase,col)+`</tr>`;
+
+  let foot=`<tr class="tot"><td>รวมค่าใช้จ่ายทั้งหมด</td>`+months.map(m=>`<td class="n">${cell(monTot[m],sales[m])}</td>`).join("")+`<td class="n">${cell(grand,salesTot)}</td></tr>`
+    + sumRow("ต้นทุนขาย (จาก ACC-BILLING)", cogsOfM, (haveCogs.length?cogsTot:null), salesWithCogs, "#b45309", "#fffbeb")
+    + sumRow("กำไรขั้นต้น", gpOf, gpTot, salesWithCogs, "#15803d", "#f0fdf4")
+    + sumRow("ค่าใช้จ่ายดำเนินงาน (ไม่รวมค่าซื้อ)", opexOf, opexTot, salesTot, "#b91c1c", "#fef2f2")
+    + sumRow("กำไรก่อนภาษี (ประมาณ)", m=>{ const g=gpOf(m); return g==null?null:g-opexOf(m); },
+        (gpTot==null?null:gpTot-haveCogs.reduce((s2,m)=>s2+opexOf(m),0)), salesWithCogs, "#1d4ed8", "#eff6ff");
 
   const btn=(m,label)=>`<button class="btn sm ${MON_MODE===m?'blu':'gray'}" onclick="setMonMode('${m}')">${label}</button>`;
 
@@ -1418,6 +1444,7 @@ function renderMonthly(){
       <span class="muted" style="font-size:12px">${isPct?"ตัวเลขในตาราง = % ของยอดขายเดือนนั้น":"ตัวเลขในตาราง = บาท"}</span>
     </div>
     <div class="note">ฐานคิด % = <b>ยอดขายที่ “ตรวจแล้ว” + ยอดขาย Shopee</b> (เกณฑ์เดียวกับแท็บกระแสเงินสด) · เดือนที่ยังตรวจไม่ครบ ยอดขายจะต่ำกว่าจริง → % จะสูงเกินจริง</div>
+    <div class="note" style="background:#eff6ff;border-color:#93c5fd">📊 <b>แถวสรุปท้ายตาราง</b> · <b>ค่าซื้อสินค้า</b> ในตาราง = เงินสดที่จ่ายซื้อของเดือนนั้น <u>ไม่ใช่</u> ต้นทุนของที่ขายไป → เอาไปคิดกำไรไม่ได้ · <b>ต้นทุนขาย</b> ใช้ตัวที่กรอกจากรายงาน ACC-BILLING (แท็บกำไรขั้นต้น) เดือนไหนยังไม่กรอกจะขึ้น “—” · <b>กำไรก่อนภาษี (ประมาณ)</b> = กำไรขั้นต้น − ค่าใช้จ่ายดำเนินงาน (ยังไม่รวมภาษี/ค่าเสื่อม)</div>
     ${months.length?`<div class="scroll"><table><thead>${head}</thead><tbody>${salesRow}${body}</tbody><tfoot>${foot}</tfoot></table></div>
     <canvas id="cMon" style="margin-top:12px"></canvas>`:`<div class="muted">ยังไม่มีรายจ่ายในช่วงนี้</div>`}
   </div>`;

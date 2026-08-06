@@ -281,6 +281,17 @@ function buildPayrollMatch(){
 /* ===== ค่าเที่ยว: ระบบจัดส่งเสนอ vs จ่ายจริงใน payroll (ไม่นับเป็นรายจ่ายเพิ่ม) ===== */
 const isTripLabel=l=>/ค่าเที่ยว/.test(String(l||""));
 let TRIP_LABEL_WARN=false;
+/* ชื่อเล่นสะกดต่างกันข้ามโปรแกรม (แซ้งค์ ↔ แซ้ง) → เทียบด้วยรูปย่อ: ตัดการันต์ + วรรณยุกต์ + ช่องว่าง
+   ⚠️ ใช้เทียบเท่านั้น เวลาแสดงผลให้ใช้ชื่อจริงจาก employees.nickname เสมอ (ดู memory: ชื่อเล่นต้องสะกดเหมือนกันทุกโปรแกรม) */
+function normNick(s){
+  return String(s||"").replace(/.\u0E4C/g,"")        // ตัดตัวการันต์ + ตัวที่มันเกาะ (ค์)
+                      .replace(/[\u0E48-\u0E4B]/g,"") // ตัดวรรณยุกต์ ่ ้ ๊ ๋
+                      .replace(/\s+/g,"").trim();
+}
+function tripAckKey(ym,n){ return ym+"|"+normNick(n); }
+function isTripAcked(ym,n){
+  return (STATE.tripAck||[]).some(a=>a.ym===ym && normNick(a.nickname)===normNick(n));
+}
 function buildTripCheck(){
   const from=gFrom(), to=gTo();
   const yms=[...new Set([from.slice(0,7), to.slice(0,7)].concat(
@@ -301,16 +312,21 @@ function buildTripCheck(){
   return yms.map(ym=>{
     const props=(STATE.trips||[]).filter(t=>t.ym===ym);
     const pd=paid[ym]||{};
-    const names=[...new Set(props.map(p=>p.nickname).concat(Object.keys(pd)))];
-    const rows=names.map(n=>{
-      const p=props.find(x=>x.nickname===n);
-      const prop=p?num(p.amount):null, pay=pd[n]!=null?r2(pd[n]):null;
+    /* จับคู่ด้วยรูปย่อของชื่อ (กัน แซ้งค์/แซ้ง หลุดเป็น 2 แถว) — ชื่อที่โชว์ใช้ของใบเสนอก่อน */
+    const keys=[...new Set(props.map(p=>normNick(p.nickname)).concat(Object.keys(pd).map(normNick)))];
+    const rows=keys.map(k=>{
+      const p=props.find(x=>normNick(x.nickname)===k);
+      const payNames=Object.keys(pd).filter(x=>normNick(x)===k);
+      const n=p?p.nickname:(payNames[0]||k);
+      const prop=p?num(p.amount):null;
+      const pay=payNames.length?r2(payNames.reduce((s2,x)=>s2+num(pd[x]),0)):null;
       let st="ok";
       if(prop==null) st="noprop"; else if(pay==null) st="nopay"; else if(Math.abs(prop-pay)>=1) st="diff";
-      return {n,prop,pay,trips:p?p.trips:null,status:p?p.status:null,st};
+      if(st!=="ok" && isTripAcked(ym,n)) st="acked";
+      return {n,prop,pay,trips:p?p.trips:null,status:p?p.status:null,st,ym};
     }).sort((a,b)=>(b.prop||0)-(a.prop||0));
     const propTot=rows.reduce((s,r)=>s+(r.prop||0),0), payTot=rows.reduce((s,r)=>s+(r.pay||0),0);
-    return {ym,rows,propTot,payTot,bad:rows.filter(r=>r.st!=="ok").length};
+    return {ym,rows,propTot,payTot,bad:rows.filter(r=>r.st!=="ok"&&r.st!=="acked").length};
   }).filter(c=>c.rows.length);
 }
 /* ใช้ในหน้าแก้ไข: ถ้าหมวดเดิมไม่มีในลิสต์ (เช่นหมวดเก่า/หมวดที่ลบไปแล้ว) ให้คงไว้ กันเปลี่ยนหมวดเงียบๆ */
@@ -388,7 +404,7 @@ async function reloadAll(){
   if(!sb) return;
   const from=gFrom(), to=gTo(); const msg=document.getElementById("loadmsg"); msg.textContent="กำลังโหลด…";
   try{
-    const [d,a,e,pc,pv,tp,adv,uob,mc,ded,dty,emp,ign]=await Promise.all([
+    const [d,a,e,pc,pv,tp,adv,uob,mc,ded,dty,emp,ign,tack]=await Promise.all([
       sb.from("rev_daily").select("*").gte("date",from).lte("date",to).order("date"),
       sb.from("rev_audit").select("date,machine_net,status").gte("date",from).lte("date",to).order("date"),
       (ROLE==="owner" ? sb.from("rev_expenses").select("*").gte("exp_date",from).lte("exp_date",to).order("exp_date") : Promise.resolve({data:[]})),
@@ -407,7 +423,9 @@ async function reloadAll(){
       (ROLE==="owner" ? sb.from("deduction_types").select("id,name") : Promise.resolve({data:[]})),
       (ROLE==="owner" ? sb.from("employees").select("id,nickname") : Promise.resolve({data:[]})),
       /* 🙈 กฎ "ไม่ต้องเตือน" ของกระดิ่ง (โอนเข้าบัญชีตัวเอง / เงินเดือนที่ลงทางอื่น) */
-      (ROLE==="owner" ? sb.from("rev_bell_ignore").select("*").order("created_at") : Promise.resolve({data:[]}))
+      (ROLE==="owner" ? sb.from("rev_bell_ignore").select("*").order("created_at") : Promise.resolve({data:[]})),
+      /* ✓ แถวการ์ดตรวจค่าเที่ยวที่ปิดเคสแล้ว */
+      (ROLE==="owner" ? sb.from("rev_trip_check_ack").select("*") : Promise.resolve({data:[]}))
     ]);
     if(d.error||a.error||e.error){ msg.textContent="โหลดไม่สำเร็จ: "+((d.error||a.error||e.error).message); return; }
     STATE.daily=d.data||[]; STATE.audit=a.data||[];
@@ -426,6 +444,7 @@ async function reloadAll(){
     STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
     STATE.mcogs={}; (mc&&!mc.error?(mc.data||[]):[]).forEach(function(r){ STATE.mcogs[r.month]=r; });
     STATE.bellIgnore=(ign&&!ign.error?(ign.data||[]):[]);
+    STATE.tripAck=(tack&&!tack.error?(tack.data||[]):[]);
     /* 💵 เงินเบิกสด: กรองเฉพาะชนิด "เบิกเงินสด" แล้วแปะชื่อเล่นไว้โชว์ในการ์ดกระทบยอด */
     var DT={}; (dty&&!dty.error?(dty.data||[]):[]).forEach(function(t){ DT[t.id]=t.name; });
     var EN={}; (emp&&!emp.error?(emp.data||[]):[]).forEach(function(x){ EN[x.id]=x.nickname; });
@@ -726,7 +745,8 @@ function renderExpense(){
   const tripSt={ok:'<span style="color:#16a34a">ตรงกัน</span>',
                 diff:'<span style="color:#dc2626">ยอดไม่ตรง</span>',
                 nopay:'<span style="color:#f59e0b">ยังไม่จ่าย</span>',
-                noprop:'<span style="color:#dc2626">ไม่มีใบเสนอจากระบบจัดส่ง</span>'};
+                noprop:'<span style="color:#dc2626">ไม่มีใบเสนอจากระบบจัดส่ง</span>',
+                acked:'<span style="color:#78716c">✓ ตรวจแล้ว · ปิดเคส</span>'};
   const tCards=buildTripCheck().map(c=>`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
       <div class="row" style="align-items:center;gap:8px">
         <b>${beMonth(c.ym)}</b>
@@ -742,7 +762,9 @@ function renderExpense(){
           <td class="n">${r.trips!=null?r.trips:"—"}</td>
           <td class="n">${r.prop!=null?TH(r.prop):"—"}</td>
           <td class="n">${r.pay!=null?TH(r.pay):"—"}</td>
-          <td>${tripSt[r.st]}</td></tr>`).join("")}</tbody>
+          <td>${tripSt[r.st]}${r.st==="acked"
+              ?` <a href="#" onclick="unackTrip('${c.ym}','${esc(r.n).replace(/'/g,"\\'")}');return false" style="color:#c00;text-decoration:none" title="เอาการปิดเคสออก">✕</a>`
+              :(r.st!=="ok"?` <button class="btn sm gray" onclick="ackTrip('${c.ym}','${esc(r.n).replace(/'/g,"\\'")}')">✓ ปิดเคส</button>`:"")}</td></tr>`).join("")}</tbody>
       </table></div>
     </div>`).join("");
 
@@ -894,6 +916,21 @@ window.bookAllKnown=async function(){
   alert("✓ ลงรายจ่าย "+L.length+" รายการแล้ว");
   await reloadAll(); tab("expense");
 };
+/* ===== ✓ ปิดเคสแถวการ์ดตรวจค่าเที่ยว (rev_trip_check_ack) ===== */
+window.ackTrip=async function(ym,nick){
+  const note=prompt("ปิดเคส "+nick+" เดือน "+beMonth(ym)+"\n\nเหตุผล (ไม่บังคับ) เช่น จ่ายมือ/ตรวจกับ HR แล้ว:","ตรวจแล้ว ถูกต้อง");
+  if(note===null) return;
+  const ins=await sb.from("rev_trip_check_ack").insert([{ym:ym,nickname:nick,note:note||null,created_by:"owner"}]);
+  if(ins.error){ alert("ปิดเคสไม่สำเร็จ: "+ins.error.message); return; }
+  await reloadAll(); tab("expense");
+};
+window.unackTrip=async function(ym,nick){
+  if(!confirm("เอาการปิดเคสของ "+nick+" ออก? แถวนี้จะกลับมาขึ้นเตือนอีก")) return;
+  const del=await sb.from("rev_trip_check_ack").delete().eq("ym",ym).eq("nickname",nick);
+  if(del.error){ alert("ยกเลิกไม่สำเร็จ: "+del.error.message); return; }
+  await reloadAll(); tab("expense");
+};
+
 /* ===== 🙈 ตัวกรอง "ไม่ต้องเตือน" (rev_bell_ignore) — ใช้ร่วมกับกระดิ่ง bell.js ===== */
 window.ignoreWd=async function(date,amt,ref){
   const byWord=confirm("🙈 เลิกเตือนให้ลงรายจ่ายรายการนี้\n\n"+beDate(date)+" · "+TH(amt)+" บาท\n"+ref+

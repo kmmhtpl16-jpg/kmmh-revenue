@@ -446,10 +446,16 @@ async function autoPostCredit(){
     var bno=nos[i], orders=g[bno], bill=bills[bno];
     if(!bill){ res.waiting.push({bill_no:bno,n:orders.length,why:"ยังไม่มีบิลนี้ในหน้าลูกหนี้"}); continue; }
 
-    var rem=r2(num(bill.total_amount)-num(bill.paid_amount));
-    if(rem<=0.01){ // บิลปิดแล้ว — ติ๊กออเดอร์ให้จบ ไม่ตัดซ้ำ
-      await _markPosted(orders,"already-paid");
-      res.skipped.push({bill_no:bno,why:"บิลชำระครบอยู่แล้ว"}); continue;
+    var paidNow0=num(bill.paid_amount), totNow0=num(bill.total_amount);
+    var rem=r2(totNow0-paidNow0);
+    if(rem<=0.01){ // บิลปิดแล้ว — ไม่ตัดซ้ำ
+      var skipAmt=r2(orders.reduce(function(s,o){ return s+num(o.billed_amount); },0));
+      var over=r2(paidNow0-totNow0);
+      res.skipped.push({bill_no:bno,n:orders.length,amount:skipAmt,over:over,
+        why: over>0.01 ? "บิลถูกตัดชำระเกินยอด "+fmt(over)+" — ยังไม่ได้ลงเงินของออเดอร์ชุดนี้" : "บิลชำระครบอยู่แล้ว"});
+      // จ่ายเกิน = ห้ามติ๊กปิดออเดอร์เงียบๆ ต้องให้คนเข้ามาดูก่อน
+      if(over>0.01) continue;
+      await _markPosted(orders,"already-paid"); continue;
     }
     var all=allByBill[bno]||[];
     var allPaid=all.length>0 && all.every(function(o){ return !!o.paid; });
@@ -525,6 +531,14 @@ async function reconcileShopeeBills(){
     var expected=allPaid ? r2(tot) : r2(Math.min(billedPaid,tot));
     var short=r2(expected-num(b.paid_amount));
     if(short>0.01){
+      /* ⚠️ paid_amount ที่อ่านมาเป็นสแนปช็อต — ถ้ามี creditSync อีกรอบ/อีกแท็บเพิ่งตัดชำระไป
+         จะเติมทับจนจ่ายเกิน (เคส KM6907-0994 ซ้ำ 7,168 เมื่อ 27ก.ค.69)
+         → อ่านยอดจ่ายสดจาก rev_credit_payments อีกครั้ง แล้วห้ามเติมเกินยอดบิลเด็ดขาด */
+      var fr=await sb.from("rev_credit_payments").select("amount").eq("bill_id",b.id);
+      if(fr.error) throw new Error("อ่านยอดจ่ายบิล "+bno+" ไม่ได้: "+fr.error.message);
+      var paidLive=r2((fr.data||[]).reduce(function(s,p){ return s+num(p.amount); },0));
+      short=r2(Math.min(expected-paidLive, tot-paidLive));
+      if(short<=0.01) continue;
       var payDate=grp.paid.map(function(o){return o.payout_date;}).filter(Boolean).sort().pop()||todayISO();
       var ins=await sb.from("rev_credit_payments").insert([{
         bill_id:b.id, pay_date:payDate, amount:short, method:CREDIT_METHOD,
@@ -608,6 +622,8 @@ async function creditRender(res){
   if(res){
     if(res.nobill.length) h+='<div class="note" style="margin-top:8px">⏳ '+res.nobill.length+' ออเดอร์ Shopee จ่ายแล้วแต่<b>ยังไม่มีเลขบิล</b> — จะตัดให้อัตโนมัติเมื่อนำเข้าไฟล์บิล acc-billing ของออเดอร์เหล่านี้</div>';
     if(res.waiting.length) h+='<div class="note" style="margin-top:8px">⏳ รอบิลในหน้าลูกหนี้: '+res.waiting.map(function(w){return esc(w.bill_no)+" ("+w.why+")";}).join(" · ")+'</div>';
+    var over=(res.skipped||[]).filter(function(x){ return num(x.over)>0.01; });
+    if(over.length) h+='<div class="errbox" style="margin-top:8px">⚠️ <b>บิลถูกตัดชำระเกินยอด '+over.length+' ใบ</b> — ออเดอร์ของบิลเหล่านี้ยังไม่ได้ลงเงิน/ค่าธรรมเนียม ต้องตรวจก่อน:<br>'+over.map(function(x){return esc(x.bill_no)+" (เกิน "+fmt(x.over)+" · ออเดอร์ค้าง "+x.n+" รายการ "+fmt(x.amount)+")";}).join("<br>")+'</div>';
   }
   box.innerHTML=h;
 }

@@ -376,29 +376,34 @@ function parsePos(wb){
   // แบบ B = รายลูกค้ามีรายละเอียดบิล (หัวตาราง 'วันที่ขาย')
   const isB = R.some(r => r && r.some(c => S(c)==="วันที่ขาย"));
   if(isB){
-    let gross=0, cnTotal=0; const cns=[]; const codes={}; const custTotal={}; const custBill={}; const billTotal={}; const billCust={}; let last=null, lastBill=null, curCode=null;
+    let gross=0, cnTotal=0, dnTotal=0; const cns=[]; const dns=[]; const codes={}; const custTotal={}; const custBill={}; const billTotal={}; const billCust={}; let last=null, lastBill=null, curCode=null;
     R.forEach(r=>{ if(!r) return;
       const c0=S(r[0]),c1=S(r[1]),c2=S(r[2]),c3=S(r[3]),c5=S(r[5]);
       if(cust.test(c1) && !c0){ last=c2; curCode=c1; codes[c1]=c2; }
       else if(/^KM/i.test(c0)){ lastBill=c0; billTotal[c0]=(billTotal[c0]||0)+num(r[4]); billCust[c0]=last||""; if(curCode){ custTotal[curCode]=(custTotal[curCode]||0)+num(r[4]); if(!custBill[curCode]) custBill[curCode]=c0; } }
       else if(c0==="ใบลดหนี้"){ cns.push({customer:last||"(ไม่ระบุ)", cn:num(r[2]), cn_no:c1, bill_no:lastBill, bill_amt:(billTotal[lastBill]||0)}); }
+      else if(c0==="ใบเพิ่มหนี้"){ dns.push({customer:last||"(ไม่ระบุ)", dn:num(r[2]), dn_no:c1, bill_no:lastBill, bill_amt:(billTotal[lastBill]||0)}); }
       else if(c3==="รวมทั้งหมด" && num(r[6])>0){ gross=num(r[6]); }
       else if(c5==="หัก ใบลดหนี้"){ cnTotal=num(r[6]); }
+      else if(c5==="บวก ใบเพิ่มหนี้"){ dnTotal=num(r[6]); }
     });
     if(gross===0) throw new Error("อ่านยอดรวมไม่ได้ — เช็กรูปแบบไฟล์เครื่อง (แบบรายลูกค้ามีรายละเอียด)");
     const custTotalByName={}; Object.keys(billTotal).forEach(function(b){ const c=billCust[b]; if(c) custTotalByName[c]=r2c((custTotalByName[c]||0)+billTotal[b]); });
-    return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billCust, billTotal, custTotalByName };
+    if(!dnTotal) dnTotal = dns.reduce(function(s,x){return s+(+x.dn||0);},0);
+    return { gross, cnTotal, dnTotal, net:r2c(gross-cnTotal+dnTotal), cns, dns, codes:Object.keys(codes), codeName:codes, custTotal, custBill, billCust, billTotal, custTotalByName };
   }
   // แบบ A = รายลูกค้าแบบสรุป (รหัสลูกค้าคอลัมน์แรก)
   const custA = /^\s*\d{2,4}-\d{5}\s*$/;
-  let gross=0, last=null; const cns=[]; const codes={}; const custTotal={}; const custBill={};
+  let gross=0, last=null; const cns=[]; const dns=[]; const codes={}; const custTotal={}; const custBill={};
   R.forEach(r=>{ if(!r) return; const c0 = r[0]!=null ? String(r[0]).trim() : "";
     if(custA.test(c0)){ last = (r[1]!=null)? String(r[1]).trim() : c0; gross += num(r[5]); codes[c0]=last; custTotal[c0]=(custTotal[c0]||0)+num(r[5]); }
     else if(c0==="ใบลดหนี้"){ cns.push({ customer:last||"(ไม่ระบุ)", cn:num(r[1]) }); }
+    else if(c0==="ใบเพิ่มหนี้"){ dns.push({ customer:last||"(ไม่ระบุ)", dn:num(r[1]) }); }
   });
   if(gross===0) throw new Error("อ่านยอดบิลไม่ได้ — ไฟล์เครื่องอาจไม่ใช่แบบ 'รายลูกค้า'");
   const cnTotal = cns.reduce((s,x)=>s+x.cn,0);
-  return { gross, cnTotal, net:gross-cnTotal, cns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
+  const dnTotal = dns.reduce((s,x)=>s+(+x.dn||0),0);
+  return { gross, cnTotal, dnTotal, net:r2c(gross-cnTotal+dnTotal), cns, dns, codes:Object.keys(codes), codeName:codes, custTotal, custBill };
 }
 function render(){
   const err = document.getElementById("err");
@@ -409,6 +414,8 @@ function render(){
   if(!f || !p){ out.innerHTML = '<div class="muted">อัปโหลดทั้ง <b>ไฟล์รายรับ</b> และ <b>ไฟล์เครื่อง</b> เพื่อเริ่มตรวจ</div>'; return; }
 
   DATA._refund = f.refund;
+  const _dnT = +(p.dnTotal||0);
+  const _mLbl = "ยอดบิล "+TH0(p.gross)+" − ใบลดหนี้ "+TH0(p.cnTotal)+(_dnT>0?(" + ใบเพิ่มหนี้ "+TH0(_dnT)):"");
   const sumForm = f.main + f.upk;
   const diffRaw = p.net - sumForm;
   const diffAdj = p.net - (sumForm - f.refund);
@@ -429,19 +436,19 @@ function render(){
   const matchDep = (f.refund>0) ? (DATA._open||[]).find(d=>Math.abs((parseFloat(d.amount)||0)-f.refund)<=1) : null;
   const _mForm = okRaw ? sumForm : (sumForm - f.refund);
   const _saleRows = ok1
-    ? ('<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px;margin-bottom:4px"><span>✅ ยอดขายจากเครื่อง (ยอดบิล '+TH0(p.gross)+' − ใบลดหนี้ '+TH0(p.cnTotal)+')</span><b style="color:#15803d">'+TH(p.net)+' ✓</b></div>'
+    ? ('<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px;margin-bottom:4px"><span>✅ ยอดขายจากเครื่อง ('+_mLbl+')</span><b style="color:#15803d">'+TH(p.net)+' ✓</b></div>'
       + '<div class="kv"><span>ยอดขายในฟอร์ม (4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+')</span><b'+(okRaw?' style="color:#15803d"':'')+'>'+TH(sumForm)+(okRaw?' ✓':'')+'</b></div>'
       + ((okAdj&&!okRaw) ? ('<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสดที่ปนอยู่ในฟอร์ม</span><b>− '+TH(f.refund)+'</b></div>'
           + '<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px"><span>✅ ยอดขายฟอร์ม (หลังหักเงินคืนสด)</span><b style="color:#15803d">'+TH(_mForm)+' ✓</b></div>') : '')
       + '<div class="verdict v-ok" style="margin-top:10px">✓ 2 ยอดตรงกัน&nbsp;&nbsp;'+TH(p.net)+' = '+TH(_mForm)+((okAdj&&!okRaw)?(' (ฟอร์ม '+TH(sumForm)+' − คืนเงิน '+TH0(f.refund)+')'):'')+'</div>')
-    : ('<div class="kv"><span>ยอดสุทธิจากเครื่อง (ยอดบิล '+TH0(p.gross)+' − ใบลดหนี้ '+TH0(p.cnTotal)+')</span><b>'+TH(p.net)+'</b></div>'
+    : ('<div class="kv"><span>ยอดสุทธิจากเครื่อง ('+_mLbl+')</span><b>'+TH(p.net)+'</b></div>'
       + '<div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+'</span><b>'+TH(sumForm)+'</b></div>'
       + '<div class="kv"><span>ส่วนต่าง (เครื่อง − ฟอร์ม)</span><b style="color:#b91c1c">'+TH(diffRaw)+' 🚩</b></div>'
       + '<div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน '+TH0(f.refund)+')</span><b style="color:#b91c1c">'+TH(diffAdj)+'</b></div>');
   out.innerHTML += `
   <div class="card">
     <h2>① ยอดขายตรง <span class="badge ${ok1?'ok':'warn'}">${ok1?'ตรง'+ok1detail+' ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩'}</span></h2>
-    <div class="muted" style="margin:2px 0 10px;line-height:1.55;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px">ℹ️ <b>"ตรง" หมายถึงยอดขายจริงตรงกัน</b> — ไม่ใช่ตัวเลข 2 ช่องเท่ากันเป๊ะ เพราะระบบปรับ 2 อย่างก่อนเทียบ: ฝั่ง<b>เครื่อง</b>หัก <b>ใบลดหนี้</b>ออกแล้ว · ฝั่ง<b>ฟอร์ม</b>อาจมี <b>เงินคืนสด</b>ปนอยู่ ระบบจึงหักออกให้ (ยอมคลาดได้ ±1 บ. จากปัดเศษ)</div>
+    <div class="muted" style="margin:2px 0 10px;line-height:1.55;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px">ℹ️ <b>"ตรง" หมายถึงยอดขายจริงตรงกัน</b> — ไม่ใช่ตัวเลข 2 ช่องเท่ากันเป๊ะ เพราะระบบปรับ 2 อย่างก่อนเทียบ: ฝั่ง<b>เครื่อง</b>หัก <b>ใบลดหนี้</b> และบวก <b>ใบเพิ่มหนี้ (DN)</b> กลับคืนแล้ว · ฝั่ง<b>ฟอร์ม</b>อาจมี <b>เงินคืนสด</b>ปนอยู่ ระบบจึงหักออกให้ (ยอมคลาดได้ ±1 บ. จากปัดเศษ)</div>
     ${_saleRows}
     <div class="muted" style="margin-top:8px">📌 ${scenario}</div>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e5e4">
@@ -494,7 +501,7 @@ function render(){
     } else { b3 = `<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันที่ฟอร์ม (${f.date?beDate(f.date):'ไม่ทราบวันที่'}) — เช็กว่าตรงรอบไหม</div>`; }
   } else { b3 = `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — อัปสเตทเมนต์กสิกร (resultFile…csv) ในช่อง 4 เพื่อตรวจอัตโนมัติ</div>`; }
 
-  DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_upk:f.upk, form_refund:f.refund, cn_total:p.cnTotal,
+  DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_upk:f.upk, form_refund:f.refund, cn_total:p.cnTotal, dn_total:(+p.dnTotal||0),
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
   DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, ok1detail:ok1detail, refund:f.refund, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
@@ -861,8 +868,9 @@ async function renderDay(date, edit){
     html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
     html+=figRow("ยอดขายเครื่อง (สุทธิ)",au.machine_net,null);
     html+=figRow("ยอดฟอร์ม",au.form_main,null);
-    (function(){var _up=upkOf(au); if(_up>0) html+=figRow("&nbsp;&nbsp;+ UPK (สินค้าอื่น)",_up,null); var mn=+au.machine_net,fm=(+au.form_main)+_up,rf=+(au.form_refund||0); if(!isNaN(mn)&&!isNaN(fm)){var okr=Math.abs(mn-fm)<=1,oka=Math.abs(mn-(fm-rf))<=1; if(okr||oka){ if(oka&&!okr){html+='<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสด (ปนในฟอร์ม)</span><b>− '+TH(rf)+'</b></div>';} html+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 10px;margin:5px 0;color:#15803d;font-weight:700">✓ ยอดขายตรงกัน '+TH(mn)+' = ฟอร์ม '+TH(+au.form_main)+(_up>0?' + UPK '+TH(_up):'')+((oka&&!okr)?' − คืนเงิน '+TH(rf):'')+'</div>'; }else{ html+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:7px 10px;margin:5px 0;color:#b91c1c;font-weight:700">🚩 ยอดต่าง '+TH(Math.abs(mn-fm))+' — ตรวจใบลดหนี้/คืนเงิน'+(_up>0?'':' (ถ้ามีบิล UPK เช็กว่าฟอร์มลงบรรทัด UPK ครบ)')+'</div>'; } }})();
+    (function(){var _up=upkOf(au); if(_up>0) html+=figRow("&nbsp;&nbsp;+ UPK (สินค้าอื่น)",_up,null); var mn=+au.machine_net,fm=(+au.form_main)+_up,rf=+(au.form_refund||0); if(!isNaN(mn)&&!isNaN(fm)){var okr=Math.abs(mn-fm)<=1,oka=Math.abs(mn-(fm-rf))<=1; if(okr||oka){ if(oka&&!okr){html+='<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสด (ปนในฟอร์ม)</span><b>− '+TH(rf)+'</b></div>';} html+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 10px;margin:5px 0;color:#15803d;font-weight:700">✓ ยอดขายตรงกัน '+TH(mn)+' = ฟอร์ม '+TH(+au.form_main)+(_up>0?' + UPK '+TH(_up):'')+((oka&&!okr)?' − คืนเงิน '+TH(rf):'')+'</div>'; }else{ html+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:7px 10px;margin:5px 0;color:#b91c1c;font-weight:700">🚩 ยอดต่าง '+TH(Math.abs(mn-(fm-rf)))+(rf>0?(' <span style="font-weight:600;font-size:12.5px">(หลังหักคืนเงินสด '+TH0(rf)+' · ต่างดิบ '+TH(Math.abs(mn-fm))+')</span>'):'')+' — ตรวจใบลดหนี้/ใบเพิ่มหนี้/คืนเงิน'+(_up>0?'':' (ถ้ามีบิล UPK เช็กว่าฟอร์มลงบรรทัด UPK ครบ)')+'</div>'; } }})();
     html+=figRow("ใบลดหนี้",au.cn_total,null);
+    if(+(au.dn_total||0)>0) html+=figRow("ใบเพิ่มหนี้ (บวกกลับ)",au.dn_total,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
     (function(){ var _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; var _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:(au.kplus_today!=null?au.kplus_today:null)); if(_fk==null||_rk==null){ html+=kCmp(_fk,_rk); return; } var _lti=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}):[]); var _lsum=_lti.reduce(function(s,x){return s+(+x.amt||0);},0); var _d=Math.round((_fk-_rk)*100)/100; if(_d<0 && Math.abs(_d)<=_lsum+1){ html+='<div class="kv"><span>K+ ฟอร์มแคชเชียร์ vs รายงาน</span><b style="color:#1d4ed8">'+TH(_fk)+' vs '+TH(_rk)+'</b></div><div class="muted" style="color:#1d4ed8">ℹ️ รายงานมากกว่าฟอร์ม '+TH0(-_d)+' — เป็น K+ หลัง 15:30 (ตัดรอบ) บิลออกวันถัดไป ปกติ ดูรายการด้านล่าง</div>'; } else { html+=kCmp(_fk,(_carryIn>1?Math.round((_rk+_carryIn)*100)/100:_rk)); } })();
     (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; const _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:null); const _lk=(au.detail&&au.detail.kplus_late!=null)?au.detail.kplus_late:0; if(_fk!=null&&_rk!=null){ var _impRaw=Math.round(((_fk-_rk)+_lk)*100)/100; const _imp=Math.round((_impRaw-_carryIn)*100)/100; var _carryBox=(_carryIn>1)?('<div style="margin:4px 0 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px">'+'<b style="color:#b45309">↩️ ยอดยกมาจาก '+beDate(_carryFrom)+' '+TH(_carryIn)+'<span class="muted"> · K+ หลัง 15:30 เมื่อวาน บิล '+esc(_carryBills.join(", "))+' (ปกติ)</span></b></div>'):"";

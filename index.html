@@ -303,17 +303,48 @@ function buildBillAudit(form,pos){
   return out;
 }
 
+/* 13ส.ค.69 — บิลที่ปิดด้วย "มัดจำ" (rev_deposit_uses) ห้ามขึ้นเป็น "จ่ายขาด"
+   ข้อมูลมัดจำอยู่คนละตารางกับไฟล์ที่อัป (ช่อง ra ในไฟล์ว่างเสมอ) ต้องมาชนกันที่นี่ */
+async function baApplyDeposits(a){
+  try{
+    if(!sb||!a||!a.bills||!a.bills.length) return;
+    const nos=a.bills.filter(b=>b.kind==="short"&&b.bill).map(b=>normBill(b.bill));
+    if(!nos.length) return;
+    const q=await sb.from("rev_deposit_uses").select("bill_no,amount,used_date").in("bill_no",nos);
+    if(q.error){ console.warn("baApplyDeposits",q.error); return; }
+    const rows=q.data||[]; if(!rows.length) return;
+    const dep={};
+    rows.forEach(function(r){ const b=normBill(r.bill_no); dep[b]=r2c((dep[b]||0)+(+r.amount||0)); });
+    const keep=[]; a.depOk=a.depOk||[];
+    a.bills.forEach(function(b){
+      const d=(b.kind==="short")?(dep[normBill(b.bill)]||0):0;
+      if(!d){ keep.push(b); return; }
+      b.dep=d; b.diff=r2c(b.diff-d);
+      if(Math.abs(b.diff)<=BA_TOL){ b.kind="depok"; a.depOk.push(b); } else keep.push(b);
+    });
+    a.bills=keep;
+    a.ok=!a.bills.length&&!a.custs.length&&!a.cash.length;
+    const box=document.getElementById("billAuditBox");
+    if(box) box.innerHTML=billAuditHtml(a);
+  }catch(e){ console.warn("baApplyDeposits",e); }
+}
+
 function billAuditHtml(a){
   if(!a) return "";
   const tot=a.bills.length+a.custs.length+a.cash.length;
   const sign=d=>d>0?'<b style="color:#b91c1c">ขาด '+TH(d)+'</b>':'<b style="color:#b45309">เกิน '+TH(-d)+'</b>';
   let h='<div class="card"><h2>🧾 ตรวจยอดบิล (เครื่อง ↔ ฟอร์ม) <span class="badge '+(a.ok?"ok":"warn")+'">'+(a.ok?"ตรงทุกใบ ✓":tot+" รายการต้องตรวจ 🚩")+'</span></h2>'
-    + '<div class="muted" style="margin:2px 0 10px">ยอดบิล = มัดจำ/โอน + ลงบัญชี + เงินสด · บิลที่มีเลขใบมัดจำ (RA…) ยอดที่เหลือต้องไปอยู่ชีท “ลงบัญชี” · เตือนเมื่อต่างเกิน '+BA_TOL+' บาท</div>';
-  if(a.ok) return h+'<div class="verdict v-ok">✓ ทุกบิล/ทุกลูกค้ายอดตรงกับเครื่อง</div></div>';
+    + '<div class="muted" style="margin:2px 0 10px">ยอดบิล = มัดจำ/โอน + ลงบัญชี + เงินสด · บิลที่มีเลขใบมัดจำ (RA…) ยอดที่เหลือต้องไปอยู่ชีท “ลงบัญชี” · ระบบหักมัดจำจากทะเบียนมัดจำให้อัตโนมัติก่อนตีธง · เตือนเมื่อต่างเกิน '+BA_TOL+' บาท</div>';
+  const depBox=(a.depOk&&a.depOk.length)
+    ? '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-bottom:10px"><b style="color:#047857">💰 ปิดด้วยมัดจำแล้ว '+a.depOk.length+' ใบ (ไม่ใช่จ่ายขาด)</b>'
+      + a.depOk.map(function(b){ return '<div class="muted" style="margin-top:2px">'+esc(b.bill)+' '+esc(b.cust||"")+' · ยอดบิล '+TH(b.tot)+' = รับ '+TH(b.paid+(b.acct||0))+' + <b>หักมัดจำ '+TH(b.dep)+'</b></div>'; }).join('')
+      + '</div>' : '';
+  if(a.ok) return h+depBox+'<div class="verdict v-ok">✓ ทุกบิล/ทุกลูกค้ายอดตรงกับเครื่อง</div></div>';
+  h+=depBox;
   if(a.bills.length){ h+='<div style="margin-bottom:8px"><b>บิลที่ยอดไม่ตรง</b></div><div class="scroll"><table><thead><tr><th>บิล</th><th>ลูกค้า</th><th class="num">ยอดบิล</th><th class="num">มัดจำ/โอน</th><th class="num">ลงบัญชี</th><th>ผล</th></tr></thead><tbody>';
     a.bills.forEach(b=>{ h+= b.kind==="nopos"
       ? '<tr><td>'+esc(b.bill)+'</td><td colspan="5" class="muted">⚠️ ไม่พบบิลนี้ในรายงานเครื่อง</td></tr>'
-      : '<tr><td>'+esc(b.bill)+(b.ra?'<div class="muted" style="font-size:11px">มัดจำ '+esc(b.ra)+'</div>':'')+'</td><td>'+esc(b.cust)+'</td><td class="num">'+TH(b.tot)+'</td><td class="num">'+TH(b.paid)+'</td><td class="num">'+TH(b.acct)+'</td><td>'+sign(b.diff)+'</td></tr>'; });
+      : '<tr><td>'+esc(b.bill)+(b.ra?'<div class="muted" style="font-size:11px">มัดจำ '+esc(b.ra)+'</div>':'')+(b.dep?'<div class="muted" style="font-size:11px">หักมัดจำทะเบียนแล้ว '+TH(b.dep)+'</div>':'')+'</td><td>'+esc(b.cust)+'</td><td class="num">'+TH(b.tot)+'</td><td class="num">'+TH(b.paid)+'</td><td class="num">'+TH(b.acct)+'</td><td>'+sign(b.diff)+'</td></tr>'; });
     h+='</tbody></table></div>'; }
   if(a.custs.length){ h+='<div style="margin:12px 0 8px"><b>ลูกค้าที่ยอดรวมไม่ตรง</b></div><div class="scroll"><table><thead><tr><th>ลูกค้า</th><th class="num">ยอดเครื่อง</th><th class="num">ยอดฟอร์ม</th><th>ผล</th></tr></thead><tbody>';
     a.custs.forEach(c=>{ h+= c.kind==="nocust"
@@ -474,7 +505,7 @@ function render(){
     ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
   </div>`;
 
-  try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += billAuditHtml(DATA._billAudit); }
+  try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += '<div id="billAuditBox">'+billAuditHtml(DATA._billAudit)+'</div>'; baApplyDeposits(DATA._billAudit); }
   catch(e){ console.warn('billAudit', e); }
 
   const kp = DATA.kplus;

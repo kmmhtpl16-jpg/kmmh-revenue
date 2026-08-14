@@ -916,10 +916,21 @@ async function renderDay(date, edit){
       if(_br.length){ html+='<div style="margin:4px 0 0;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px"><b style="color:#4338ca">💳 เงินโอนเข้าตรง (ไม่ใช่ K+) '+_br.length+' รายการ รวม '+TH(_br.reduce(function(s,r){return s+(+r.dep||0);},0))+' — เช็กว่าตรงบิลไหน ถ้ายังไม่ตรงดันเข้ารอจับคู่</b>'+_br.map(function(r){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +r.dep, 'ksk'); var _pp=(!_mb)?((pq&&pq.data)?pq.data:[]).find(function(pp){return pp.source!=="รับเข้าบัญชีอื่น"&&Math.abs((parseFloat(pp.amount)||0)-(+r.dep||0))<=1;}):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):(_pp?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pp.matched_bill_no?(' · บิล '+esc(_pp.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q6+_norm(r.detail).slice(0,40)+Q6+','+Q6+date+Q6+')">ดันเข้ารอจับคู่</button><button class="btn sec" style="padding:2px 8px;margin-left:4px;border-color:#fca5a5;color:#b91c1c" onclick="markRefund('+(+r.dep||0)+','+Q6+_norm(r.detail)+Q6+','+Q6+date+Q6+')">🔁 เงินคืน</button>')); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; }
       if(_refRows.length){ html+='<div style="margin:4px 0 0;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:8px"><b style="color:#475569">🔁 เงินคืน (ไม่ใช่รายได้ของร้าน) '+_refRows.length+' รายการ รวม '+TH(_refRows.reduce(function(s,r){return s+(+r.dep||0);},0))+' — แยกออกแล้ว ไม่นับเป็นยอดขาย</b>'+_refRows.map(function(r){ return '<div class="kv"><span style="text-decoration:line-through;color:#94a3b8">'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b style="color:#64748b">'+TH(r.dep)+' <button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="unmarkRefund('+(+r.dep||0)+','+Q6+_norm(r.detail)+Q6+','+Q6+date+Q6+')">เอากลับ</button></b></div>';}).join('')+'</div>'; } })();
     (function(){ if(!da||!da.bank_rows) return; function _party(s){ s=String(s||'').replace(/\++$/,'').trim(); var m=s.match(/X\d+\s+(.+)$/i); return (m?m[1]:s).trim(); }
+      var Q7=String.fromCharCode(39); var _SELF=/กิจมั่งมี/;
+      var _pl=((pq&&pq.data)?pq.data:[]);
+      var _ig=((au&&au.detail&&Array.isArray(au.detail.refund_pair_ignore))?au.detail.refund_pair_ignore:[]);
+      function _r2(n){ return Math.round((+n||0)*100)/100; }
+      function _closedDep(d){ return _pl.some(function(p){ return Math.abs((parseFloat(p.amount)||0)-(+d.dep||0))<=1 && (p.status==='owner_closed'||p.status==='matched'); }); }
       var _deps=da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}); var _wds=da.bank_rows.filter(function(r){return (+r.wd>0);}); if(!_wds.length) return;
-      var _ref=[]; _wds.forEach(function(w){ var wn=_party(w.detail); if(normName(wn).length<3) return; var dep=null; for(var i=0;i<_deps.length;i++){ if(nameMatch(wn,_party(_deps[i].detail)) && ((+_deps[i].dep||0)+1>=(+w.wd||0))){ dep=_deps[i]; break; } } if(dep) _ref.push({w:w,d:dep,wn:wn}); });
-      if(!_ref.length) return;
-      html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🔁 คืนเงินลูกค้า '+_ref.length+' ราย — ลูกค้าโอนเข้า แล้วร้านโอนคืน (เช็กว่าถูกต้อง)</b>'+_ref.map(function(x){ var net=Math.round(((+x.d.dep||0)-(+x.w.wd||0))*100)/100; var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +x.d.dep, 'any'); return '<div style="border-top:1px solid #fecaca;margin-top:6px;padding-top:6px"><div><b>'+esc(x.wn)+'</b>'+(_mb?(' <span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):'')+'</div><div class="kv"><span>โอนเข้า '+TH(x.d.dep)+' → ร้านโอนคืน '+TH(x.w.wd)+'</span><b style="color:#15803d">สุทธิเข้าจริง '+TH(net)+'</b></div></div>';}).join('')+'<div class="muted" style="margin-top:6px">ℹ️ ยอดบิลยังเป็นรายได้ตามจริง · เงินคืนนี้คือลูกค้าโอนเกิน/มีมัดจำอยู่แล้ว ร้านจึงโอนคืนส่วนเกิน — อธิบายว่าทำไมยอดฝากเข้าบัญชีสุทธิน้อยกว่ายอดโอนเข้า</div></div>';
+      var _ref=[], _selfRows=[], _hid=0;
+      _wds.forEach(function(w){ var wn=_party(w.detail); if(normName(wn).length<3) return; var dep=null; for(var i=0;i<_deps.length;i++){ if(nameMatch(wn,_party(_deps[i].detail)) && ((+_deps[i].dep||0)+1>=(+w.wd||0))){ dep=_deps[i]; break; } } if(!dep) return;
+        if(_SELF.test(normName(wn))||_SELF.test(normName(_party(dep.detail)))){ _selfRows.push({w:w,d:dep,wn:wn}); return; }
+        if(_closedDep(dep)) return;
+        if(_ig.indexOf(_r2(w.wd)+'|'+_r2(dep.dep))>=0){ _hid++; return; }
+        _ref.push({w:w,d:dep,wn:wn}); });
+      if(_selfRows.length){ html+='<div style="margin:4px 0 0;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:8px"><b style="color:#475569">🔄 โยกบัญชีตัวเอง '+_selfRows.length+' คู่ — ไม่ใช่คืนเงินลูกค้า</b>'+_selfRows.map(function(x){ return '<div class="kv"><span>'+esc(x.wn)+'</span><b style="color:#64748b">เข้า '+TH(x.d.dep)+' · ออก '+TH(x.w.wd)+'</b></div>';}).join('')+'<div class="muted" style="margin-top:4px">ℹ️ คู่โอนนี้เป็นบัญชีของร้านเอง ระบบไม่นับเป็นคืนเงินลูกค้า — ให้ไปดูฝั่งรายจ่าย/ปิดยอดว่าบันทึกแล้วหรือยัง</div></div>'; }
+      if(_ref.length){ html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🔁 คืนเงินลูกค้า '+_ref.length+' ราย — ลูกค้าโอนเข้า แล้วร้านโอนคืน (เช็กว่าถูกต้อง)</b>'+_ref.map(function(x){ var net=_r2((+x.d.dep||0)-(+x.w.wd||0)); var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +x.d.dep, 'any'); return '<div style="border-top:1px solid #fecaca;margin-top:6px;padding-top:6px"><div><b>'+esc(x.wn)+'</b>'+(_mb?(' <span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):'')+'</div><div class="kv"><span>โอนเข้า '+TH(x.d.dep)+' → ร้านโอนคืน '+TH(x.w.wd)+'</span><b style="color:#15803d">สุทธิเข้าจริง '+TH(net)+'</b></div><button class="btn sec" style="padding:2px 8px;margin:5px 0 0" onclick="ignoreRefundPair('+_r2(x.w.wd)+','+_r2(x.d.dep)+','+Q7+date+Q7+')">🙈 ไม่ใช่คืนเงิน — ปิดการ์ดนี้</button></div>';}).join('')+'<div class="muted" style="margin-top:6px">ℹ️ ยอดบิลยังเป็นรายได้ตามจริง · เงินคืนนี้คือลูกค้าโอนเกิน/มีมัดจำอยู่แล้ว ร้านจึงโอนคืนส่วนเกิน — อธิบายว่าทำไมยอดฝากเข้าบัญชีสุทธิน้อยกว่ายอดโอนเข้า</div></div>'; }
+      if(_hid>0){ html+='<div class="muted" style="margin:4px 0 0">🙈 ซ่อนคู่คืนเงินไว้ '+_hid+' รายการ <button class="btn sec" style="padding:1px 8px;margin-left:4px" onclick="clearRefundPairIgnore('+Q7+date+Q7+')">เอากลับ</button></div>'; }
     })();
     /* \u2500\u2500 บิลที่ตัดมัดจำ (RA): ไม่มีเงินเข้าบัญชีวันนี้ ต้องมีใบมัดจำในทะเบียน + หักมัดจำผูกบิล \u2500\u2500 */
     try{
@@ -967,7 +978,7 @@ async function saveDay(date){
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
   const oldCns=(a.data&&a.data.detail&&a.data.detail.cns)||[]; cns.forEach((c,i)=>{ const m=oldCns.find(o=>o.cn_no&&o.cn_no===c.cn_no)||oldCns[i]; if(m){ if(m.bill_amt!=null&&c.bill_amt==null) c.bill_amt=m.bill_amt; if(m.bill_total!=null&&c.bill_total==null) c.bill_total=m.bill_total; } });
   const _od=(a.data&&a.data.detail)||{};
-  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), refunds:(_od.refunds!=null?_od.refunds:null), recon_ok:(_od.recon_ok!=null?_od.recon_ok:null), saved_at:new Date().toISOString(), edited:true };
+  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), refunds:(_od.refunds!=null?_od.refunds:null), refund_pair_ignore:(_od.refund_pair_ignore!=null?_od.refund_pair_ignore:null), recon_ok:(_od.recon_ok!=null?_od.recon_ok:null), saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   loadMonthStatus(); showDayDetail(date);
@@ -1215,6 +1226,25 @@ async function unmarkRefund(amt, detail, dateIso){
   const det=(a.data&&a.data.detail)||{}; const rf=Array.isArray(det.refunds)?det.refunds.slice():[];
   const i=rf.findIndex(function(x){ return Math.abs((+x.amt||0)-(+amt||0))<0.01 && (x.detail||"")===(detail||""); });
   if(i>=0) rf.splice(i,1); det.refunds=rf;
+  const {error}=await sb.from("rev_audit").update({detail:det}).eq("date",dateIso);
+  if(error){ alert("เอากลับไม่สำเร็จ: "+error.message); return; }
+  showDayDetail(dateIso);
+}
+async function ignoreRefundPair(wd, dep, dateIso){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  if(!confirm("ปิดการ์ดคู่นี้ (เงินเข้า "+TH(dep)+" / เงินออก "+TH(wd)+") — ยืนยันว่าไม่ใช่คืนเงินลูกค้า ?")) return;
+  const a=await sb.from("rev_audit").select("detail").eq("date",dateIso).maybeSingle();
+  const det=(a.data&&a.data.detail)||{}; const ig=Array.isArray(det.refund_pair_ignore)?det.refund_pair_ignore.slice():[];
+  const k=(Math.round((+wd||0)*100)/100)+"|"+(Math.round((+dep||0)*100)/100);
+  if(ig.indexOf(k)<0) ig.push(k); det.refund_pair_ignore=ig;
+  const {error}=await sb.from("rev_audit").update({detail:det}).eq("date",dateIso);
+  if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
+  showDayDetail(dateIso);
+}
+async function clearRefundPairIgnore(dateIso){
+  if(!sb){ alert("เชื่อม Supabase ไม่ได้"); return; }
+  const a=await sb.from("rev_audit").select("detail").eq("date",dateIso).maybeSingle();
+  const det=(a.data&&a.data.detail)||{}; det.refund_pair_ignore=[];
   const {error}=await sb.from("rev_audit").update({detail:det}).eq("date",dateIso);
   if(error){ alert("เอากลับไม่สำเร็จ: "+error.message); return; }
   showDayDetail(dateIso);

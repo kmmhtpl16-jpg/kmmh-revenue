@@ -122,7 +122,8 @@
   function billedIn(xf, amt){ for(var i=0;i<(xf||[]).length;i++){ if((+xf[i].knv||0)>0 && Math.abs((+xf[i].knv||0)-amt)<=1) return xf[i].bill||true; } return null; }
   function unbilled(items, xf){ return (items||[]).filter(function(x){ return !billedIn(xf,(+x.amt||0)); }); }
   function sumAmt(a){ return r2(a.reduce(function(s,x){ return s+(+x.amt||0); },0)); }
-  function gapDays(audits, dailies, flagged, fromISO){
+  function gapDays(audits, dailies, flagged, fromISO, cutBills){
+    cutBills=cutBills||{};
     var A={}, D={};
     audits.forEach(function(a){ A[String(a.date).slice(0,10)]=a; });
     dailies.forEach(function(d){ D[String(d.date).slice(0,10)]=d; });
@@ -136,8 +137,16 @@
       var gapK=0;
       if(fk!=null && d.kplus_total!=null){
         var lateU=unbilled(lateItemsOf(a, d.kplus_rows), xf);
-        /* ยอดยกมา: รายการหลัง 15:30 ของเมื่อวานที่เมื่อวานยังไม่ออกบิล แล้ววันนี้มีบิลยอดตรงกัน */
-        var pv=shiftISO(dt,-1), carry=0, seen={};
+        var carry=0, seen={};
+        /* ยอดยกมา (ก): บิลของวันนี้ที่เคยถูกจับคู่เป็น "K+ ตัดรอบ" ของวันก่อนหน้าไปแล้ว
+           ⚠️ ต้องมีข้อนี้ ไม่งั้นวันที่บิลข้ามวันเกิน 1 วันจะถูกเตือนหลอก (เกณฑ์เดียวกับหน้ารายละเอียดวัน) */
+        xf.forEach(function(x){
+          var b=x.bill; if(!b || seen[b]) return;
+          var pdt=cutBills[b];
+          if(pdt && pdt<dt){ seen[b]=1; carry+=(+x.knv||0); }
+        });
+        /* ยอดยกมา (ข): รายการหลัง 15:30 ของเมื่อวานที่เมื่อวานยังไม่ออกบิล แล้ววันนี้มีบิลยอดตรงกัน */
+        var pv=shiftISO(dt,-1);
         var pa=A[pv], pd=D[pv];
         if(pa||pd){
           unbilled(lateItemsOf(pa, pd&&pd.kplus_rows), (pa&&pa.xfer)||[]).forEach(function(it){
@@ -179,7 +188,7 @@
       /* เฉพาะช่องเล็กๆ ที่ต้องใช้ ไม่ดึง detail ทั้งก้อน (กัน egress บาน) */
       S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
-      S.from("rev_pending").select("date,amount,source,ref").gte("date",shiftISO(today,-(GAP_DAYS+1)))
+      S.from("rev_pending").select("date,amount,source,ref,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31)))
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
     var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[];
@@ -266,7 +275,14 @@
           var k=String(x.date).slice(0,10); flg[k]=(flg[k]||0)+num(x.amount);
         }
       });
-      var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS));
+      var cutB={};
+      gPend.forEach(function(x){
+        if(!/ตัดรอบ/.test(x.source||"")) return;
+        var b=String(x.matched_bill_no||"").trim(); if(!b) return;
+        var k=String(x.date).slice(0,10);
+        if(!cutB[b] || k<cutB[b]) cutB[b]=k;
+      });
+      var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS), cutB);
       if(gaps.length){
         gaps.sort(function(a,b){ return a.date<b.date?1:-1; });
         var gsum=r2(gaps.reduce(function(s,x){ return s+x.left; },0));

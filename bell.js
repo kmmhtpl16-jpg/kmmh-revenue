@@ -3,10 +3,11 @@
    ใส่ต่อท้ายทุกหน้า: <script src="bell.js?v=..."></script>
    ใช้ตัวแปร global เดิม: sb (supabase client), localStorage "rev_role"
 
-   เตือน 3 เรื่อง:
+   เตือน 4 เรื่อง:
      1) รายจ่ายจากสเตทเมนต์ที่ยังไม่ได้บันทึก   (เจ้าของ/การเงิน)
      2) เงินโอนเข้ารอจับคู่                      (ทุกคน)
      3) วันที่ยังตรวจไม่ครบ (ย้อนหลัง 30 วัน)     (ทุกคน)
+     4) เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน ยังไม่ติดธง+แนบสลิป (ทุกคน)
 
    ตัวกรอง: rev_bell_ignore = รายการเงินออกที่ไม่ต้องเตือน (โอนเข้าบัญชีตัวเอง/เงินเดือนที่ลงทางอื่น)
      kind="exact"   → เทียบ exp_date|amount|ref แบบเป๊ะ (ซ่อนรายการเดียว)
@@ -17,7 +18,8 @@
 
   var EXP_DAYS   = 90;   /* ย้อนหลังที่ไล่หาเงินออกยังไม่ลงรายจ่าย */
   var AUDIT_DAYS = 30;   /* ย้อนหลังที่เช็ควันตรวจไม่ครบ */
-  var PEND_DAYS  = 120;  /* ย้อนหลังที่นับเงินรอจับคู่ */
+  var PEND_DAYS  = 120;
+  var GAP_DAYS   = 30;   /* ย้อนหลังที่ไล่หาเงินลงฟอร์มแต่ไม่เข้าบัญชี/K+ ร้าน */  /* ย้อนหลังที่นับเงินรอจับคู่ */
   var REFRESH_MS = 5*60*1000;
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
@@ -108,6 +110,55 @@
     location.href="index.html";
   };
 
+  /* ---------- เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน ----------
+     ใช้เกณฑ์เดียวกับหน้ารายละเอียดวันในโปรแกรมตรวจรายได้เป๊ะ:
+       ช่องว่าง = (K+ ในฟอร์ม − รายงาน K+) + K+หลัง15:30ที่ยังไม่ออกบิลวันนั้น − ยอดยกมาจากเมื่อวาน
+     ⚠️ ห้ามลืมข้อ "ที่ยังไม่ออกบิลวันนั้น" ไม่งั้นเตือนหลอกเกือบทุกวัน  */
+  function isLateT(t){ var m=String(t||"").match(/(\d{2}):(\d{2})/); return !!m && (+m[1]>15 || (+m[1]===15 && +m[2]>=30)); }
+  function lateItemsOf(au, rows){
+    if(au && au.lti && au.lti.length) return au.lti;
+    return (rows||[]).filter(function(r){ return isLateT(r.t); }).map(function(r){ return {amt:(+r.amt||0)}; });
+  }
+  function billedIn(xf, amt){ for(var i=0;i<(xf||[]).length;i++){ if((+xf[i].knv||0)>0 && Math.abs((+xf[i].knv||0)-amt)<=1) return xf[i].bill||true; } return null; }
+  function unbilled(items, xf){ return (items||[]).filter(function(x){ return !billedIn(xf,(+x.amt||0)); }); }
+  function sumAmt(a){ return r2(a.reduce(function(s,x){ return s+(+x.amt||0); },0)); }
+  function gapDays(audits, dailies, flagged, fromISO){
+    var A={}, D={};
+    audits.forEach(function(a){ A[String(a.date).slice(0,10)]=a; });
+    dailies.forEach(function(d){ D[String(d.date).slice(0,10)]=d; });
+    var out=[];
+    Object.keys(A).sort().forEach(function(dt){
+      if(dt<fromISO) return;
+      var a=A[dt], d=D[dt]; if(!a||!d) return;
+      if(a.status==="วันหยุด") return;
+      var fk=(a.fk==null||a.fk==="")?null:num(a.fk);
+      var xf=a.xfer||[];
+      var gapK=0;
+      if(fk!=null && d.kplus_total!=null){
+        var lateU=unbilled(lateItemsOf(a, d.kplus_rows), xf);
+        /* ยอดยกมา: รายการหลัง 15:30 ของเมื่อวานที่เมื่อวานยังไม่ออกบิล แล้ววันนี้มีบิลยอดตรงกัน */
+        var pv=shiftISO(dt,-1), carry=0, seen={};
+        var pa=A[pv], pd=D[pv];
+        if(pa||pd){
+          unbilled(lateItemsOf(pa, pd&&pd.kplus_rows), (pa&&pa.xfer)||[]).forEach(function(it){
+            var b=billedIn(xf,(+it.amt||0));
+            if(b && !seen[b]){ seen[b]=1; carry+=(+it.amt||0); }
+          });
+        }
+        gapK=r2((fk-num(d.kplus_total))+sumAmt(lateU)-carry);
+      }
+      var fks=(a.fks==null||a.fks==="")?null:num(a.fks);
+      var gapB=0;
+      if(fks!=null && d.bank_dep_total!=null) gapB=r2(fks-(num(d.bank_dep_total)-num(d.bank_kplus_settle)));
+      var gap=r2((gapK>1?gapK:0)+(gapB>1?gapB:0));
+      if(gap<=1) return;
+      var left=r2(gap-(flagged[dt]||0));
+      if(left<=1) return;
+      out.push({date:dt, left:left, k:(gapK>1?gapK:0), b:(gapB>1?gapB:0), ov:!!a.ov});
+    });
+    return out;
+  }
+
   /* ---------- ตรวจข้อมูล ---------- */
   async function collect(){
     var R=role();
@@ -124,9 +175,14 @@
       sees.exp ? S.from("rev_expenses").select("exp_date,amount,ref,source").gte("exp_date",fromExp).in("source",["statement","settlement"]) : Promise.resolve({data:[]}),
       S.from("rev_pending").select("date,amount,source,from_name,status").eq("status","open").gte("date",fromPend),
       S.from("rev_audit").select("date,status,kplus_today,bank_dep_today").gte("date",fromAud).lte("date",today),
-      sees.exp ? S.from("rev_bell_ignore").select("kind,exp_date,amount,ref,pattern") : Promise.resolve({data:[]})
+      sees.exp ? S.from("rev_bell_ignore").select("kind,exp_date,amount,ref,pattern") : Promise.resolve({data:[]}),
+      /* เฉพาะช่องเล็กๆ ที่ต้องใช้ ไม่ดึง detail ทั้งก้อน (กัน egress บาน) */
+      S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
+      S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
+      S.from("rev_pending").select("date,amount,source,ref").gte("date",shiftISO(today,-(GAP_DAYS+1)))
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
+    var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[];
 
     /* 1) เงินออกจากสเตทเมนต์ที่ยังไม่ได้ลงรายจ่าย — คีย์เดียวกับหน้าการเงินบริษัท */
     if(sees.exp){
@@ -202,6 +258,30 @@
           raw:true, more:Math.max(0,bad.length-5), btn:null, act:null });
       }
     }
+    /* 4) เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน ยังไม่ติดธง+แนบสลิป */
+    try{
+      var flg={};
+      gPend.forEach(function(x){
+        if(x.source==="รับเข้าบัญชีอื่น" || /บัญชีอื่น|เกินรายงาน|เกินสเตทเมนต์/.test(x.ref||"")){
+          var k=String(x.date).slice(0,10); flg[k]=(flg[k]||0)+num(x.amount);
+        }
+      });
+      var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS));
+      if(gaps.length){
+        gaps.sort(function(a,b){ return a.date<b.date?1:-1; });
+        var gsum=r2(gaps.reduce(function(s,x){ return s+x.left; },0));
+        var nOv=gaps.filter(function(x){ return x.ov; }).length;
+        out.push({ key:"gap", icon:"🚩",
+          title:"เงินไม่เข้าบัญชี/K+ ร้าน ยังไม่ติดธง "+gaps.length+" วัน",
+          sub:"รวม "+TH(gsum)+" บาท · ลงฟอร์มไว้แต่ไม่พบเงินเข้า — ต้องติดธง + แนบสลิป"+(nOv?(" · ข้ามด้วยเหตุผลไว้ "+nOv+" วัน"):""),
+          items:gaps.slice(0,5).map(function(x){
+            return '<a href="javascript:void(0)" onclick="__bellGoDay(\''+x.date+'\')" style="color:#b91c1c;font-weight:700">'+beDate(x.date)+'</a> · '+TH(x.left)+
+                   (x.k>1&&x.b>1?" (K+ "+TH(x.k)+" · บัญชี "+TH(x.b)+")":(x.b>1?" (ฝั่งบัญชี)":""))+(x.ov?' <span style="color:#b45309">· ข้ามด้วยเหตุผล</span>':'');
+          }),
+          raw:true, more:Math.max(0,gaps.length-5), btn:null, act:null });
+      }
+    }catch(e){ console.warn("bell gap", e); }
+
     return out;
   }
 

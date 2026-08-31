@@ -136,20 +136,26 @@ async function load(){
     kpi("ยอด K+ รวม (ช่วงนี้)", TH(kplusSum), daily.length+" วันมีข้อมูล");
 
   if(!days.length){ document.getElementById("tbl").innerHTML='<div class="muted">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
-  let totMachine=0, totForm=0;
+  let totMachine=0, totForm=0, totUpk=0, totRefund=0, totDays=0;
+  const NUM = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
   const rows=days.map(dt=>{
     const x=aMap[dt], hasDaily=!!dMap[dt];
     const mn=x?parseFloat(x.machine_net):null, fm=x?parseFloat(x.form_main):null;
-    const diff=(mn!=null&&fm!=null)?(mn-fm):null;
-    if(x&&x.status==="ตรวจแล้ว"){ totMachine+=(mn||0); totForm+=(fm||0); }
+    const up=x?NUM(x.form_upk):0, rf=x?NUM(x.form_refund):0;
+    // สูตรเดียวกับหน้าตรวจรายได้: ยอดเครื่อง = ยอดฟอร์ม + UPK - คืนเงินสด
+    const diff=(x&&mn!=null&&fm!=null&&!isNaN(mn)&&!isNaN(fm))?(mn-(fm+up-rf)):null;
+    if(x&&x.status==="ตรวจแล้ว"){ totMachine+=(parseFloat(x.machine_net)||0); totForm+=(parseFloat(x.form_main)||0); totUpk+=up; totRefund+=rf; totDays++; }
     const diffHtml=(diff==null)?"—":(Math.abs(diff)<=1?'<span class="ok">'+TH(diff)+'</span>':'<span class="warn">'+TH(diff)+' 🚩</span>');
-    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily,dMap[dt])+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+diffHtml+'</td></tr>';
+    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily,dMap[dt])+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+(up?TH(up):'<span class="muted">—</span>')+'</td><td class="num">'+(rf?TH(rf):'<span class="muted">—</span>')+'</td><td class="num">'+diffHtml+'</td></tr>';
   }).join("");
+  const totDiff=totMachine-(totForm+totUpk-totRefund);
+  const totTol=Math.max(1,totDays); // เผื่อเศษปัดวันละ 1 บาท
+  const totDiffHtml=(Math.abs(totDiff)<=totTol?'<span class="ok">'+TH(totDiff)+'</span>':'<span class="warn">'+TH(totDiff)+' 🚩</span>');
   document.getElementById("tbl").innerHTML=
-    '<table><thead><tr><th>วันที่</th><th>สถานะ</th><th>ยอดขายเครื่อง</th><th>ยอดฟอร์ม</th><th>ส่วนต่าง</th></tr></thead><tbody>'+
+    '<div style="overflow-x:auto"><table><thead><tr><th>วันที่</th><th>สถานะ</th><th>ยอดขายเครื่อง</th><th>ยอดฟอร์ม</th><th>+ UPK</th><th>− คืนเงินสด</th><th>ส่วนต่าง</th></tr></thead><tbody>'+
     rows+
-    '<tr class="tot"><td>รวม (เฉพาะวันตรวจแล้ว)</td><td></td><td class="num">'+TH(totMachine)+'</td><td class="num">'+TH(totForm)+'</td><td class="num">'+TH(totMachine-totForm)+'</td></tr>'+
-    '</tbody></table><div class="muted" style="margin-top:8px">💡 คลิกที่แถววันที่ เพื่อกระโดดไปดู/แก้รายละเอียดวันนั้นในหน้าตรวจรายได้</div>';
+    '<tr class="tot"><td>รวม (เฉพาะวันตรวจแล้ว)</td><td></td><td class="num">'+TH(totMachine)+'</td><td class="num">'+TH(totForm)+'</td><td class="num">'+TH(totUpk)+'</td><td class="num">'+TH(totRefund)+'</td><td class="num">'+totDiffHtml+'</td></tr>'+
+    '</tbody></table></div><div class="muted" style="margin-top:8px">🧮 ส่วนต่าง = ยอดขายเครื่อง − (ยอดฟอร์ม + UPK − คืนเงินสด) · สูตรเดียวกับหน้าตรวจรายได้ · ต่างไม่เกิน 1 บาท/วัน = เศษปัด ถือว่าตรง (แถวรวมเผื่อวันละ 1 บาท)<br>💡 คลิกที่แถววันที่ เพื่อกระโดดไปดู/แก้รายละเอียดวันนั้นในหน้าตรวจรายได้</div>';
 }
 function goDay(dt){ location.href="index.html?d="+dt; }
 function kpi(l,v,s){ return '<div class="kpi"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>'; }

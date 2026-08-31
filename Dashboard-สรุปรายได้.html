@@ -175,6 +175,9 @@ async function load(){
   /* โชว์ช่องทางเฉพาะเดือนที่มีข้อมูลครบทุกวัน — มีไม่ครบ = ตัวเลขหลอก ให้ไปรวมในก้อน "ยังไม่ได้เก็บแยก" แทน */
   const addCh=(name,o)=>{ if(o.n>0&&o.n>=nD) wRows.push({k:name, v:o.sum}); else miss.push(name); };
   addCh("เงินสด",cCash); addCh("K+ (QR)",cKnv); addCh("โอนกสิกร",cKsk);
+  /* ฟอร์มบันทึกเงินสดก่อนหักคืนเงิน แต่ยอดขายเครื่องหักแล้ว → ต้องมีบรรทัดหักให้ 3 ช่องบวกกลับได้เท่าหัวการ์ด */
+  const rfSum=okDays.reduce((s,x)=>s+N(x.form_refund),0);
+  if(rfSum>1&&wRows.length) wRows.push({k:'− คืนเงินสด <span class="dim">(หักออกจากยอดขายแล้ว)</span>', v:-rfSum, dim:true});
   const wKnown=wRows.reduce((s,r)=>s+r.v,0), wRest=Math.round((walkin-wKnown)*100)/100;
   if(wRest>1) wRows.push({k:(miss.length?miss.join(" + "):"ส่วนที่เหลือ")+' <span class="dim">(ยังไม่ได้เก็บแยก)</span>', v:wRest, dim:true});
   const pw=v=>walkin>0?'<span class="pc"> ('+(v/walkin*100).toFixed(1)+"%)</span>":"";

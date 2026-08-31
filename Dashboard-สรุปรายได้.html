@@ -283,12 +283,12 @@ function renderUpk(billed, days){
   box.innerHTML='<div class="card"><h2>🪵 UPK เดือนนี้ — ยอดเปิดบิล เทียบ ยอดจ่ายจริง</h2>'+
   '<table class="upk"><tbody>'+
   '<tr><td>ยอดเปิดบิล <span class="hint">(ต้นทุน + กำไร · อัตโนมัติจากฟอร์ม '+days+' วัน)</span></td><td class="num" style="font-weight:800;font-size:17px">'+TH(billed)+'</td></tr>'+
-  '<tr><td>บิลไม้ (จ่ายจริง) <span class="hint">อาจเป็นบิลเก่า 1–2 เดือนที่รับของเข้ามาแล้ว</span></td><td class="num"><input type="number" step="0.01" min="0" id="upk_wood" placeholder="กรอก" value="'+(has&&UPK.wood_amt!=null?UPK.wood_amt:"")+'" onchange="saveUpk()"></td></tr>'+
+  '<tr><td>บิลจ่ายจริง <span class="hint">ใส่ยอดรวมเอง</span></td><td class="num"><input type="number" step="0.01" min="0" id="upk_wood" placeholder="กรอก" value="'+(has&&UPK.wood_amt!=null?UPK.wood_amt:"")+'" onchange="saveUpk()"></td></tr>'+
   '<tr><td>บิลสี HATO (จ่ายจริง) <span class="hint">ใช้เป้าที่ UPK ซื้อ</span></td><td class="num"><input type="number" step="0.01" min="0" id="upk_hato" placeholder="กรอก" value="'+(has&&UPK.hato_amt!=null?UPK.hato_amt:"")+'" onchange="saveUpk()"></td></tr>'+
   '<tr><td><b>รวมจ่ายจริง</b></td><td class="num" id="upkPaid" style="font-weight:800">'+(paid?TH(paid):"—")+'</td></tr>'+
   '<tr><td><b>ส่วนต่าง</b> <span class="hint">กำไรที่ลดให้ตอนสิ้นเดือน</span></td><td class="num" id="upkDiff" style="font-weight:800">'+(paid?'<span class="'+(diff>=0?"ok":"warn")+'">'+TH(diff)+(billed>0?' <span class="hint">('+(diff/billed*100).toFixed(1)+'% ของยอดเปิดบิล)</span>':'')+'</span>':"—")+'</td></tr>'+
   '</tbody></table>'+
-  '<div style="margin-top:8px"><input type="text" id="upk_note" placeholder="โน้ต เช่น บิลไม้ก้อนนี้เป็นของเดือน ก.ค." value="'+esc(UPK&&UPK.note?UPK.note:"")+'" onchange="saveUpk()"></div>'+
+  '<div style="margin-top:8px"><input type="text" id="upk_note" placeholder="โน้ต เช่น บิลก้อนนี้เป็นของเดือน ก.ค." value="'+esc(UPK&&UPK.note?UPK.note:"")+'" onchange="saveUpk()"></div>'+
   '<div class="hint" id="upkSaved" style="margin-top:6px">'+(UPK&&UPK.updated_at?"📌 บันทึกล่าสุด "+beDate(UPK.updated_at):"ยังไม่ได้กรอกยอดจ่ายจริงของเดือนนี้")+'</div>'+
   '<div class="hint" style="margin-top:4px">💡 ยอดเปิดบิลมาจากช่อง UPK ในฟอร์มรายวัน (นับเฉพาะวันที่ยืนยันแล้ว) · ยอดจ่ายจริง 2 ช่องนี้กรอกเอง เพราะสิ้นเดือนคิดกันเฉพาะต้นทุนสินค้าจริง</div>'+
   '</div>';

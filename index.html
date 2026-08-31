@@ -830,6 +830,17 @@ async function saveExDeposits(){
   const {error}=await sb.from("rev_deposits").insert(recs);
   if(error){ alert("บันทึกไม่ได้: "+error.message); return; } alert("✓ บันทึกมัดจำ "+recs.length+" รายการเข้าทะเบียนแล้ว"); loadDeposits();
 }
+/* รายงาน K+ ที่อัปไว้ ครอบคลุมถึงกี่โมง — ใช้แยกเคส "รายงานยังไม่ครบวัน" ออกจาก "เงินเข้าบัญชีอื่น" */
+function hhmmOfT(t){ var m=String(t||"").match(/(\d{1,2}):(\d{2})/); return m?(("0"+m[1]).slice(-2)+":"+m[2]):""; }
+async function kplusCoverage(date){
+  var rows=(DATA.kplus&&DATA.kplus.rowsByDate&&DATA.kplus.rowsByDate[date])||null;
+  if((!rows||!rows.length)&&sb){ try{ var r=await sb.from("rev_daily").select("kplus_rows").eq("date",date).maybeSingle(); rows=(r&&r.data&&r.data.kplus_rows)||null; }catch(e){} }
+  if(!rows||!rows.length) return null;
+  var mins=-1,last="",tot=0;
+  rows.forEach(function(x){ tot+=(+x.amt||0); var h=hhmmOfT(x.t);
+    if(h){ var v=parseInt(h.slice(0,2),10)*60+parseInt(h.slice(3),10); if(v>mins){ mins=v; last=h; } } });
+  return {n:rows.length, total:Math.round(tot*100)/100, last:last, mins:mins};
+}
 /* เลื่อนไปจุดที่ยังกรอกไม่ครบ + กระพริบกรอบแดงให้เห็นชัด ๆ ว่าต้องทำตรงไหนต่อ */
 window.revFocus=function(id){
   var el=(typeof id==="string")?document.getElementById(id):id;
@@ -874,16 +885,27 @@ async function saveAudit(){
     if(_gleft>1){
       const _ln=[]; if(_g.k>1) _ln.push("• K+ ฟอร์มเกินรายงาน "+TH(_g.k)+" (ลูกค้าน่าจะโอนเข้า K+ บัญชีอื่น)");
       if(_g.b>1) _ln.push("• โอนกสิกรในฟอร์มเกินสเตทเมนต์ "+TH(_g.b));
-      if(!window.revFocus("flagBoxK")) window.revFocus("flagBoxB");
-      await new Promise(function(r){ setTimeout(r,450); });
-      _gnote=prompt("⛔ ยังยืนยันไม่ได้ — มีเงิน "+TH(_gleft)+" บาท ที่ลงฟอร์มไว้ แต่ไม่เข้าบัญชี/K+ ของร้าน\n\n"+_ln.join("\n")+"\n\nวิธีที่ถูก: เลื่อนขึ้นไปกดปุ่ม \"🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป\" ให้ครบก่อน แล้วค่อยกดยืนยัน\n\nถ้าจำเป็นต้องยืนยันทั้งที่ยังไม่ติดธง — พิมพ์เหตุผล (บันทึกถาวร + แจ้งเจ้าของทาง Telegram) แล้วกด OK:");
-      if(_gnote===null){ if(msg){ msg.innerHTML="⛔ ยังไม่ได้บันทึก — ติดธง+แนบสลิป "+TH(_gleft)+" บาทก่อน แล้วกดยืนยันอีกครั้ง"; msg.style.color="#b91c1c"; } return; }
+      /* แยก 2 เคสที่คนละเรื่องกัน: (ก) รายงาน K+ ยังโหลดไม่ครบวัน  (ข) เงินเข้าบัญชีอื่นจริง ต้องติดธง */
+      const _cov=(_g.k>1)? await kplusCoverage(s.date) : null;
+      const _partial=!!(_cov && _cov.mins>=0 && _cov.mins < 15*60 && _g.k>1);
+      if(_partial){
+        window.revFocus("d_kplus");
+        await new Promise(function(r){ setTimeout(r,450); });
+        _gnote=prompt("⏳ รายงาน K+ ที่อัปไว้ยังไม่ครบวัน — ยังยืนยันไม่ได้\n\nรายงานที่มีตอนนี้: "+_cov.n+" รายการ รวม "+TH(_cov.total)+" บาท · รายการสุดท้าย "+_cov.last+" น.\nฟอร์มลง K+ มากกว่ารายงาน "+TH(_g.k)+" บาท — น่าจะเป็นเงินที่ลูกค้าจ่ายหลัง "+_cov.last+" น. ซึ่งยังไม่อยู่ในรายงาน\n\nวิธีที่ถูก: เข้า K+ โหลดรายงานวันนี้ใหม่ให้ครบ แล้วอัปทับช่อง \"3. รายงาน K+ (QR)\" (เลื่อนไปให้แล้ว) จากนั้นกดยืนยันอีกครั้ง — ไม่ต้องแนบสลิป\n\nถ้าแน่ใจว่ารายงานครบวันแล้วจริง และเงินก้อนนี้เข้าบัญชีอื่น — พิมพ์เหตุผล (บันทึกถาวร + แจ้งเจ้าของทาง Telegram) แล้วกด OK:");
+        if(_gnote===null){ if(msg){ msg.innerHTML="⏳ ยังไม่ได้บันทึก — รายงาน K+ มีถึงแค่ <b>"+_cov.last+" น.</b> ("+_cov.n+" รายการ "+TH(_cov.total)+") · โหลดรายงาน K+ ใหม่ให้ครบวันแล้วอัปทับ แล้วกดยืนยันอีกครั้ง <b>ไม่ต้องแนบสลิป</b>"; msg.style.color="#b45309"; } return; }
+      } else {
+        if(!window.revFocus("flagBoxK")) window.revFocus("flagBoxB");
+        await new Promise(function(r){ setTimeout(r,450); });
+        _gnote=prompt("⛔ ยังยืนยันไม่ได้ — มีเงิน "+TH(_gleft)+" บาท ที่ลงฟอร์มไว้ แต่ไม่เข้าบัญชี/K+ ของร้าน\n\n"+_ln.join("\n")+(_cov?("\n(รายงาน K+ ที่อัปไว้: "+_cov.n+" รายการ ถึง "+_cov.last+" น. — ดูครบวันแล้ว)"):"")+"\n\nวิธีที่ถูก: เลื่อนขึ้นไปกดปุ่ม \"🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป\" ให้ครบก่อน แล้วค่อยกดยืนยัน\n\nถ้าจำเป็นต้องยืนยันทั้งที่ยังไม่ติดธง — พิมพ์เหตุผล (บันทึกถาวร + แจ้งเจ้าของทาง Telegram) แล้วกด OK:");
+        if(_gnote===null){ if(msg){ msg.innerHTML="⛔ ยังไม่ได้บันทึก — ติดธง+แนบสลิป "+TH(_gleft)+" บาทก่อน แล้วกดยืนยันอีกครั้ง"; msg.style.color="#b91c1c"; } return; }
+      }
       _gnote=String(_gnote).replace(/\s+/g," ").trim();
       if(_gnote.length<5){ if(msg){ msg.innerHTML="⛔ ยังไม่ได้บันทึก — ต้องพิมพ์เหตุผลอย่างน้อย 5 ตัวอักษร"; msg.style.color="#b91c1c"; } return; }
     }
   }
   const _detail=collectDetail();
   _detail.gap_k=_g.k; _detail.gap_b=_g.b; _detail.gap_left=_gleft;
+  try{ if(_g.k>1){ const _c2=await kplusCoverage(s.date); if(_c2) _detail.kplus_cov=_c2; } }catch(e){}
   if(_gnote) _detail.gap_override={by:(ROLE||"-"), reason:_gnote, at:new Date().toISOString()};
   if(DATA._auditMsg) DATA._auditMsg.gap={k:_g.k,b:_g.b,left:_gleft,note:_gnote};
   const {error}=await sb.from("rev_audit").upsert([{...s, status:"ตรวจแล้ว", confirmed_at:new Date().toISOString(), detail: _detail}],{onConflict:"date"});

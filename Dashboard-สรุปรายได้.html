@@ -32,6 +32,10 @@
   .badge{ font-size:12px; font-weight:800; padding:2px 9px; border-radius:20px; background:#dcfce7; color:#15803d; }
   .badge.w{ background:#fef2f2; color:#b91c1c; }
   canvas{ max-height:240px; }
+  .upk td{ border-bottom:1px solid #f5f5f4; }
+  .upk input[type=number]{ width:130px; text-align:right; border:1.5px solid #d6d3d1; border-radius:8px; padding:6px 9px; font:inherit; }
+  #upkBox input[type=text]{ width:100%; border:1.5px solid #e7e5e4; border-radius:8px; padding:6px 9px; font:inherit; font-size:13px; }
+  .hint{ font-size:11.5px; color:#a8a29e; }
 </style>
 </head>
 <body>
@@ -46,6 +50,8 @@
   </div>
 
   <div class="cards" id="kpis"></div>
+  <div id="upkBox"></div>
+  <div class="cards" id="kpis2"></div>
 
   <div class="card"><h2>📈 ยอด K+ (QR) รายวัน</h2><canvas id="chart"></canvas></div>
 
@@ -86,16 +92,23 @@ async function ensureRevSession(pin){
 const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
 const beDate = s => { if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); };
-let chart=null;
+const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const mEnd=m=>{ const y=+m.slice(0,4), mo=+m.slice(5,7); return m+"-"+String(new Date(y,mo,0).getDate()).padStart(2,"0"); };
+let chart=null, UPK=null, UPKM=null;
 
 async function load(){
   const st=document.getElementById("status"); st.textContent="กำลังโหลด…";
   const msel=document.getElementById("month").value; // YYYY-MM
-  const [a,d,dep,pend]=await Promise.all([
+  const mFrom=(msel||"")+"-01", mTo=msel?mEnd(msel):"9999-12-31";
+  const [a,d,dep,pend,cb,cp,fee,upk]=await Promise.all([
     sb.from("rev_audit").select("*").order("date"),
     sb.from("rev_daily").select("*").order("date"),
     sb.from("rev_deposits").select("*").eq("status","open").order("received_date"),
     sb.from("rev_pending").select("*").eq("status","open").order("date"),
+    sb.from("rev_credit_bills").select("bill_date,total_amount,source").gte("bill_date",mFrom).lte("bill_date",mTo),
+    sb.from("rev_credit_payments").select("pay_date,amount,method").gte("pay_date",mFrom).lte("pay_date",mTo),
+    sb.from("rev_expenses").select("exp_date,amount,category").gte("exp_date",mFrom).lte("exp_date",mTo).ilike("category","%Shopee%"),
+    sb.from("rev_monthly_upk").select("*").eq("month",msel||"-"),
   ]);
   if(a.error||d.error){ st.textContent="โหลดไม่ได้: "+((a.error||d.error).message); return; }
   st.textContent="";
@@ -105,12 +118,47 @@ async function load(){
   const deps=dep.data||[], pends=pend.data||[];
 
   // KPIs
-  const auditedRev=audit.reduce((s,x)=>s+(parseFloat(x.machine_net)||0),0);
-  const kplusMonth=daily.reduce((s,x)=>s+(parseFloat(x.kplus_total)||0),0);
-  const depRemain=deps.reduce((s,x)=>s+((parseFloat(x.amount)||0)-(parseFloat(x.used_amount)||0)),0);
-  const pendSum=pends.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+  const N=v=>{ const n=parseFloat(v); return isNaN(n)?0:n; };
+  const auditedRev=audit.reduce((s,x)=>s+N(x.machine_net),0);
+  const kplusMonth=daily.reduce((s,x)=>s+N(x.kplus_total),0);
+  const depRemain=deps.reduce((s,x)=>s+(N(x.amount)-N(x.used_amount)),0);
+  const pendSum=pends.reduce((s,x)=>s+N(x.amount),0);
+
+  /* ---- แยกยอดขายตามช่องทาง (นับเฉพาะวันที่ยืนยันแล้ว ให้ตรงกับยอดรวมด้านบน) ---- */
+  const okDays=audit.filter(x=>x.status==="ตรวจแล้ว");
+  const okSet=new Set(okDays.map(x=>x.date));
+  const revOk=okDays.reduce((s,x)=>s+N(x.machine_net),0);
+  const upkBill=okDays.reduce((s,x)=>s+N(x.form_upk),0);
+  const bills=(cb&&cb.data)?cb.data:[];
+  const inOk=r=>okSet.has(String(r.bill_date).slice(0,10));
+  const sumB=(f,only)=>bills.filter(r=>r.source===f&&(only?inOk(r):!inOk(r))).reduce((s,r)=>s+N(r.total_amount),0);
+  const cntB=(f,only)=>bills.filter(r=>r.source===f&&(only?inOk(r):!inOk(r))).length;
+  const crForm=sumB("auto-form",true), crShop=sumB("shopee-sync",true);
+  const crFormOut=sumB("auto-form",false), crShopOut=sumB("shopee-sync",false);
+  const walkin=revOk-crForm-crShop-upkBill;
+  const pct=v=>revOk>0?(v/revOk*100).toFixed(1)+"% ของยอดขาย":"";
+  /* ---- เงินเข้าตัดหนี้บิลเก่า ---- */
+  const pays=(cp&&cp.data)?cp.data:[];
+  const isShopeePay=r=>String(r.method||"").indexOf("Shopee")>=0;
+  const isDepPay=r=>String(r.method||"")==="หักมัดจำ";
+  const custPaid=pays.filter(r=>!isShopeePay(r)&&!isDepPay(r)).reduce((s,r)=>s+N(r.amount),0);
+  const custPaidN=pays.filter(r=>!isShopeePay(r)&&!isDepPay(r)).length;
+  const shopPaid=pays.filter(isShopeePay).reduce((s,r)=>s+N(r.amount),0);
+  const depPaid=pays.filter(isDepPay).reduce((s,r)=>s+N(r.amount),0);
+  /* ---- ค่าธรรมเนียม Shopee ที่ถูกหักจริงในเดือนนี้ ---- */
+  const shopFee=((fee&&fee.data)?fee.data:[]).reduce((s,r)=>s+N(r.amount),0);
+
   document.getElementById("kpis").innerHTML=
-    kpi("รายได้ที่ตรวจแล้ว (เดือนนี้)", TH(auditedRev), audit.length+" วันที่ยืนยัน")+
+    kpi("💰 รายได้ที่ตรวจแล้ว (เดือนนี้)", TH(auditedRev), okDays.length+" วันที่ยืนยัน · แยกตามช่องทางด้านขวา")+
+    kpi("🏪 ขายหน้าร้าน (รับเงินทันที)", TH(walkin), "เงินสด + K+ + โอน · "+pct(walkin))+
+    kpi("🧾 ลงบัญชี/เชื่อ (เดือนนี้)", TH(crForm), cntB("auto-form",true)+" ใบ · ไม่รวม Shopee · "+pct(crForm)+(crFormOut?" · +"+TH0(crFormOut)+" ในวันที่ยังไม่ยืนยัน":""))+
+    kpi("🛒 Shopee (เดือนนี้)", TH(crShop), cntB("shopee-sync",true)+" ใบ · "+pct(crShop)+" · ค่าธรรมเนียมถูกหัก "+TH0(shopFee)+(crShopOut?" · +"+TH0(crShopOut)+" ในวันที่ยังไม่ยืนยัน":""))+
+    kpi("💵 ลูกค้าโอนจ่ายบิลเก่า", TH(custPaid), custPaidN+" รายการ · ไม่ใช่ยอดขาย (เก็บหนี้)"+(shopPaid?" · Shopee โอนเข้า "+TH0(shopPaid):"")+(depPaid?" · หักมัดจำ "+TH0(depPaid):""));
+
+  UPKM=msel; UPK=((upk&&upk.data)?upk.data:[])[0]||null;
+  renderUpk(upkBill, okDays.length);
+
+  document.getElementById("kpis2").innerHTML=
     kpi("ยอด K+ สะสม (เดือนนี้)", TH(kplusMonth), daily.length+" วันมีข้อมูล")+
     kpi("มัดจำคงค้าง", TH(depRemain), deps.length+" ใบ")+
     kpi("เงินรอจับคู่", TH(pendSum), pends.length+" รายการ");
@@ -141,6 +189,48 @@ async function load(){
     '<tr class="tot"><td colspan="3"><b>รวม</b></td><td class="num"><b>'+TH(pendSum)+'</b></td></tr></tbody></table>') : '<div class="muted">ไม่มีเงินรอจับคู่ 👍</div>';
 }
 function kpi(l,v,s){ return '<div class="kpi"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>'; }
+
+/* ================= 🪵 UPK: ยอดเปิดบิล vs ยอดจ่ายจริง ================= */
+function upkNums(billed){
+  const w=UPK?(parseFloat(UPK.wood_amt)||0):0, h=UPK?(parseFloat(UPK.hato_amt)||0):0;
+  const paid=w+h, diff=billed-paid;
+  return {w,h,paid,diff};
+}
+function renderUpk(billed, days){
+  const box=document.getElementById("upkBox");
+  const {w,h,paid,diff}=upkNums(billed);
+  const has=(UPK&&(UPK.wood_amt!=null||UPK.hato_amt!=null))?true:false;
+  box.innerHTML='<div class="card"><h2>🪵 UPK เดือนนี้ — ยอดเปิดบิล เทียบ ยอดจ่ายจริง</h2>'+
+  '<table class="upk"><tbody>'+
+  '<tr><td>ยอดเปิดบิล <span class="hint">(ต้นทุน + กำไร · อัตโนมัติจากฟอร์ม '+days+' วัน)</span></td><td class="num" style="font-weight:800;font-size:17px">'+TH(billed)+'</td></tr>'+
+  '<tr><td>บิลไม้ (จ่ายจริง) <span class="hint">อาจเป็นบิลเก่า 1–2 เดือนที่รับของเข้ามาแล้ว</span></td><td class="num"><input type="number" step="0.01" min="0" id="upk_wood" placeholder="กรอก" value="'+(has&&UPK.wood_amt!=null?UPK.wood_amt:"")+'" onchange="saveUpk()"></td></tr>'+
+  '<tr><td>บิลสี HATO (จ่ายจริง) <span class="hint">ใช้เป้าที่ UPK ซื้อ</span></td><td class="num"><input type="number" step="0.01" min="0" id="upk_hato" placeholder="กรอก" value="'+(has&&UPK.hato_amt!=null?UPK.hato_amt:"")+'" onchange="saveUpk()"></td></tr>'+
+  '<tr><td><b>รวมจ่ายจริง</b></td><td class="num" id="upkPaid" style="font-weight:800">'+(paid?TH(paid):"—")+'</td></tr>'+
+  '<tr><td><b>ส่วนต่าง</b> <span class="hint">กำไรที่ลดให้ตอนสิ้นเดือน</span></td><td class="num" id="upkDiff" style="font-weight:800">'+(paid?'<span class="'+(diff>=0?"ok":"warn")+'">'+TH(diff)+(billed>0?' <span class="hint">('+(diff/billed*100).toFixed(1)+'% ของยอดเปิดบิล)</span>':'')+'</span>':"—")+'</td></tr>'+
+  '</tbody></table>'+
+  '<div style="margin-top:8px"><input type="text" id="upk_note" placeholder="โน้ต เช่น บิลไม้ก้อนนี้เป็นของเดือน ก.ค." value="'+esc(UPK&&UPK.note?UPK.note:"")+'" onchange="saveUpk()"></div>'+
+  '<div class="hint" id="upkSaved" style="margin-top:6px">'+(UPK&&UPK.updated_at?"📌 บันทึกล่าสุด "+beDate(UPK.updated_at):"ยังไม่ได้กรอกยอดจ่ายจริงของเดือนนี้")+'</div>'+
+  '<div class="hint" style="margin-top:4px">💡 ยอดเปิดบิลมาจากช่อง UPK ในฟอร์มรายวัน (นับเฉพาะวันที่ยืนยันแล้ว) · ยอดจ่ายจริง 2 ช่องนี้กรอกเอง เพราะสิ้นเดือนคิดกันเฉพาะต้นทุนสินค้าจริง</div>'+
+  '</div>';
+  box.dataset.billed=billed; box.dataset.days=days;
+}
+window.saveUpk=async function(){
+  const box=document.getElementById("upkBox");
+  const billed=parseFloat(box.dataset.billed)||0;
+  const wEl=document.getElementById("upk_wood"), hEl=document.getElementById("upk_hato"), nEl=document.getElementById("upk_note");
+  if(!UPKM||!sb) return;
+  const row={month:UPKM, wood_amt:(String(wEl.value).trim()===""?0:Math.round(parseFloat(wEl.value)*100)/100),
+             hato_amt:(String(hEl.value).trim()===""?0:Math.round(parseFloat(hEl.value)*100)/100),
+             note:nEl.value||null, updated_by:"owner", updated_at:new Date().toISOString()};
+  if(isNaN(row.wood_amt)||isNaN(row.hato_amt)){ alert("กรอกเป็นตัวเลขเท่านั้น"); return; }
+  const {error}=await sb.from("rev_monthly_upk").upsert(row,{onConflict:"month"});
+  if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
+  UPK=row;
+  const {paid,diff}=upkNums(billed);
+  document.getElementById("upkPaid").innerHTML=paid?TH(paid):"—";
+  document.getElementById("upkDiff").innerHTML=paid?('<span class="'+(diff>=0?"ok":"warn")+'">'+TH(diff)+(billed>0?' <span class="hint">('+(diff/billed*100).toFixed(1)+'% ของยอดเปิดบิล)</span>':'')+'</span>'):"—";
+  document.getElementById("upkSaved").textContent="✓ บันทึกแล้ว "+beDate(row.updated_at);
+};
 
 // default month = ล่าสุดที่มีข้อมูล
 (async ()=>{

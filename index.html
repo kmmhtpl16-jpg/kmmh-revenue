@@ -633,9 +633,12 @@ function collectDetail(){
   const _lki=(DATA.kplus&&DATA.kplus.late&&DATA.form&&DATA.kplus.late[DATA.form.date]&&DATA.kplus.late[DATA.form.date].length)?DATA.kplus.late[DATA.form.date]:_rawLt;
   const _lk=_lki.reduce((s,x)=>s+(+x.amt||0),0);
   const _fks=(DATA.form&&DATA.form.ksk!=null)?DATA.form.ksk:null;
+  /* แยกช่องทางของยอดหน้าร้าน — เก็บไว้ให้ Dashboard สรุปได้ (เดิมเก็บแค่ K+/กสิกร) */
+  const _fcs=(DATA.form&&DATA.form.cash!=null)?DATA.form.cash:null;
+  const _fac=(DATA.form&&DATA.form.acc!=null)?DATA.form.acc:null;
   const _bdd=(DATA.bank&&DATA.bank.map&&DATA.form&&DATA.bank.map[DATA.form.date])?DATA.bank.map[DATA.form.date]:null;
   const _sdr=_bdd?Math.round(((+_bdd.dep||0)-(+_bdd.kplus||0))*100)/100:null;
-  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, form_ksk:_fks, stmt_direct:_sdr, /* เก็บเลขบิลสะอาด + แยกเลขใบมัดจำ (RA) ออกมาเป็นฟิลด์ของตัวเอง
+  return { files:{form:f.form||null,pos:f.pos||null,kplus:f.kplus||null,bank:f.bank||null}, cns:cns, ex:ex, form_knv:_fk, report_knv:_rk, kplus_late:_lk, kplus_late_items:_lki, form_ksk:_fks, form_cash:_fcs, form_acct:_fac, stmt_direct:_sdr, /* เก็บเลขบิลสะอาด + แยกเลขใบมัดจำ (RA) ออกมาเป็นฟิลด์ของตัวเอง
      เดิมเก็บ "KM6907-0396(RA6907-0004)" ทั้งก้อน ทำให้ billCust[] หาไม่เจอ (cust ว่าง)
      และ xferBill() เทียบเลขบิลตรงๆ ไม่ได้ · มัดจำที่มีเลขบิลแล้ว = หักจากบิลไปแล้ว ไม่ใช่มัดจำค้าง */
   xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ const b=normBill(x.bill);
@@ -1062,7 +1065,7 @@ async function saveDay(date){
   const files=(a.data&&a.data.detail&&a.data.detail.files)||{};
   const oldCns=(a.data&&a.data.detail&&a.data.detail.cns)||[]; cns.forEach((c,i)=>{ const m=oldCns.find(o=>o.cn_no&&o.cn_no===c.cn_no)||oldCns[i]; if(m){ if(m.bill_amt!=null&&c.bill_amt==null) c.bill_amt=m.bill_amt; if(m.bill_total!=null&&c.bill_total==null) c.bill_total=m.bill_total; } });
   const _od=(a.data&&a.data.detail)||{};
-  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), refunds:(_od.refunds!=null?_od.refunds:null), refund_pair_ignore:(_od.refund_pair_ignore!=null?_od.refund_pair_ignore:null), recon_ok:(_od.recon_ok!=null?_od.recon_ok:null), saved_at:new Date().toISOString(), edited:true };
+  const detail={ files:files, cns:cns, ex:ex, form_knv:(_od.form_knv!=null?_od.form_knv:null), report_knv:(_od.report_knv!=null?_od.report_knv:null), kplus_late:(_od.kplus_late!=null?_od.kplus_late:null), kplus_late_items:(_od.kplus_late_items!=null?_od.kplus_late_items:null), xfer:(_od.xfer!=null?_od.xfer:null), form_ksk:(_od.form_ksk!=null?_od.form_ksk:null), form_cash:(_od.form_cash!=null?_od.form_cash:null), form_acct:(_od.form_acct!=null?_od.form_acct:null), bill_audit:(_od.bill_audit!=null?_od.bill_audit:null), refunds:(_od.refunds!=null?_od.refunds:null), refund_pair_ignore:(_od.refund_pair_ignore!=null?_od.refund_pair_ignore:null), recon_ok:(_od.recon_ok!=null?_od.recon_ok:null), saved_at:new Date().toISOString(), edited:true };
   const {error}=await sb.from("rev_audit").update({detail:detail}).eq("date",date);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   loadMonthStatus(); showDayDetail(date);

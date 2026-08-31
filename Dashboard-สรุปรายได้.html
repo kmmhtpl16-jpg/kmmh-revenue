@@ -36,6 +36,24 @@
   .upk input[type=number]{ width:130px; text-align:right; border:1.5px solid #d6d3d1; border-radius:8px; padding:6px 9px; font:inherit; }
   #upkBox input[type=text]{ width:100%; border:1.5px solid #e7e5e4; border-radius:8px; padding:6px 9px; font:inherit; font-size:13px; }
   .hint{ font-size:11.5px; color:#a8a29e; }
+  /* ---- การ์ดสรุปช่องทาง (แบบ B) ---- */
+  .headB{ background:#fff; border:1px solid #e7e5e4; border-radius:14px; padding:16px 18px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .headB .l{ font-size:14.5px; color:#57534e; font-weight:700; }
+  .headB .s{ font-size:12.5px; color:#a8a29e; margin-top:2px; }
+  .headB .v{ font-size:32px; font-weight:800; color:#15803d; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+  .gridB{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:14px; }
+  @media(max-width:760px){ .gridB{ grid-template-columns:1fr; } }
+  .cB{ background:#fff; border:1px solid #e7e5e4; border-radius:14px; padding:14px 18px; }
+  .cB .top{ display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px; }
+  .cB .lb{ font-size:14px; font-weight:700; color:#44403c; }
+  .cB .vl{ font-size:25px; font-weight:800; letter-spacing:-.5px; font-variant-numeric:tabular-nums; }
+  .cB .bar{ height:5px; border-radius:5px; background:#f5f5f4; margin:9px 0 10px; overflow:hidden; }
+  .cB .bar i{ display:block; height:100%; border-radius:5px; }
+  .cB .dt{ display:grid; grid-template-columns:1fr auto; gap:5px 10px; font-size:12.5px; align-items:baseline; }
+  .cB .dt .k{ color:#a8a29e; }
+  .cB .dt .v{ color:#57534e; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .cB .dt .v .pc{ color:#a8a29e; font-weight:400; }
+  .cB .dt .dim{ color:#c7c3bf; font-weight:400; }
 </style>
 </head>
 <body>
@@ -49,7 +67,7 @@
     <span class="muted" id="status"></span>
   </div>
 
-  <div class="cards" id="kpis"></div>
+  <div id="kpis"></div>
   <div id="upkBox"></div>
   <div class="cards" id="kpis2"></div>
 
@@ -93,6 +111,7 @@ const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{
 const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
 const beDate = s => { if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); };
 const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const beMonthTH=m=>{ if(!m) return ""; const n=["","มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"]; const p=String(m).split("-"); return (n[parseInt(p[1])]||p[1])+" "+(parseInt(p[0])+543); };
 const mEnd=m=>{ const y=+m.slice(0,4), mo=+m.slice(5,7); return m+"-"+String(new Date(y,mo,0).getDate()).padStart(2,"0"); };
 let chart=null, UPK=null, UPKM=null;
 
@@ -105,7 +124,7 @@ async function load(){
     sb.from("rev_daily").select("*").order("date"),
     sb.from("rev_deposits").select("*").eq("status","open").order("received_date"),
     sb.from("rev_pending").select("*").eq("status","open").order("date"),
-    sb.from("rev_credit_bills").select("bill_date,total_amount,source").gte("bill_date",mFrom).lte("bill_date",mTo),
+    sb.from("rev_credit_bills").select("bill_date,total_amount,paid_amount,status,source").gte("bill_date",mFrom).lte("bill_date",mTo),
     sb.from("rev_credit_payments").select("pay_date,amount,method").gte("pay_date",mFrom).lte("pay_date",mTo),
     sb.from("rev_expenses").select("exp_date,amount,category").gte("exp_date",mFrom).lte("exp_date",mTo).ilike("category","%Shopee%"),
     sb.from("rev_monthly_upk").select("*").eq("month",msel||"-"),
@@ -148,12 +167,72 @@ async function load(){
   /* ---- ค่าธรรมเนียม Shopee ที่ถูกหักจริงในเดือนนี้ ---- */
   const shopFee=((fee&&fee.data)?fee.data:[]).reduce((s,r)=>s+N(r.amount),0);
 
+  /* ---- แยกช่องทางของ "ขายหน้าร้าน" (เก็บใน rev_audit.detail ตอนกดยืนยัน) ---- */
+  const chan=(key)=>{ let sum=0,n=0; okDays.forEach(x=>{ const v=(x.detail&&x.detail[key]!=null)?parseFloat(x.detail[key]):null; if(v!=null&&!isNaN(v)){ sum+=v; n++; } }); return {sum,n}; };
+  const cCash=chan("form_cash"), cKnv=chan("form_knv"), cKsk=chan("form_ksk");
+  const nD=okDays.length;
+  const wRows=[]; const miss=[];
+  const addCh=(name,o)=>{ if(o.n>0) wRows.push({k:name+(o.n<nD?' <span class="dim">('+o.n+"/"+nD+" วัน)</span>":""), v:o.sum}); else miss.push(name); };
+  addCh("เงินสด",cCash); addCh("K+ (QR)",cKnv); addCh("โอนกสิกร",cKsk);
+  const wKnown=wRows.reduce((s,r)=>s+r.v,0), wRest=Math.round((walkin-wKnown)*100)/100;
+  if(wRest>1) wRows.push({k:(miss.length?miss.join(" + "):"ส่วนที่เหลือ")+' <span class="dim">(ยังไม่ได้เก็บแยก)</span>', v:wRest, dim:true});
+  const pw=v=>walkin>0?'<span class="pc"> ('+(v/walkin*100).toFixed(1)+"%)</span>":"";
+  const dtRows=(arr)=>arr.map(r=>'<span class="k">'+r.k+'</span><span class="v'+(r.dim?" dim":"")+'">'+TH(r.v)+(r.pcHtml||"")+"</span>").join("");
+
+  /* ---- Shopee: รับชำระแล้ว / ยังไม่ได้รับชำระ ---- */
+  const shopBills=bills.filter(r=>r.source==="shopee-sync"&&inOk(r));
+  const shopPaidAmt=shopBills.reduce((s,r)=>s+N(r.paid_amount),0);
+  const shopDue=Math.round((crShop-shopPaidAmt)*100)/100;
+  const shopPaidN=shopBills.filter(r=>N(r.paid_amount)>=N(r.total_amount)-1).length;
+  const ps=v=>crShop>0?'<span class="pc"> ('+(v/crShop*100).toFixed(1)+"%)</span>":"";
+
   document.getElementById("kpis").innerHTML=
-    kpi("💰 รายได้ที่ตรวจแล้ว (เดือนนี้)", TH(auditedRev), okDays.length+" วันที่ยืนยัน · แยกตามช่องทางด้านขวา")+
-    kpi("🏪 ขายหน้าร้าน (รับเงินทันที)", TH(walkin), "เงินสด + K+ + โอน · "+pct(walkin))+
-    kpi("🧾 ลงบัญชี/เชื่อ (เดือนนี้)", TH(crForm), cntB("auto-form",true)+" ใบ · ไม่รวม Shopee · "+pct(crForm)+(crFormOut?" · +"+TH0(crFormOut)+" ในวันที่ยังไม่ยืนยัน":""))+
-    kpi("🛒 Shopee (เดือนนี้)", TH(crShop), cntB("shopee-sync",true)+" ใบ · "+pct(crShop)+" · ค่าธรรมเนียมถูกหัก "+TH0(shopFee)+(crShopOut?" · +"+TH0(crShopOut)+" ในวันที่ยังไม่ยืนยัน":""))+
-    kpi("💵 ลูกค้าโอนจ่ายบิลเก่า", TH(custPaid), custPaidN+" รายการ · ไม่ใช่ยอดขาย (เก็บหนี้)"+(shopPaid?" · Shopee โอนเข้า "+TH0(shopPaid):"")+(depPaid?" · หักมัดจำ "+TH0(depPaid):""));
+  '<div class="headB"><div><div class="l">💰 รายได้ที่ตรวจแล้ว — '+beMonthTH(msel)+'</div>'+
+    '<div class="s">'+nD+' วันที่ยืนยันแล้ว · แยกตามช่องทางด้านล่าง</div></div>'+
+    '<div class="v">'+TH(auditedRev)+'</div></div>'+
+  '<div class="gridB">'+
+    /* 🏪 ขายหน้าร้าน */
+    '<div class="cB"><div class="top"><span class="lb">🏪 ขายหน้าร้าน (รับเงินทันที)</span><span class="vl">'+TH(walkin)+'</span></div>'+
+      '<div class="bar"><i style="width:'+(revOk>0?Math.min(100,walkin/revOk*100):0)+'%;background:#16a34a"></i></div>'+
+      '<div class="dt">'+
+        '<span class="k">สัดส่วนของยอดขาย</span><span class="v">'+(revOk>0?(walkin/revOk*100).toFixed(1)+"%":"—")+'</span>'+
+        wRows.map(r=>'<span class="k">'+r.k+'</span><span class="v'+(r.dim?" dim":"")+'">'+TH(r.v)+pw(r.v)+"</span>").join("")+
+      '</div></div>'+
+    /* 🧾 ลงบัญชี */
+    '<div class="cB"><div class="top"><span class="lb">🧾 ลงบัญชี / เชื่อ</span><span class="vl">'+TH(crForm)+'</span></div>'+
+      '<div class="bar"><i style="width:'+(revOk>0?Math.min(100,crForm/revOk*100):0)+'%;background:#0ea5e9"></i></div>'+
+      '<div class="dt">'+
+        '<span class="k">สัดส่วนของยอดขาย</span><span class="v">'+(revOk>0?(crForm/revOk*100).toFixed(1)+"%":"—")+'</span>'+
+        '<span class="k">จำนวนบิล (ไม่รวม Shopee)</span><span class="v">'+cntB("auto-form",true)+' ใบ</span>'+
+      '</div></div>'+
+    /* 🛒 Shopee */
+    '<div class="cB"><div class="top"><span class="lb">🛒 Shopee</span><span class="vl">'+TH(crShop)+'</span></div>'+
+      '<div class="bar"><i style="width:'+(revOk>0?Math.min(100,crShop/revOk*100):0)+'%;background:#f97316"></i></div>'+
+      '<div class="dt">'+
+        '<span class="k">สัดส่วนของยอดขาย</span><span class="v">'+(revOk>0?(crShop/revOk*100).toFixed(1)+"%":"—")+'</span>'+
+        '<span class="k">จำนวนบิล</span><span class="v">'+shopBills.length+' ใบ</span>'+
+        '<span class="k">รับชำระแล้ว</span><span class="v" style="color:#15803d">'+TH(shopPaidAmt)+ps(shopPaidAmt)+'</span>'+
+        '<span class="k">ยังไม่ได้รับชำระ</span><span class="v" style="color:'+(shopDue>1?"#b45309":"#57534e")+'">'+TH(shopDue)+ps(shopDue)+'</span>'+
+        '<span class="k">ค่าธรรมเนียมที่ถูกหักเดือนนี้</span><span class="v">'+TH(shopFee)+ps(shopFee)+'</span>'+
+      '</div></div>'+
+    /* 🪵 UPK */
+    '<div class="cB"><div class="top"><span class="lb">🪵 UPK</span><span class="vl">'+TH(upkBill)+'</span></div>'+
+      '<div class="bar"><i style="width:'+(revOk>0?Math.min(100,upkBill/revOk*100):0)+'%;background:#a16207"></i></div>'+
+      '<div class="dt">'+
+        '<span class="k">สัดส่วนของยอดขาย</span><span class="v">'+(revOk>0?(upkBill/revOk*100).toFixed(1)+"%":"—")+'</span>'+
+        '<span class="k">ยอดเปิดบิล (ต้นทุน+กำไร)</span><span class="v">'+TH(upkBill)+'</span>'+
+        '<span class="k">ยอดจ่ายจริง (กรอกข้างล่าง)</span><span class="v" id="upkPaidTile">—</span>'+
+      '</div></div>'+
+    /* 💵 บิลเก่า — เต็มแถว */
+    '<div class="cB" style="grid-column:1 / -1;background:#fffbeb;border-color:#fde68a">'+
+      '<div class="top"><span class="lb">💵 ลูกค้าโอนจ่ายบิลเก่า <span style="font-weight:400;color:#a16207">— เก็บหนี้ ไม่ใช่ยอดขายเดือนนี้</span></span>'+
+      '<span class="vl" style="color:#b45309">'+TH(custPaid)+'</span></div>'+
+      '<div class="dt" style="margin-top:8px">'+
+        '<span class="k">จำนวนรายการ</span><span class="v">'+custPaidN+' รายการ</span>'+
+        (shopPaid?'<span class="k">Shopee โอนเข้า (แยกต่างหาก)</span><span class="v">'+TH(shopPaid)+'</span>':"")+
+        (depPaid?'<span class="k">หักมัดจำ (ไม่ใช่เงินสดเข้าใหม่)</span><span class="v">'+TH(depPaid)+'</span>':"")+
+      '</div></div>'+
+  '</div>';
 
   UPKM=msel; UPK=((upk&&upk.data)?upk.data:[])[0]||null;
   renderUpk(upkBill, okDays.length);
@@ -213,6 +292,7 @@ function renderUpk(billed, days){
   '<div class="hint" style="margin-top:4px">💡 ยอดเปิดบิลมาจากช่อง UPK ในฟอร์มรายวัน (นับเฉพาะวันที่ยืนยันแล้ว) · ยอดจ่ายจริง 2 ช่องนี้กรอกเอง เพราะสิ้นเดือนคิดกันเฉพาะต้นทุนสินค้าจริง</div>'+
   '</div>';
   box.dataset.billed=billed; box.dataset.days=days;
+  const tile=document.getElementById("upkPaidTile"); if(tile) tile.innerHTML=paid?TH(paid):'<span class="dim">ยังไม่กรอก</span>';
 }
 window.saveUpk=async function(){
   const box=document.getElementById("upkBox");
@@ -230,6 +310,7 @@ window.saveUpk=async function(){
   document.getElementById("upkPaid").innerHTML=paid?TH(paid):"—";
   document.getElementById("upkDiff").innerHTML=paid?('<span class="'+(diff>=0?"ok":"warn")+'">'+TH(diff)+(billed>0?' <span class="hint">('+(diff/billed*100).toFixed(1)+'% ของยอดเปิดบิล)</span>':'')+'</span>'):"—";
   document.getElementById("upkSaved").textContent="✓ บันทึกแล้ว "+beDate(row.updated_at);
+  const tile=document.getElementById("upkPaidTile"); if(tile) tile.innerHTML=paid?TH(paid):"—";
 };
 
 // default month = ล่าสุดที่มีข้อมูล

@@ -410,9 +410,10 @@
     try{
       if(!sbReady()) return;
       var entries=parseOldBills(wb); if(!entries.length) return;
+      var _obcm=await canonMap();
       var rows=entries.map(function(e,i){
         return { source_key:obKey(formDate,e,i), form_date:formDate||todayISO(),
-                 customer:e.customer||null, bill_no:e.bill_no||null,
+                 customer:(e.customer?canonName(_obcm,e.customer):null), bill_no:e.bill_no||null,
                  amount:num(e.amount), method:e.method, plan:[], leftover:0, status:"pending" };
       });
       /* upsert กันซ้ำ: อัปฟอร์มไฟล์เดิมซ้ำ จะไม่เกิดข้อเสนอซ้ำ */
@@ -573,6 +574,11 @@
     return {date:dateISO, entries:entries};
   }
 
+  /* ── ชื่อมาตรฐาน: ถ้าเคยกด "ใช่ เจ้าเดียวกัน" ในหน้าลูกหนี้ไว้ บิลใหม่ให้ใช้ชื่อนั้นเลย (กันชื่อแตกกลุ่มซ้ำอีก) ── */
+  function ckey(s){ return String(s||"").replace(/ห้างหุ้นส่วนจำกัด|ห้างหุ้นส่วนสามัญ|ห้างหุ้นส่วน|บริษัทจำกัด|บริษัท|บจก\.?|บมจ\.?|หจก\.?|หสน\.?|ร้าน|คุณ|นางสาว|น\.ส\.|นาย|นาง|จำกัด\(มหาชน\)|จำกัด/g,"").replace(/[\s\.\-–—_]/g,""); }
+  async function canonMap(){ try{ var r=await sb.from("rev_name_map").select("from_key,to_name"); var m={}; (r.data||[]).forEach(function(x){ m[x.from_key]=x.to_name; }); return m; }catch(e){ return {}; } }
+  function canonName(m,nm){ var t=m[ckey(nm)]; return t||nm; }
+
   window.__creditAutoPull=async function(file){
     try{
       if(!sbReady() || !window.XLSX) return;
@@ -583,8 +589,9 @@
       var parsed=parseCreditSheet(wb, null);
       var msg=document.getElementById("creditmsg");
       if(!parsed.entries.length){ if(msg) msg.textContent=""; return; }
+      var _cm=await canonMap();   /* source_key คงเดิม (กันดูดซ้ำ) เปลี่ยนแค่ชื่อที่เก็บ */
       var payload=parsed.entries.map(function(e){
-        return {source_key:e.source_key, bill_no:e.bill_no, customer:e.customer, bill_date:parsed.date||todayISO(),
+        return {source_key:e.source_key, bill_no:e.bill_no, customer:canonName(_cm,e.customer), bill_date:parsed.date||todayISO(),
                 total_amount:e.amount, source:"auto-form", note:"ดูดจากชีตลงบัญชี"};
       });
       var r=await sb.from("rev_credit_bills").upsert(payload,{onConflict:"source_key",ignoreDuplicates:true});

@@ -172,7 +172,8 @@ async function load(){
   const cCash=chan("form_cash"), cKnv=chan("form_knv"), cKsk=chan("form_ksk");
   const nD=okDays.length;
   const wRows=[]; const miss=[];
-  const addCh=(name,o)=>{ if(o.n>0) wRows.push({k:name+(o.n<nD?' <span class="dim">('+o.n+"/"+nD+" วัน)</span>":""), v:o.sum}); else miss.push(name); };
+  /* โชว์ช่องทางเฉพาะเดือนที่มีข้อมูลครบทุกวัน — มีไม่ครบ = ตัวเลขหลอก ให้ไปรวมในก้อน "ยังไม่ได้เก็บแยก" แทน */
+  const addCh=(name,o)=>{ if(o.n>0&&o.n>=nD) wRows.push({k:name, v:o.sum}); else miss.push(name); };
   addCh("เงินสด",cCash); addCh("K+ (QR)",cKnv); addCh("โอนกสิกร",cKsk);
   const wKnown=wRows.reduce((s,r)=>s+r.v,0), wRest=Math.round((walkin-wKnown)*100)/100;
   if(wRest>1) wRows.push({k:(miss.length?miss.join(" + "):"ส่วนที่เหลือ")+' <span class="dim">(ยังไม่ได้เก็บแยก)</span>', v:wRest, dim:true});

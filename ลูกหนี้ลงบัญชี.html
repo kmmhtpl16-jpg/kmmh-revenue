@@ -688,6 +688,13 @@ function lev1(a,b){
   return diff<=1;
 }
 function pairKey(a,b){ var x=[nkey(a),nkey(b)].sort(); return x[0]+"||"+x[1]; }
+/* ไม่เอาชื่อที่เป็นเลขบิลล้วน (เผลอใส่เลขบิลในช่องลูกค้า) และ SHOPEE มาจับคู่ */
+function skipDupName(nm){
+  var t=String(nm||"").trim(); if(!t) return true;
+  if(/^shopee$/i.test(t)) return true;
+  if(/^[A-Za-z]{1,5}[\d\-\/\s]{4,}$/.test(t)) return true;
+  return false;
+}
 
 async function loadDupRefs(){
   NAMEMAP={}; NOTDUP={};
@@ -710,7 +717,7 @@ window.runDupScan=async function(){
   /* --- รวมสถิติรายชื่อ --- */
   var byName={};
   rows.forEach(function(b){
-    var nm=String(b.customer||"").trim(); if(!nm) return;
+    var nm=String(b.customer||"").trim(); if(!nm||skipDupName(nm)) return;
     if(!byName[nm]) byName[nm]={name:nm, key:nkey(nm), n:0, remain:0};
     byName[nm].n++; byName[nm].remain+=num(b.total_amount)-num(b.paid_amount);
   });

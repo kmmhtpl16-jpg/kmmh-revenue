@@ -830,10 +830,40 @@ async function saveExDeposits(){
   const {error}=await sb.from("rev_deposits").insert(recs);
   if(error){ alert("บันทึกไม่ได้: "+error.message); return; } alert("✓ บันทึกมัดจำ "+recs.length+" รายการเข้าทะเบียนแล้ว"); loadDeposits();
 }
+/* เลื่อนไปจุดที่ยังกรอกไม่ครบ + กระพริบกรอบแดงให้เห็นชัด ๆ ว่าต้องทำตรงไหนต่อ */
+window.revFocus=function(id){
+  var el=(typeof id==="string")?document.getElementById(id):id;
+  if(!el) return false;
+  try{ el.scrollIntoView({behavior:"smooth",block:"center"}); }catch(e){ try{ el.scrollIntoView(); }catch(e2){} }
+  var prevOutline=el.style.outline, prevOffset=el.style.outlineOffset, n=0;
+  var t=setInterval(function(){
+    el.style.outline=(n%2===0)?"3px solid #ef4444":"3px solid transparent";
+    el.style.outlineOffset="3px";
+    if(++n>=7){ clearInterval(t); el.style.outline=prevOutline; el.style.outlineOffset=prevOffset; }
+  },280);
+  return true;
+};
 async function saveAudit(){
   const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
   if(!s||!s.date){ if(msg){ msg.innerHTML=(DATA.form&&!DATA.form.date)?'⚠ อ่านวันที่จากไฟล์รายรับไม่ได้ — แก้เซลล์วันที่ (D1) ชีท "สรุปรายรับ-รายจ่าย" ให้เป็นวันที่จริง หรือพิมพ์ 21/07/2569 แล้วอัปใหม่':"ยังไม่มีข้อมูลให้บันทึก"; msg.style.color="#b91c1c";} return; }
   if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; }
+  /* ⛔ ด่านบังคับ: ชื่อลูกค้าบิลลงบัญชีของวันนี้ ซ้ำกับชื่อที่มีอยู่แล้ว ต้องเลือกก่อน (งานจบเป็นวัน ๆ) */
+  try{
+    if(window.__cbDupBlockers){
+      const _dup=await window.__cbDupBlockers(s.date);
+      if(_dup && _dup.length){
+        if(window.loadCreditBills) await window.loadCreditBills();
+        await new Promise(function(r){ setTimeout(r,250); });
+        const _ok=window.revFocus("cbdupSure");
+        if(msg){
+          msg.innerHTML='⛔ ยังยืนยันไม่ได้ — มีชื่อลูกค้า <b>'+_dup.length+' คู่</b> ที่ต้องเลือกก่อนว่าเป็นเจ้าเดียวกันหรือคนละเจ้า'
+            +(_ok?' · เลื่อนไปที่กล่องแดงให้แล้ว ⬇️':' · ดูที่การ์ด “📒 บิลลงบัญชี” ด้านล่าง');
+          msg.style.color="#b91c1c";
+        }
+        return;
+      }
+    }
+  }catch(e){ console.warn("cbDupBlockers",e); }
   /* ⛔ ด่านบังคับ: เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน ต้องติดธง+แนบสลิปก่อน (หรือใส่เหตุผลข้าม) */
   const _g=await gapsForSave(s.date); const _gt=Math.round((_g.k+_g.b)*100)/100; let _gnote=null, _gleft=0;
   if(_gt>1){
@@ -844,6 +874,8 @@ async function saveAudit(){
     if(_gleft>1){
       const _ln=[]; if(_g.k>1) _ln.push("• K+ ฟอร์มเกินรายงาน "+TH(_g.k)+" (ลูกค้าน่าจะโอนเข้า K+ บัญชีอื่น)");
       if(_g.b>1) _ln.push("• โอนกสิกรในฟอร์มเกินสเตทเมนต์ "+TH(_g.b));
+      if(!window.revFocus("flagBoxK")) window.revFocus("flagBoxB");
+      await new Promise(function(r){ setTimeout(r,450); });
       _gnote=prompt("⛔ ยังยืนยันไม่ได้ — มีเงิน "+TH(_gleft)+" บาท ที่ลงฟอร์มไว้ แต่ไม่เข้าบัญชี/K+ ของร้าน\n\n"+_ln.join("\n")+"\n\nวิธีที่ถูก: เลื่อนขึ้นไปกดปุ่ม \"🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป\" ให้ครบก่อน แล้วค่อยกดยืนยัน\n\nถ้าจำเป็นต้องยืนยันทั้งที่ยังไม่ติดธง — พิมพ์เหตุผล (บันทึกถาวร + แจ้งเจ้าของทาง Telegram) แล้วกด OK:");
       if(_gnote===null){ if(msg){ msg.innerHTML="⛔ ยังไม่ได้บันทึก — ติดธง+แนบสลิป "+TH(_gleft)+" บาทก่อน แล้วกดยืนยันอีกครั้ง"; msg.style.color="#b91c1c"; } return; }
       _gnote=String(_gnote).replace(/\s+/g," ").trim();
@@ -1749,7 +1781,7 @@ async function taskAlertRun(){
 
 ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} });
 </script>
-<script src="credit.js?v=20260831a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+<script src="credit.js?v=20260831b"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20260829a"></script>
 </body>
 </html>

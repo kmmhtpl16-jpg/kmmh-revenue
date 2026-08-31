@@ -114,6 +114,7 @@
       '</div>',
       '<div class="muted" style="margin-bottom:8px;font-size:12px">แสดงเฉพาะบิลลงบัญชีของ<b>วันที่กำลังเปิดดูด้านบน</b> (อ่านอย่างเดียว) · เลือกวันอื่น/จัดการ/รับชำระ ที่ทะเบียนลูกหนี้เต็ม · ดูดอัตโนมัติจากชีต “ลงบัญชี” เมื่ออัปไฟล์ฟอร์ม</div>',
       '<div id="creditmsg" class="muted" style="margin-bottom:8px"></div>',
+      '<div id="cbdup"></div>',
       '<div id="creditlist" class="muted">กำลังโหลด…</div>'
     ].join("");
     var dep=document.getElementById("depcard");
@@ -130,6 +131,7 @@
     list.textContent="กำลังโหลด…";
     var viewDate=(window._creditDay||window._openDay||todayISO());
     var lbl=document.getElementById("cb_daylabel"); if(lbl) lbl.innerHTML='📅 บิลลงบัญชี/จ่ายหนี้ ของวันที่ <b>'+beDate(viewDate)+'</b>';
+    try{ cbDupRender(viewDate); }catch(e){}
     // badge: ยอดลูกหนี้ค้างรวม (ปัจจุบัน)
     var allR=await sb.from("rev_credit_bills").select("total_amount,paid_amount,status").neq("status","paid");
     if(cnt){ if(allR.error){ cnt.textContent="—"; } else{ var out=(allR.data||[]); var totRemain=out.reduce(function(s,b){return s+(num(b.total_amount)-num(b.paid_amount));},0); cnt.textContent=out.length+" บิลค้าง · เหลือ "+fmt(totRemain)+" บาท"; } }
@@ -578,6 +580,132 @@
   function ckey(s){ return String(s||"").replace(/ห้างหุ้นส่วนจำกัด|ห้างหุ้นส่วนสามัญ|ห้างหุ้นส่วน|บริษัทจำกัด|บริษัท|บจก\.?|บมจ\.?|หจก\.?|หสน\.?|ร้าน|คุณ|นางสาว|น\.ส\.|นาย|นาง|จำกัด\(มหาชน\)|จำกัด/g,"").replace(/[\s\.\-–—_]/g,""); }
   async function canonMap(){ try{ var r=await sb.from("rev_name_map").select("from_key,to_name"); var m={}; (r.data||[]).forEach(function(x){ m[x.from_key]=x.to_name; }); return m; }catch(e){ return {}; } }
   function canonName(m,nm){ var t=m[ckey(nm)]; return t||nm; }
+
+  /* ── 🔍 ด่านชื่อซ้ำรายวัน (หน้าตรวจรายได้) — บังคับเลือกก่อนยืนยันวัน ──
+     ระดับ "แน่ใจ" (key ตรงกันเป๊ะหลังตัดคำนำหน้า) = บล็อกปุ่มยืนยันวัน
+     ระดับ "ใกล้เคียง" = เตือนเฉย ๆ ยืนยันได้                                  */
+  window.CBDUP={date:null,sure:[],near:[]};
+  function lev1(a,b){
+    if(a===b) return true;
+    var la=a.length, lb=b.length; if(Math.abs(la-lb)>1) return false;
+    var i=0,j=0,diff=0;
+    while(i<la&&j<lb){
+      if(a.charAt(i)===b.charAt(j)){ i++; j++; continue; }
+      if(++diff>1) return false;
+      if(la>lb) i++; else if(lb>la) j++; else { i++; j++; }
+    }
+    if(i<la||j<lb) diff++;
+    return diff<=1;
+  }
+  function pairKey(a,b){ var x=[ckey(a),ckey(b)].sort(); return x[0]+"||"+x[1]; }
+  async function notDupSet(){ try{ var n=await sb.from("rev_name_notdup").select("pair_key"); var m={}; (n.data||[]).forEach(function(r){ m[r.pair_key]=1; }); return m; }catch(e){ return {}; } }
+  function cbRole(){ try{ return (typeof ROLE!=="undefined"&&ROLE)?ROLE:"cashier"; }catch(e){ return "cashier"; } }
+  /* ชื่อที่ไม่ควรเอามาจับคู่: ช่องลูกค้าที่เผลอใส่เลขบิล (KM6908-1048) และ SHOPEE */
+  function cbSkipName(nm){
+    var t=String(nm||"").trim();
+    if(!t) return true;
+    if(isShopeeName(t)) return true;
+    if(/^[A-Za-z]{1,5}[\d\-\/\s]{4,}$/.test(t)) return true;   /* เลขบิลล้วน */
+    return false;
+  }
+
+  async function scanDayNames(date){
+    var out={date:date,sure:[],near:[]};
+    if(!sbReady()||!date) return out;
+    var r=await sb.from("rev_credit_bills").select("customer,bill_date,total_amount,paid_amount");
+    if(r.error) return out;
+    var rows=r.data||[], byName={}, todaySet={};
+    rows.forEach(function(b){
+      var nm=String(b.customer||"").trim(); if(!nm||cbSkipName(nm)) return;
+      if(!byName[nm]) byName[nm]={name:nm,key:ckey(nm),n:0,remain:0,day:0};
+      byName[nm].n++; byName[nm].remain+=num(b.total_amount)-num(b.paid_amount);
+      if(String(b.bill_date||"").slice(0,10)===String(date).slice(0,10)){ byName[nm].day++; todaySet[nm]=1; }
+    });
+    var names=Object.keys(byName).map(function(k){ return byName[k]; }).filter(function(x){ return x.key.length>=2; });
+    var nd=await notDupSet(), seen={};
+    Object.keys(todaySet).forEach(function(tn){
+      var A=byName[tn]; if(!A||A.key.length<2) return;
+      names.forEach(function(B){
+        if(B.name===A.name) return;
+        var lvl=null, sure=false;
+        if(A.key===B.key){ lvl="แน่ใจ (ต่างแค่คำนำหน้า/วรรค)"; sure=true; }
+        else if(A.key.length>=4&&B.key.length>=4&&(A.key.indexOf(B.key)>=0||B.key.indexOf(A.key)>=0)) lvl="ใกล้เคียง (ชื่อหนึ่งอยู่ในอีกชื่อ)";
+        else if(A.key.length>=5&&B.key.length>=5&&lev1(A.key,B.key)) lvl="ใกล้เคียง (ต่างกัน 1 ตัวอักษร)";
+        else if(A.key.length>=6&&B.key.length>=6&&A.key.slice(0,6)===B.key.slice(0,6)) lvl="ใกล้เคียง (ขึ้นต้นเหมือนกัน)";
+        if(!lvl) return;
+        var pk=pairKey(A.name,B.name);
+        if(nd[pk]||seen[pk]) return; seen[pk]=1;
+        (sure?out.sure:out.near).push({a:A,b:B,lvl:lvl,pk:pk});
+      });
+    });
+    out.sure.sort(function(x,y){ return (y.a.remain+y.b.remain)-(x.a.remain+x.b.remain); });
+    out.near.sort(function(x,y){ return (y.a.remain+y.b.remain)-(x.a.remain+x.b.remain); });
+    return out;
+  }
+  /* index.html เรียกตอนกดยืนยันวัน — คืนเฉพาะคู่ที่ "แน่ใจ" ที่ยังไม่ได้เลือก */
+  window.__cbDupBlockers=async function(date){ try{ var s=await scanDayNames(date); return s.sure; }catch(e){ return []; } };
+
+  function cbRows(arr,kind){
+    var h='<table style="width:100%;margin-top:2px"><thead><tr><th>ชื่อที่ลงบัญชีวันนี้</th><th>ชื่อที่มีอยู่แล้วในทะเบียน</th><th style="width:160px">เลือก</th></tr></thead><tbody>';
+    arr.forEach(function(p,i){
+      h+='<tr>'+
+        '<td><b>'+esc(p.a.name)+'</b><div class="muted" style="font-size:11px">วันนี้ '+p.a.day+' บิล · รวม '+p.a.n+' บิล · ค้าง '+fmt(p.a.remain)+'</div>'+
+          '<button class="btn sec" style="padding:2px 9px;margin:5px 0 0;font-size:12px" onclick="cbMerge('+"'"+kind+"'"+','+i+',0)">✓ ใช้ชื่อนี้</button></td>'+
+        '<td><b>'+esc(p.b.name)+'</b><div class="muted" style="font-size:11px">'+p.b.n+' บิล · ค้าง '+fmt(p.b.remain)+'</div>'+
+          '<button class="btn sec" style="padding:2px 9px;margin:5px 0 0;font-size:12px" onclick="cbMerge('+"'"+kind+"'"+','+i+',1)">✓ ใช้ชื่อนี้</button></td>'+
+        '<td><span class="badge info" style="font-size:11px">'+esc(p.lvl)+'</span><br>'+
+          '<button class="btn sec" style="padding:2px 9px;margin:6px 0 0;font-size:12px" onclick="cbNotDup('+"'"+kind+"'"+','+i+')">✗ คนละเจ้า</button></td></tr>';
+    });
+    return h+'</tbody></table>';
+  }
+  function cbDupHtml(){
+    var D=window.CBDUP, h="";
+    if(D.sure.length){
+      h+='<div id="cbdupSure" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:8px">'+
+         '<b style="color:#b91c1c">⛔ ต้องเลือกก่อน ถึงจะกดยืนยันวันนี้ได้ — ชื่อลูกค้าวันนี้ซ้ำกับที่มีอยู่แล้ว '+D.sure.length+' คู่</b>'+
+         '<div class="muted" style="margin:3px 0 4px">ถ้าเป็นเจ้าเดียวกัน → กดชื่อที่จะใช้เป็นชื่อจริง · ถ้าคนละเจ้า → กด “✗ คนละเจ้า” (ระบบจำไว้ ไม่ถามซ้ำอีก)</div>'+
+         cbRows(D.sure,"sure")+'</div>';
+    }
+    if(D.near.length){
+      h+='<div id="cbdupNear" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-bottom:8px">'+
+         '<b style="color:#b45309">⚠ ชื่อคล้ายกัน '+D.near.length+' คู่ — ไม่บังคับ ยืนยันวันได้ตามปกติ</b>'+
+         '<div class="muted" style="margin:3px 0 4px">ถ้าเห็นว่าใช่เจ้าเดียวกัน กดรวมได้เลย จะได้ไม่ค้างไปเรื่อย ๆ</div>'+
+         cbRows(D.near,"near")+'</div>';
+    }
+    return h;
+  }
+  window.cbDupRender=async function(date){
+    var box=document.getElementById("cbdup"); if(!box) return;
+    var d=date||window._creditDay||window._openDay||todayISO();
+    var s=await scanDayNames(d);
+    window.CBDUP=s;
+    box.innerHTML=cbDupHtml();
+  };
+  window.cbNotDup=async function(kind,i){
+    var p=(window.CBDUP[kind]||[])[i]; if(!p) return;
+    var res=await sb.from("rev_name_notdup").upsert({pair_key:p.pk,name_a:p.a.name,name_b:p.b.name,updated_by:cbRole(),updated_at:new Date().toISOString()},{onConflict:"pair_key"});
+    if(res.error){ alert("บันทึกไม่สำเร็จ: "+res.error.message); return; }
+    cbDupRender(window.CBDUP.date);
+  };
+  window.cbMerge=async function(kind,i,useIdx){
+    var p=(window.CBDUP[kind]||[])[i]; if(!p) return;
+    var keep=(useIdx===1?p.b:p.a), drop=(useIdx===1?p.a:p.b);
+    if(keep.name===drop.name) return;
+    if(!confirm('รวมเป็นชื่อเดียว?\n\nเปลี่ยน "'+drop.name+'" ('+drop.n+' บิล)\nให้เป็น "'+keep.name+'"\n\nจะแก้ให้ทั้งทะเบียนบิล · ใบวางบิล · ข้อเสนอบิลเก่า · ชื่อในสเตทเมนต์ธนาคาร\nและจำไว้ให้บิลใหม่ใช้ชื่อนี้อัตโนมัติ (ยอดเงินไม่เปลี่ยน)')) return;
+    var tabs=[["rev_credit_bills","บิล"],["rev_billing_notes","ใบวางบิล"],["rev_oldbill_proposals","ข้อเสนอบิลเก่า"],["rev_payer_map","ชื่อในสเตทเมนต์"]], cnt={};
+    for(var t=0;t<tabs.length;t++){
+      var res=await sb.from(tabs[t][0]).update({customer:keep.name}).eq("customer",drop.name).select("*");
+      if(res.error){ alert("แก้ตาราง "+tabs[t][1]+" ไม่สำเร็จ: "+res.error.message); return; }
+      cnt[tabs[t][1]]=(res.data||[]).length;
+    }
+    var mp=await sb.from("rev_name_map").upsert({from_key:ckey(drop.name),from_name:drop.name,to_name:keep.name,
+      note:"รวมชื่อจากหน้าตรวจรายได้ "+new Date().toLocaleString("th-TH"),updated_by:cbRole(),updated_at:new Date().toISOString()},{onConflict:"from_key"});
+    if(mp.error){ alert("บันทึกชื่อมาตรฐานไม่สำเร็จ: "+mp.error.message); return; }
+    alert("รวมชื่อแล้ว → "+keep.name+"\n\nบิล "+(cnt["บิล"]||0)+" ใบ · ใบวางบิล "+(cnt["ใบวางบิล"]||0)+" · ข้อเสนอบิลเก่า "+(cnt["ข้อเสนอบิลเก่า"]||0)+" · ชื่อในสเตทเมนต์ "+(cnt["ชื่อในสเตทเมนต์"]||0));
+    if(window.loadCreditBills) await window.loadCreditBills();
+    cbDupRender(window.CBDUP.date);
+  };
+
 
   window.__creditAutoPull=async function(file){
     try{

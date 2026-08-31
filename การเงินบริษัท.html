@@ -1629,8 +1629,16 @@ function renderGross(){
       `<br>ยอดขายที่เห็นจึงต่ำกว่าจริง อย่าเพิ่งใช้ตัดสินใจ</div>`;
   }
   const missing=months.filter(m=>cogsOf(m)==null&&rev[m]>0);
-  const basisNote=`<div class="note" style="background:#eff6ff;border-color:#93c5fd">📈 <b>กำไรขั้นต้น = ยอดขาย POS − ต้นทุนขาย</b> · ต้นทุนขาย <b>กรอกจากรายงาน ACC-BILLING</b> เดือนละ 1 ตัว (ช่องแก้ไขในคอลัมน์ “ต้นทุนขาย”) — หน้านี้ไม่คิดต้นทุนเอง${missing.length?`<br>⏳ ยังไม่กรอกต้นทุนขาย: <b>${missing.map(beMonth).join(" · ")}</b>`:""}</div>`;
+  const basisNote=`<div class="note" style="background:#eff6ff;border-color:#93c5fd">📈 <b>กำไรขั้นต้น = ยอดขาย POS − ต้นทุนขาย</b> · ต้นทุนขาย <b>กรอกจากรายงาน ACC-BILLING</b> เดือนละ 1 ตัว (ช่องแก้ไขในคอลัมน์ “ต้นทุนขาย”) — หน้านี้ไม่คิดต้นทุนเอง<br>📌 <b>ที่มาของตัวเลข:</b> ระบบขาย ACC-BILLING → รายงานต่างๆ → “กำไรขั้นต้น (ประจำเดือน)” · ⚠️ กด “คำนวนต้นทุนใหม่” ก่อนทุกครั้ง · เลือกฐาน <b>ต้นทุนเฉลี่ย</b> · ใช้คอลัมน์ “จำนวนเงินซื้อ”${missing.length?`<br>⏳ ยังไม่กรอกต้นทุนขาย: <b>${missing.map(beMonth).join(" · ")}</b>`:""}</div>`;
 
+  const MC_HINT="ที่มา: ระบบขาย ACC-BILLING → รายงานต่างๆ → “กำไรขั้นต้น (ประจำเดือน)” · กด “คำนวนต้นทุนใหม่” ก่อนทุกครั้ง · เลือกฐาน “ต้นทุนเฉลี่ย” · ใช้คอลัมน์ “จำนวนเงินซื้อ”";
+  const mcNoteHtml=m=>{
+    const r=MC[m]; if(!r||(!r.note&&!r.updated_at)) return "";
+    const full=String(r.note||"")+(r.updated_by?" · โดย "+r.updated_by:"");
+    const shortN=String(r.note||""); const cut=shortN.length>30?shortN.slice(0,30)+"…":shortN;
+    const parts=[]; if(r.updated_at) parts.push("กรอก "+beDate(r.updated_at)); if(cut) parts.push(esc(cut));
+    return `<div class="muted" style="font-size:11px;line-height:1.35;margin-top:3px;max-width:200px;white-space:normal;text-align:right;cursor:help" title="${esc(full)}">📌 ${parts.join(" · ")}</div>`;
+  };
   let body=months.map(m=>{
     const cg=cogsOf(m);
     const gp=cg==null?null:rev[m]-cg, mg=(gp==null||rev[m]<=0)?null:(gp/rev[m]*100);
@@ -1638,7 +1646,7 @@ function renderGross(){
     return `<tr><td>${beMonth(m)} ${part?'<span class="chip" style="background:#dc2626;color:#fff">ข้อมูลไม่ครบ</span>':''}</td>
       <td class="n pos">${TH0(rev[m])}</td>
       <td class="n" style="color:#a16207">${buy[m]>0?TH0(buy[m]):"—"}</td>
-      <td class="n"><input type="number" step="0.01" min="0" id="mc_${m}" value="${cg==null?'':cg}" placeholder="กรอก" onchange="saveMonthlyCogs('${m}')" style="width:118px;text-align:right"></td>
+      <td class="n"><input type="number" step="0.01" min="0" id="mc_${m}" value="${cg==null?'':cg}" placeholder="กรอก" title="${esc(MC_HINT)}" onchange="saveMonthlyCogs('${m}')" style="width:118px;text-align:right">${mcNoteHtml(m)}</td>
       <td class="n ${gp==null?'':(gp>=0?'pos':'neg')}">${gp==null?"—":TH0(gp)}</td>
       <td class="n">${mg==null?"—":mg.toFixed(1)+"%"}</td></tr>`;
   }).join("");
@@ -1683,10 +1691,14 @@ window.saveMonthlyCogs=async function(m){
     if(raw===""){ await sb.from("rev_monthly_cogs").delete().eq("month",m); if(STATE.mcogs) delete STATE.mcogs[m]; }
     else{
       const val=r2(inp.value);
+      const prev=(STATE.mcogs&&STATE.mcogs[m])?STATE.mcogs[m]:null;
+      const prevC=(prev&&prev.cogs!=null&&prev.cogs!=="")?num(prev.cogs):null;
       const row={month:m,cogs:val,updated_by:ROLE||"owner",updated_at:new Date().toISOString()};
+      /* ตัวเลขเปลี่ยน = โน้ตเก่าอธิบายตัวเลขเก่า ต้องเขียนที่มาใหม่ (ไม่งั้นโน้ตไม่ตรงกับเลข) */
+      if(prevC==null||Math.abs(prevC-val)>0.005) row.note='ต้นทุนเฉลี่ย · รายงาน “กำไรขั้นต้น (ประจำเดือน)” ACC-BILLING'+(prevC!=null?" · แก้จากเดิม "+TH0(prevC):"");
       const {error}=await sb.from("rev_monthly_cogs").upsert(row,{onConflict:"month"});
       if(error){ alert("บันทึกต้นทุนขายไม่สำเร็จ: "+error.message); return; }
-      if(!STATE.mcogs) STATE.mcogs={}; STATE.mcogs[m]=row;
+      if(!STATE.mcogs) STATE.mcogs={}; STATE.mcogs[m]=Object.assign({},STATE.mcogs[m]||{},row);
     }
     renderGross();
   }catch(e){ alert("ผิดพลาด: "+e.message); }

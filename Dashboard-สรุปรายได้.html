@@ -119,7 +119,7 @@ async function load(){
   const st=document.getElementById("status"); st.textContent="กำลังโหลด…";
   const msel=document.getElementById("month").value; // YYYY-MM
   const mFrom=(msel||"")+"-01", mTo=msel?mEnd(msel):"9999-12-31";
-  const [a,d,dep,pend,cb,cp,fee,upk]=await Promise.all([
+  const [a,d,dep,pend,cb,cp,fee,upk,so]=await Promise.all([
     sb.from("rev_audit").select("*").order("date"),
     sb.from("rev_daily").select("*").order("date"),
     sb.from("rev_deposits").select("*").eq("status","open").order("received_date"),
@@ -128,6 +128,8 @@ async function load(){
     sb.from("rev_credit_payments").select("pay_date,amount,method").gte("pay_date",mFrom).lte("pay_date",mTo),
     sb.from("rev_expenses").select("exp_date,amount,category").gte("exp_date",mFrom).lte("exp_date",mTo).ilike("category","%Shopee%"),
     sb.from("rev_monthly_upk").select("*").eq("month",msel||"-"),
+    /* ค่าธรรมเนียม Shopee "ของบิลเดือนนี้" — เกณฑ์เดียวกับหน้า shopee.html (ยึด bill_date) */
+    sb.from("shopee_orders").select("bill_date,sale_amount,sale_at_return,return_amount,return_status,paid,payout_fee,est_fee").gte("bill_date",mFrom).lte("bill_date",mTo),
   ]);
   if(a.error||d.error){ st.textContent="โหลดไม่ได้: "+((a.error||d.error).message); return; }
   st.textContent="";
@@ -164,8 +166,23 @@ async function load(){
   const custPaidN=pays.filter(r=>!isShopeePay(r)&&!isDepPay(r)).length;
   const shopPaid=pays.filter(isShopeePay).reduce((s,r)=>s+N(r.amount),0);
   const depPaid=pays.filter(isDepPay).reduce((s,r)=>s+N(r.amount),0);
-  /* ---- ค่าธรรมเนียม Shopee ที่ถูกหักจริงในเดือนนี้ ---- */
-  const shopFee=((fee&&fee.data)?fee.data:[]).reduce((s,r)=>s+N(r.amount),0);
+  /* ---- ค่าธรรมเนียม Shopee ----
+     shopFeePayout = เงินที่ Shopee หักจริง "ในเดือนที่โอน" (rev_expenses → ตรงกับการเงินบริษัท)
+     shopFee       = ค่าธรรมเนียมของ "บิลเดือนนี้" ทั้งตะกร้า = จริง(ที่จ่ายแล้ว) + ประมาณ(ที่ยังไม่จ่าย)
+                     ← ใช้ตัวนี้เป็นตัวหลัก เพราะเป็นตะกร้าเดียวกับยอดขาย crShop เลข % จึงอ่านได้จริง
+                     สูตรตรงกับ effSale/effFee ใน shopee.html เป๊ะ */
+  const shopFeePayout=((fee&&fee.data)?fee.data:[]).reduce((s,r)=>s+N(r.amount),0);
+  const soRows=((so&&so.data)?so.data:[]).filter(r=>okSet.has(String(r.bill_date).slice(0,10)));
+  const _retAmt=o=>o.return_status?(N(o.return_amount)||0):0;
+  const _origSale=o=>N(o.sale_at_return)||N(o.sale_amount);
+  const _isPartial=o=>{ const r=_retAmt(o); return !!o.return_status && r>0 && r<_origSale(o)-0.005; };
+  const _retDeducted=o=>{ const snap=N(o.sale_at_return), r=_retAmt(o); return !!(snap&&r&&N(o.sale_amount)<=snap-r+0.5); };
+  const _effSale=o=>(!_isPartial(o)||_retDeducted(o))?N(o.sale_amount):Math.round((N(o.sale_amount)-_retAmt(o))*100)/100;
+  const _effFee=o=>(o.paid&&o.payout_fee!=null)?N(o.payout_fee):(o.est_fee!=null?N(o.est_fee):-_effSale(o)*0.27);
+  const shopFeeReal=soRows.filter(o=>o.paid).reduce((s,o)=>s+Math.abs(N(o.payout_fee)),0);
+  const shopFeeEst=soRows.filter(o=>!o.paid).reduce((s,o)=>s+Math.abs(_effFee(o)),0);
+  const soOk=soRows.length>0;
+  const shopFee=soOk?Math.round((shopFeeReal+shopFeeEst)*100)/100:shopFeePayout;
 
   /* ---- แยกช่องทางของ "ขายหน้าร้าน" (เก็บใน rev_audit.detail ตอนกดยืนยัน) ---- */
   const chan=(key)=>{ let sum=0,n=0; okDays.forEach(x=>{ const v=(x.detail&&x.detail[key]!=null)?parseFloat(x.detail[key]):null; if(v!=null&&!isNaN(v)){ sum+=v; n++; } }); return {sum,n}; };
@@ -215,9 +232,11 @@ async function load(){
       '<div class="dt">'+
         '<span class="k">สัดส่วนของยอดขาย</span><span class="v">'+(revOk>0?(crShop/revOk*100).toFixed(1)+"%":"—")+'</span>'+
         '<span class="k">จำนวนบิล</span><span class="v">'+shopBills.length+' ใบ</span>'+
-        '<span class="k">รับชำระแล้ว</span><span class="v" style="color:#15803d">'+TH(shopPaidAmt)+ps(shopPaidAmt)+'</span>'+
-        '<span class="k">ยังไม่ได้รับชำระ</span><span class="v" style="color:'+(shopDue>1?"#b45309":"#57534e")+'">'+TH(shopDue)+ps(shopDue)+'</span>'+
-        '<span class="k">ค่าธรรมเนียมที่ถูกหักเดือนนี้</span><span class="v">'+TH(shopFee)+ps(shopFee)+'</span>'+
+        '<span class="k">Shopee จ่ายแล้ว <span class="dim">(ยอดเต็ม)</span></span><span class="v" style="color:#15803d">'+TH(shopPaidAmt)+ps(shopPaidAmt)+'</span>'+
+        '<span class="k">ยังรอ Shopee จ่าย <span class="dim">(ยอดเต็ม)</span></span><span class="v" style="color:'+(shopDue>1?"#b45309":"#57534e")+'">'+TH(shopDue)+ps(shopDue)+'</span>'+
+        '<span class="k">ค่าธรรมเนียม <span class="dim">(ของบิลเดือนนี้)</span></span><span class="v">'+TH(shopFee)+ps(shopFee)+'</span>'+
+        (soOk?'<span class="k dim">— หักจริงแล้ว / ยังเป็นประมาณ</span><span class="v dim">'+TH(shopFeeReal)+" / "+TH(shopFeeEst)+'</span>':'')+
+        '<span class="k dim">เงินที่ Shopee หักจริงในเดือนนี้ (ตามวันโอน)</span><span class="v dim">'+TH(shopFeePayout)+'</span>'+
       '</div></div>'+
     /* 🪵 UPK */
     '<div class="cB"><div class="top"><span class="lb">🪵 UPK</span><span class="vl">'+TH(upkBill)+'</span></div>'+

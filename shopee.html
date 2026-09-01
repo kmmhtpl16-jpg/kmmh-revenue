@@ -38,6 +38,59 @@ input,select{font-family:inherit;font-size:14px;padding:7px 9px;border:1px solid
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .kpi{background:#fafafa;border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
 .kpi .lb{font-size:12px;color:var(--mut)}.kpi .vl{font-size:18px;font-weight:800;margin-top:2px}
+/* การ์ดสรุปหัวหน้า: 2 แถว แถวละ 3 ช่อง (คุณหลิงติว่า 6 ช่องแถวเดียวเบียด อ่านไม่ครบ)
+   .lb ล็อกความสูง 2 บรรทัด เพื่อให้ตัวเลขใหญ่ทุกใบอยู่ระดับเดียวกัน
+   รายละเอียดใต้ตัวเลขเป็นแถว "ชื่อรายการซ้าย – ตัวเลขขวา" ไม่ต่อกันยาวคั่นด้วยจุด */
+/* ตะแกรง 6 ช่อง: แถบยอดรวมเต็มความกว้างบนสุด → แถวล่าง จ่ายแล้ว(2) รอจ่าย(2) ออเดอร์(1) ต้นทุนแพ็ค(1)
+   = 2 แถว · การ์ดเล็กสองใบกว้างครึ่งหนึ่งของการ์ดจ่ายแล้ว/รอจ่าย พอดี */
+#headKpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+#headKpis .wide{grid-column:span 6}
+#headKpis .c2{grid-column:span 2}
+#headKpis .c1{grid-column:span 1}
+@media(max-width:980px){ #headKpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+  #headKpis .wide{grid-column:span 4} #headKpis .c2{grid-column:span 2} #headKpis .c1{grid-column:span 2} }
+@media(max-width:560px){ #headKpis{grid-template-columns:1fr}
+  #headKpis .wide,#headKpis .c2,#headKpis .c1{grid-column:span 1} }
+#headKpis .kpi{display:flex;flex-direction:column;padding:11px 13px}
+#headKpis .lb{min-height:31px;line-height:1.32;font-weight:600}
+#headKpis .vl{font-size:21px;letter-spacing:-.3px;font-variant-numeric:tabular-nums;margin-top:3px}
+#headKpis .c1 .vl{font-size:16px}
+#headKpis .c1 .ksub{font-size:11px}
+/* แถบยอดรวม: ชื่อ+ตัวเลขซ้าย · รายละเอียดขวา (จอแคบซ้อนลงมาเอง) */
+#headKpis .wide{flex-direction:row;align-items:center;gap:18px;background:#f6fdf9;border-color:#bbf7d0}
+#headKpis .wide .hd{flex:0 0 auto;min-width:180px}
+#headKpis .wide .lb{min-height:0;font-size:12.5px}
+#headKpis .wide .vl{font-size:27px;color:#15803d;margin-top:1px}
+#headKpis .wide .ksub{flex:1 1 auto;margin-top:0;padding-top:0;padding-left:18px;border-top:0;border-left:1px dashed var(--bd);max-width:420px;margin-left:auto}
+@media(max-width:560px){ #headKpis .wide{flex-direction:column;align-items:stretch;gap:0}
+  #headKpis .wide .ksub{margin-top:8px;padding-top:7px;padding-left:0;border-left:0;border-top:1px dashed var(--bd);max-width:none;margin-left:0} }
+#headKpis .ksub{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin-top:8px;padding-top:7px;border-top:1px dashed var(--bd);font-size:11.5px;line-height:1.5}
+#headKpis .ksub:empty{display:none}
+#headKpis .ksub .k{color:var(--mut)}
+#headKpis .ksub .v{text-align:right;font-weight:700;color:#57534e;font-variant-numeric:tabular-nums;white-space:nowrap}
+#headKpis .ksub .warn{color:#b45309}
+#headKpis .ksub .soft{color:#a1a1aa;font-weight:400}
+/* แถวผลลัพธ์ท้ายสมการ (= โอนเข้าจริง / = คาดว่าจะได้รับ) — ขีดเส้นคั่นให้เห็นว่าเป็นยอดสุทธิ */
+#headKpis .ksub .sum{border-top:1px solid var(--bd);margin-top:3px;padding-top:4px;color:#1c1917;font-weight:800}
+/* ---- การ์ดตามเรื่อง ---- */
+#alertCard{border-left:4px solid #dc2626}
+#alertCard.clean{border-left-color:#16a34a}
+#alertCount{font-size:12px;font-weight:800;padding:2px 9px;border-radius:999px;background:#fef2f2;color:#b91c1c;margin-left:6px}
+#alertCard.clean #alertCount{background:#dcfce7;color:#166534}
+.agrp{border:1px solid var(--bd);border-radius:10px;margin-top:8px;overflow:hidden}
+.agrp>summary{cursor:pointer;padding:9px 12px;font-weight:700;font-size:13.5px;background:#fafafa;list-style:none;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.agrp>summary::-webkit-details-marker{display:none}
+.agrp>summary::before{content:"▸";color:var(--mut);font-weight:400}
+.agrp[open]>summary::before{content:"▾"}
+.agrp>summary .n{margin-left:auto;font-size:12px;font-weight:800;color:var(--mut);font-variant-numeric:tabular-nums}
+.agrp.red>summary{background:#fef2f2;color:#b91c1c}
+.agrp.amb>summary{background:#fffbeb;color:#b45309}
+.agrp.blue>summary{background:#eff6ff;color:#1d4ed8}
+.agrp .todo{padding:8px 12px;font-size:12.5px;color:#57534e;background:#fff;border-bottom:1px solid var(--bd)}
+.agrp .todo b{color:#1c1917}
+.agrp table{font-size:12.5px}
+.agrp td,.agrp th{padding:5px 10px}
+.ono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;user-select:all}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:6px 7px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:middle}
 th{background:#f9fafb;font-weight:700;color:#374151}
@@ -121,14 +174,23 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
         <h3 style="margin:0">2) สรุป <select id="monthPick" onchange="render()" style="margin-left:6px"></select></h3>
         <button class="btn ghost sm" onclick="reload()">↻ โหลดใหม่</button>
       </div>
-      <div class="kpis" style="margin-top:10px">
-        <div class="kpi"><div class="lb">ออเดอร์</div><div class="vl" id="kOrd">–</div></div>
-        <div class="kpi r-fin"><div class="lb">ยอดขายรวม</div><div class="vl" id="kSale">–</div></div>
-        <div class="kpi r-fin"><div class="lb">Shopee จ่ายแล้ว</div><div class="vl" id="kPaid" style="color:var(--g2)">–</div></div>
-        <div class="kpi r-fin"><div class="lb">ยังรอ Shopee จ่าย</div><div class="vl" id="kWait" style="color:var(--amb)">–</div></div>
-        <div class="kpi r-fin"><div class="lb">ค่าธรรมเนียมจริง</div><div class="vl" id="kFee" style="color:var(--red)">–</div></div>
-        <div class="kpi r-fin"><div class="lb">ต้นทุนค่าแพ็ค/ค่าใช้จ่าย</div><div class="vl" id="kPack" style="color:var(--o2)">–</div></div>
+      <div class="kpis" id="headKpis" style="margin-top:10px">
+        <div class="kpi wide r-fin"><div class="hd"><div class="lb">ยอดขายรวม</div><div class="vl" id="kSale">–</div></div><div class="ksub" id="kSaleSub"></div></div>
+        <div class="kpi c2 r-fin"><div class="lb">Shopee จ่ายแล้ว<br>(ยอดเต็ม)</div><div class="vl" id="kPaid" style="color:var(--g2)">–</div><div class="ksub" id="kPaidSub"></div></div>
+        <div class="kpi c2 r-fin"><div class="lb">ยังรอ Shopee จ่าย<br>(ยอดเต็ม)</div><div class="vl" id="kWait" style="color:var(--amb)">–</div><div class="ksub" id="kWaitSub"></div></div>
+        <div class="kpi c1"><div class="lb">ออเดอร์</div><div class="vl" id="kOrd">–</div><div class="ksub" id="kOrdSub"></div></div>
+        <div class="kpi c1 r-fin"><div class="lb">ต้นทุนค่าแพ็ค /<br>ค่าใช้จ่าย</div><div class="vl" id="kPack" style="color:var(--o2)">–</div><div class="ksub" id="kPackSub"></div></div>
       </div>
+    </div>
+
+    <!-- 🚩 การ์ดตามเรื่อง — ไม่มี class r-fin โดยตั้งใจ: พนักงาน Shopee (แคชเชียร์) ต้องเห็น
+         เพราะธงเตือนเดิมทั้งหมดอยู่ในแท็บ ① ซึ่งแคชเชียร์ไม่มีสิทธิ์เปิด -->
+    <div class="card" id="alertCard">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 style="margin:0">🚩 ออเดอร์ที่ต้องตามเรื่อง <span id="alertCount"></span></h3>
+        <span class="muted" style="font-size:11.5px" id="alertScope"></span>
+      </div>
+      <div id="alertBox" style="margin-top:9px"></div>
     </div>
 
     <div class="tabs">
@@ -198,6 +260,13 @@ function fmt(n){ return r2(n).toLocaleString("th-TH",{minimumFractionDigits:2,ma
 function pad2(n){ return String(n).padStart(2,"0"); }
 function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
 function beDate(s){ if(!s) return "—"; var p=String(s).slice(0,10).split("-"); if(p.length<3) return s; return p[2]+"/"+p[1]+"/"+(parseInt(p[0],10)+543); }
+var TH_MON=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+function beShort(s){ var p=String(s).slice(0,10).split("-"); if(p.length<3) return s;
+  return parseInt(p[2],10)+" "+TH_MON[parseInt(p[1],10)-1]+" "+String(parseInt(p[0],10)+543).slice(2); }
+/* ช่วงวันที่แบบสั้น: เดือนเดียวกัน = "1–31 ส.ค. 69" · ข้ามเดือน = "1 ส.ค. 69 – 3 ก.ย. 69" */
+function beRange(a,b){ if(!a) return "—"; if(!b||a===b) return beShort(a);
+  if(String(a).slice(0,7)===String(b).slice(0,7)) return parseInt(String(a).slice(8,10),10)+"–"+beShort(b);
+  return beShort(a)+" – "+beShort(b); }
 function beStamp(s){ if(!s) return "—"; var d=new Date(s); if(isNaN(d.getTime())) return beDate(s); return pad2(d.getDate())+"/"+pad2(d.getMonth()+1)+"/"+(d.getFullYear()+543); }
 function daysSince(iso){ if(!iso) return 0; var a=new Date(iso+"T00:00:00"),b=new Date(); return Math.max(0,Math.floor((b-a)/86400000)); }
 function cellDate(v){
@@ -638,7 +707,7 @@ async function reload(){
   var rc=await sb.from("shopee_costs").select("*"); COSTS=(rc&&rc.data)||[];
   document.getElementById("dash").classList.toggle("hide",!ALL.length);
   var months={};
-  ALL.forEach(function(o){ var d=o.order_date||o.bill_date||o.payout_date; if(d) months[String(d).slice(0,7)]=1; });
+  ALL.forEach(function(o){ var d=monthKeyOf(o); if(d) months[String(d).slice(0,7)]=1; });
   var mk=Object.keys(months).sort().reverse();
   var sel=document.getElementById("monthPick"),cur=sel.value;
   sel.innerHTML='<option value="ALL">ทุกเดือน</option>'+mk.map(function(m){ var p=m.split("-"); return '<option value="'+m+'">'+p[1]+"/"+(parseInt(p[0],10)+543)+"</option>"; }).join("");
@@ -646,7 +715,10 @@ async function reload(){
   render();
   tab(CURTAB||"pack");
 }
-function inMonth(o,m){ if(m==="ALL") return true; var d=o.order_date||o.bill_date||o.payout_date; return d&&String(d).slice(0,7)===m; }
+/* 🔑 เกณฑ์เดือน = วันที่ออกบิล (ให้ตรงกับ Dashboard/ลูกหนี้ ซึ่งยึด rev_credit_bills.bill_date)
+   ออเดอร์ที่ยังไม่ออกบิล ใช้วันสั่งไปพลางก่อน แล้วจะย้ายเดือนเองเมื่อออกบิล */
+function monthKeyOf(o){ return o.bill_date||o.order_date||o.payout_date; }
+function inMonth(o,m){ if(m==="ALL") return true; var d=monthKeyOf(o); return d&&String(d).slice(0,7)===m; }
 function effFee(o){ return o.paid&&o.payout_fee!=null?o.payout_fee:(o.est_fee!=null?o.est_fee:r2(-effSale(o)*0.27)); }
 function effRevenue(o){ return o.paid&&o.payout_net!=null?num(o.payout_net):r2(effSale(o)+effFee(o)); }
 /* ---- ↩ คืนบางส่วน ----
@@ -659,6 +731,16 @@ function retDeducted(o){ var snap=num(o.sale_at_return),r=retAmt(o); return !!(s
 function effSale(o){ if(!isPartial(o)||retDeducted(o)) return num(o.sale_amount); return r2(num(o.sale_amount)-retAmt(o)); }
 function retQtyText(o){ var q=o.return_qty; if(!q||!q.length) return o.return_status?"ทั้งออเดอร์":"—"; return q.map(function(p){ return (p.name||p.code||"สินค้า")+" ×"+num(p.qty); }).join(" · "); }
 function retPieces(o){ var q=o.return_qty; if(!q||!q.length) return 0; return q.reduce(function(a,p){return a+num(p.qty);},0); }
+/* รายละเอียดใต้ตัวเลขใหญ่ = แถว [ชื่อรายการ, ค่า, คลาสเสริม, ข้อความอธิบายตอนชี้เมาส์]
+   ชื่อซ้าย-ค่าขวา ทุกแถว · ส่ง null = ข้ามแถวนั้น
+   ⚠ ห้ามใช้คลาสชื่อ "note" ตรงนี้ (ชนกับกล่องเตือนสีเหลืองของหน้า) */
+function _sub(id,rows){
+  var e=document.getElementById(id); if(!e) return;
+  e.innerHTML=(rows||[]).filter(function(r){return r;}).map(function(r){
+    var c=r[2]?" "+r[2]:"", t=r[3]?' title="'+String(r[3]).replace(/"/g,"&quot;")+'"':"";
+    return '<span class="k'+c+'"'+t+'>'+r[0]+'</span><span class="v'+c+'"'+t+'>'+r[1]+'</span>';
+  }).join("");
+}
 function render(){
   var m=document.getElementById("monthPick").value||"ALL";
   var all=ALL.filter(function(o){return inMonth(o,m);});
@@ -666,36 +748,181 @@ function render(){
   var retRows=all.filter(function(o){return o.return_status&&!isPartial(o);});
   var partRows=all.filter(function(o){return isPartial(o);});
   var retCount=all.filter(function(o){return o.return_status==="return_wait"||o.return_status==="resell"||o.return_status==="claim";}).length;
-  var sale=rows.reduce(function(s,o){return s+effSale(o);},0);
-  var paidRows=rows.filter(function(o){return o.paid;});
+  /* 🔑 การ์ดหัวใช้ "ทั้งตะกร้าบิล" (all = รวมออเดอร์ตีกลับ/เคลมที่ออกบิลไปแล้ว)
+     เพื่อให้ตรงกับการ์ด Shopee บน Dashboard/ลูกหนี้ ซึ่งยึด rev_credit_bills เป๊ะ
+     แท็บ ②③④ ยังใช้ rows (ตัดตีกลับออก) เหมือนเดิม — คนละคำถามกัน */
+  var sale=all.reduce(function(s,o){return s+effSale(o);},0);
+  var paidRows=all.filter(function(o){return o.paid;});
+  var waitRows=all.filter(function(o){return !o.paid;});
   var paidNet=paidRows.reduce(function(s,o){return s+num(o.payout_net);},0);
-  var waitRows=rows.filter(function(o){return !o.paid;});
   var feeReal=paidRows.reduce(function(s,o){return s+Math.abs(num(o.payout_fee));},0);
-  document.getElementById("kOrd").textContent=rows.length+(retRows.length?" (+"+retRows.length+" ตีกลับ)":"")+(partRows.length?" · คืนบางส่วน "+partRows.length:"");
+  var paidGross=paidRows.reduce(function(s,o){return s+effSale(o);},0);
+  var waitGross=waitRows.reduce(function(s,o){return s+effSale(o);},0);
+  var waitNetEst=waitRows.reduce(function(s,o){return s+num(effRevenue(o));},0);
+  var feeEst=waitRows.reduce(function(s,o){return s+Math.abs(num(effFee(o)));},0);
+  var feeBasket=r2(feeReal+feeEst);
+  var retSale=retRows.reduce(function(s,o){return s+effSale(o);},0);
+  var retWait=retRows.filter(function(o){return !o.paid;});
+  var retWaitAmt=retWait.reduce(function(s,o){return s+effSale(o);},0);
+  /* เงินที่ Shopee หักนอกเหนือจากค่าธรรมเนียม 8 ช่องที่ parsePayout เก็บ
+     (ค่าส่งส่วนที่ผู้ขายจ่าย / คืนเงินลูกค้า / ปรับปรุงยอด) — ต้องโชว์ ไม่งั้น ยอดเต็ม−ค่าธรรมเนียม ≠ โอนเข้าจริง */
+  var paidOther=r2(paidGross-feeReal-paidNet);
+  /* ช่วงวันที่ของบิลที่นับอยู่จริง — บอกตรงๆ ว่ากำลังดูข้อมูลตั้งแต่วันไหนถึงวันไหน
+     (เดิมเขียนว่า "เกณฑ์เดือน = วันที่ออกบิล" ซึ่งอ่านแล้วไม่รู้ว่าหมายถึงอะไร) */
+  var _ds=all.map(monthKeyOf).filter(function(d){return d;}).sort();
+  var dFrom=_ds[0], dTo=_ds[_ds.length-1];
   document.getElementById("kSale").textContent=fmt(sale);
-  document.getElementById("kPaid").textContent=fmt(paidNet)+" ("+paidRows.length+")";
-  document.getElementById("kWait").textContent=waitRows.length+" ออเดอร์";
-  document.getElementById("kFee").textContent=fmt(feeReal);
+  _sub("kSaleSub",[
+    ["ช่วงวันที่ออกบิล",beRange(dFrom,dTo),"",
+     "นับออเดอร์เข้าเดือนตามวันที่ acc-billing ออกบิล (ไม่ใช่วันที่ลูกค้าสั่ง) — เกณฑ์เดียวกับการ์ด Shopee บน Dashboard และหน้าลูกหนี้"],
+    retRows.length?["รวมตีกลับ / เคลม",fmt(retSale)]:null,
+    ["ค่าธรรมเนียมทั้งเดือน",fmt(feeBasket)+(sale>0?" ("+(feeBasket/sale*100).toFixed(1)+"%)":"")] ]);
+  document.getElementById("kPaid").textContent=fmt(paidGross);
+  _sub("kPaidSub",[
+    ["จำนวนออเดอร์",paidRows.length+" ใบ"],
+    ["− ค่าธรรมเนียม",fmt(feeReal)],
+    paidOther>0.5?["− หักอื่น (ค่าส่ง/คืนเงิน)",fmt(paidOther)]:
+      (paidOther<-0.5?["+ ได้คืน (ส่วนลดค่าส่ง ฯลฯ)",fmt(-paidOther)]:null),
+    ["= โอนเข้าจริง",fmt(paidNet),"sum"] ]);
+  document.getElementById("kWait").textContent=fmt(waitGross);
+  _sub("kWaitSub",[
+    ["จำนวนออเดอร์",waitRows.length+" ใบ"],
+    waitRows.length?["− ค่าธรรมเนียม (ประมาณ)",fmt(feeEst)]:null,
+    waitRows.length?["= คาดว่าจะได้รับ",fmt(waitNetEst),"sum"]:null,
+    retWaitAmt>0.5?["⚠ ตีกลับ/เคลม (ไม่ได้เงิน)",fmt(retWaitAmt),"warn"]:null ]);
+  document.getElementById("kOrd").textContent=all.length;
+  _sub("kOrdSub",[
+    ["ตีกลับ/เคลม",retRows.length?retRows.length+" ใบ":"ไม่มี"],
+    partRows.length?["คืนบางส่วน",partRows.length+" ใบ"]:null ]);
   var _packed=rows.filter(function(o){return !o.no_pack_cost;}).length;
   var _cost=COSTS.filter(function(c){return m==="ALL"||c.month===m;}).reduce(function(s,c){return s+costAmount(c,_packed,retCount);},0);
   var _kp=document.getElementById("kPack"); if(_kp) _kp.textContent=fmt(_cost);
+  renderAlerts();
   renderPay(rows,all); renderFee(rows); renderPack(rows,m,retCount); renderPnl(rows,m,retCount); renderRtn();
   if(!_creditBoot && (ROLE==="finance"||ROLE==="owner")){ _creditBoot=true; setTimeout(function(){ creditSync(false); },300); }
 }
 var _creditBoot=false;
+
+/* ===== 🚩 การ์ดตามเรื่อง (พนักงาน Shopee เห็นด้วย) =====
+   เงินที่ Shopee หักเกินค่าธรรมเนียม = ยอดขาย − ค่าธรรมเนียม − เงินที่โอนเข้าจริง
+   ค่าส่ง/หักย่อยที่เคยเจอสูงสุด 280 บาท · การดึงเงินคืนทั้งใบต่ำสุด 1,035 บาท
+   → ใช้ 500 เป็นเส้นแบ่ง (ปรับได้ที่ตัวแปรนี้ตัวเดียว) */
+var ALERT_CLAWBACK_MIN=500;
+var ALERT_LATE_DAYS=20;
+/* ⛔ ไม่เอาออเดอร์ก่อนวันนี้มาขึ้นการ์ดตามเรื่อง — พ.ค.–มิ.ย.69 เป็นช่วงเริ่มใช้โปรแกรม
+   ข้อมูลยังไม่ครบ (เช่น 34 ใบที่จ่ายแล้วไม่มีบิล) ไม่ใช่ของค้างที่ต้องตามจริง
+   คุณหลิงสั่งยกเว้น 1 ก.ย.69 · ถ้าจะเปิดดูของเก่าให้แก้บรรทัดนี้บรรทัดเดียว */
+var ALERT_SINCE="2026-07-01";
+function alertInScope(o){
+  var d=o.bill_date||o.order_date||o.payout_date;
+  return !!d && String(d).slice(0,10)>=ALERT_SINCE;
+}
+function orderMiss(o){
+  if(!o.paid||o.payout_fee==null||o.payout_net==null) return 0;
+  return r2(effSale(o)-Math.abs(num(o.payout_fee))-num(o.payout_net));
+}
+function goRtn(no){
+  var e=document.getElementById("rtnQ"); if(e) e.value=no;
+  tab("rtn"); if(window.renderRtn) renderRtn();
+  var b=document.getElementById("tab_rtn"); if(b&&b.scrollIntoView) b.scrollIntoView({behavior:"smooth",block:"start"});
+}
+function aRow(cells){ return "<tr><td>"+cells.join("</td><td>")+"</td></tr>"; }
+function aGrp(cls,icon,title,todo,head,rows,amount,open){
+  if(!rows.length) return "";
+  return '<details class="agrp '+cls+'"'+(open?" open":"")+'><summary>'+icon+" "+title+
+    '<span class="n">'+rows.length+" ใบ"+(amount?" · "+fmt(amount)+" บาท":"")+"</span></summary>"+
+    '<div class="todo">👉 <b>ต้องทำ:</b> '+todo+"</div>"+
+    '<div style="overflow:auto"><table><thead><tr><th>'+head.join("</th><th>")+
+    "</th></tr></thead><tbody>"+rows.join("")+"</tbody></table></div></details>";
+}
+function renderAlerts(){
+  var box=document.getElementById("alertBox"); if(!box) return;
+  var claw=[],short=[],unbill=[],late=[], sClaw=0,sShort=0,sUnbill=0,sLate=0;
+  (ALL||[]).filter(alertInScope).forEach(function(o){
+    var miss=orderMiss(o), ret=!!o.return_status;
+    if(o.paid&&miss>0.5&&!ret){
+      if(miss>=ALERT_CLAWBACK_MIN||num(o.payout_net)<=0){ claw.push({o:o,m:miss}); sClaw+=miss; }
+      else { short.push({o:o,m:miss}); sShort+=miss; }
+    }
+    if(o.paid&&!o.billed&&!ret){ unbill.push({o:o}); sUnbill+=effSale(o); }
+    if(o.billed&&!o.paid&&!ret){ var d=daysSince(o.bill_date||o.order_date);
+      if(d>ALERT_LATE_DAYS){ late.push({o:o,d:d}); sLate+=effSale(o); } }
+  });
+  var no=function(o){ return '<span class="ono">'+esc(o.order_no)+"</span>"; };
+  var bl=function(o){ return o.bill_no?esc(o.bill_no)+'<div class="muted" style="font-size:11px">'+beDate(o.bill_date)+"</div>":'<span class="chip warn">ยังไม่ออกบิล</span>'; };
+  var cu=function(o){ return esc(o.buyer||"—"); };
+
+  var h="";
+  h+=aGrp("red","💸","Shopee ดึงเงินคืน แต่ยังไม่ได้ติ๊กตีกลับ",
+    "เช็คว่าของกลับมาถึงร้านหรือยัง แล้วกดติ๊กสถานะในแท็บ ↩ ตีกลับ/ยกเลิก (กดปุ่มขวาสุดเพื่อไปที่ออเดอร์นั้นเลย)",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","Shopee ดึงคืน","เงินเข้าจริง",""],
+    claw.sort(function(a,b){return b.m-a.m;}).map(function(x){ return aRow([no(x.o),bl(x.o),cu(x.o),
+      '<span class="n">'+fmt(effSale(x.o))+"</span>",
+      '<b style="color:var(--red)">'+fmt(x.m)+"</b>",
+      fmt(num(x.o.payout_net)),
+      '<button class="btn sec sm" onclick="goRtn(\''+String(x.o.order_no).replace(/'/g,"")+'\')">↩ ไปติ๊ก</button>']); }),
+    sClaw,true);
+
+  h+=aGrp("amb","📉","เงินโอนเข้าไม่ครบ (โดนหักเกินค่าธรรมเนียม)",
+    "เปิดแอป Shopee → รายละเอียดการโอนของออเดอร์นั้น ดูว่าโดนหักค่าอะไรเพิ่ม แล้วแจ้งการเงิน",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","ค่าธรรมเนียม","ควรได้","เข้าจริง","ขาด"],
+    short.sort(function(a,b){return b.m-a.m;}).map(function(x){ var f=Math.abs(num(x.o.payout_fee));
+      return aRow([no(x.o),bl(x.o),cu(x.o),fmt(effSale(x.o)),fmt(f),fmt(effSale(x.o)-f),
+        fmt(num(x.o.payout_net)),'<b style="color:var(--amb)">'+fmt(x.m)+"</b>"]); }),
+    sShort,false);
+
+  h+=aGrp("blue","🧾","จ่ายเงินแล้ว แต่ยังไม่ได้ออกบิล acc-billing",
+    "แจ้งการเงินให้ออกบิล acc-billing ของออเดอร์นี้ (ถ้าออกแล้วให้กรอกเลขบิลในแท็บ ① ปุ่ม ✏️)",
+    ["ออเดอร์","วันสั่ง","ลูกค้า","ยอดขาย","เงินเข้าจริง"],
+    unbill.map(function(x){ return aRow([no(x.o),beDate(x.o.order_date),cu(x.o),
+      fmt(effSale(x.o)),fmt(num(x.o.payout_net))]); }),
+    sUnbill,false);
+
+  h+=aGrp("amb","⏰","ออกบิล/ส่งของแล้วเกิน "+ALERT_LATE_DAYS+" วัน Shopee ยังไม่จ่าย",
+    "ทักแชท Shopee ถามว่าทำไมเงินยังไม่เข้า แจ้งเลขออเดอร์ให้เขาตรวจ",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","รอมาแล้ว"],
+    late.sort(function(a,b){return b.d-a.d;}).map(function(x){ return aRow([no(x.o),bl(x.o),cu(x.o),
+      fmt(effSale(x.o)),'<b style="color:var(--red)">'+x.d+" วัน</b>"]); }),
+    sLate,false);
+
+  /* คืนบางส่วน: ensureCreditBills สร้างบิลลูกหนี้จากยอดเต็มครั้งเดียวแบบ idempotent
+     พอมาติ๊กคืนบางส่วนทีหลัง บิลลูกหนี้ไม่ถูกลดตาม → ต้องออกใบลดหนี้เอง */
+  var part=(ALL||[]).filter(alertInScope).filter(function(o){ return isPartial(o); });
+  var sPart=part.reduce(function(s,o){ return s+retAmt(o); },0);
+  h+=aGrp("blue","↩","คืนบางส่วนแล้ว แต่บิลลูกหนี้ยังเป็นยอดเต็ม",
+    "แจ้งการเงินออกใบลดหนี้ให้บิลนี้ตามยอดที่คืน (ระบบลดยอดในหน้า Shopee ให้แล้ว แต่ลดบิลลูกหนี้ให้ไม่ได้)",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดเต็ม","คืนไป","เหลือที่ควรเก็บ"],
+    part.map(function(o){ return aRow([no(o),bl(o),cu(o),fmt(origSale(o)),
+      '<b style="color:var(--amb)">'+fmt(retAmt(o))+"</b>",fmt(effSale(o))]); }),
+    sPart,false);
+
+  var n=claw.length+short.length+unbill.length+late.length+part.length;
+  var card=document.getElementById("alertCard");
+  var sc=document.getElementById("alertScope");
+  if(sc) sc.textContent="ตรวจทุกออเดอร์ตั้งแต่ "+beShort(ALERT_SINCE)+" เป็นต้นมา (ไม่ขึ้นกับเดือนที่เลือก · ข้าม พ.ค.–มิ.ย. ช่วงเริ่มใช้โปรแกรม)";
+  document.getElementById("alertCount").textContent=n?n+" ใบ":"ไม่มี ✓";
+  if(card) card.classList.toggle("clean",n===0);
+  box.innerHTML=n?h:'<div class="okbox">✓ ไม่มีออเดอร์ที่ต้องตามเรื่อง — เงินเข้าครบ ออกบิลครบ ไม่มีใบไหนค้างเกิน '+ALERT_LATE_DAYS+' วัน</div>';
+}
 
 /* ① จ่ายครบไหม — เน้นว่าได้เงินหรือยัง (ไม่เทียบกับค่าประมาณ) */
 function renderPay(rows,all){
   var src=all||rows;
   var hp=document.getElementById("pay_hidePaid"), ub=document.getElementById("pay_unbilled");
   var hidePaid=hp&&hp.checked, unbilled=ub&&ub.checked;
-  var paid=rows.filter(function(o){return o.paid;});
+  /* KPI 2 ใบนี้ใช้ทั้งตะกร้าบิล (src=all) ให้ตรงกับการ์ดหัวและ Dashboard
+     ส่วนธง "เกิน 20 วัน" ยังดูจาก rows (ไม่เอาออเดอร์ตีกลับมาเตือน) */
+  var paid=src.filter(function(o){return o.paid;});
   var got=paid.reduce(function(s,o){return s+num(o.payout_net);},0);
+  var allWait=src.filter(function(o){return !o.paid;});
   var validWait=rows.filter(function(o){return !o.paid;});
-  var pendEst=validWait.reduce(function(s,o){return s+(effSale(o)+(o.est_fee!=null?num(o.est_fee):-effSale(o)*0.27));},0);
+  var pendEst=allWait.reduce(function(s,o){return s+(effSale(o)+(o.est_fee!=null?num(o.est_fee):-effSale(o)*0.27));},0);
+  var gotGross=paid.reduce(function(s,o){return s+effSale(o);},0);
+  var waitGross=allWait.reduce(function(s,o){return s+effSale(o);},0);
   var h='<div class="kpis" style="margin-bottom:10px">'+
-    '<div class="kpi"><div class="lb">รับเงินแล้ว</div><div class="vl" style="color:var(--g2)">'+fmt(got)+'</div><div class="muted">'+paid.length+' ออเดอร์</div></div>'+
-    '<div class="kpi"><div class="lb">ยังรอรับ (ประมาณ)</div><div class="vl" style="color:var(--amb)">'+fmt(pendEst)+'</div><div class="muted">'+validWait.length+' ออเดอร์</div></div></div>';
+    '<div class="kpi"><div class="lb">Shopee จ่ายแล้ว (ยอดเต็ม)</div><div class="vl" style="color:var(--g2)">'+fmt(gotGross)+'</div><div class="muted">'+paid.length+' ออเดอร์ · โอนเข้าจริง (สุทธิ) '+fmt(got)+'</div></div>'+
+    '<div class="kpi"><div class="lb">ยังรอ Shopee จ่าย (ยอดเต็ม)</div><div class="vl" style="color:var(--amb)">'+fmt(waitGross)+'</div><div class="muted">'+allWait.length+' ออเดอร์ · ประมาณเงินเข้าสุทธิ '+fmt(pendEst)+'</div></div></div>'+
+    '<div class="note" style="background:#f8fafc;border-color:#e2e8f0;color:#475569">📊 <b>เทียบกับการ์ด Shopee บน Dashboard</b> — หน้านี้ใช้เกณฑ์เดียวกันแล้ว: นับตาม<b>วันที่ออกบิล</b> และ "จ่ายแล้ว/รอจ่าย" เป็น<b>ยอดเต็มก่อนหักค่าธรรมเนียม</b><br>ถ้าตัวเลขยังต่างกัน เหลือแค่ 2 สาเหตุ: (1) <b>Dashboard นับเฉพาะวันที่ยืนยันยอดแล้ว</b> — บิลของวันที่ยังไม่ยืนยันจะโผล่ในหน้านี้ก่อน แล้วค่อยเข้า Dashboard ตอนกดยืนยันวันนั้น · (2) <b>ออเดอร์ที่คืนบางส่วน</b> — หน้านี้หักยอดที่คืนออกให้แล้ว แต่บิลลูกหนี้ยังเป็นยอดเต็มจนกว่าจะออกใบลดหนี้ (ดูการ์ด 🚩 ด้านบน)</div>';
   var overdue=validWait.filter(function(o){return o.billed && daysSince(o.bill_date||o.order_date)>20;});
   if(overdue.length) h+='<div class="note">⚠ <b>'+overdue.length+' ออเดอร์ออกบิล/ส่งแล้วเกิน 20 วัน แต่ Shopee ยังไม่จ่าย</b>:<br>'+overdue.map(function(o){return esc(o.order_no)+" ("+daysSince(o.bill_date||o.order_date)+" วัน)";}).join(" · ")+'</div>';
   else h+='<div class="okbox">✓ ไม่มีออเดอร์ค้างจ่ายเกิน 20 วัน</div>';
@@ -706,6 +933,7 @@ function renderPay(rows,all){
     var mark=o.paid?'💰 ':(ret?'↩ ':(part?'↩ ':''));
     var billCell=ret?('<span class="chip '+(o.return_status==="claim"?"warn":"gray")+'">'+esc(retLabel(o))+'</span>'):(o.billed?'<span class="chip ok">'+esc(o.bill_no||"บิลแล้ว")+'</span>':'<span class="chip warn">ยังไม่ออกบิล</span> <button class="pen" title="ออกบิลเอง (กรอกเลขบิล acc-billing)" onclick="openBill(\''+no+'\')">✏️</button>');
     if(part) billCell+=' <span class="chip amb" title="'+esc(retQtyText(o))+'">↩ คืนบางส่วน '+fmt(retAmt(o))+'</span>';
+    if(o.bill_date) billCell+='<div class="muted" style="font-size:11px">วันบิล '+beDate(o.bill_date)+'</div>';
     var money=o.paid?'<span class="chip ok">💰 รับแล้ว</span>':(ret?'—':(d>20?'<span style="color:var(--red);font-weight:700">รอ '+d+' วัน</span>':'รอ '+d+' วัน'));
     var saleCell=part?(fmt(effSale(o))+'<div class="muted" style="font-size:11px">เต็ม '+fmt(origSale(o))+'</div>'):fmt(o.sale_amount);
     h+='<tr'+(ret?' style="opacity:.6"':'')+'><td>'+mark+esc(o.order_no)+'</td><td>'+beDate(o.order_date)+'</td><td>'+esc(o.ship_status||"—")+'</td><td>'+billCell+'</td><td class="n">'+saleCell+'</td><td class="n">'+money+'</td></tr>'; });

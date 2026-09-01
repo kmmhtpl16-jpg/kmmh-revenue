@@ -827,6 +827,38 @@ function goRtn(no){
   var b=document.getElementById("tab_rtn"); if(b&&b.scrollIntoView) b.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function aRow(cells){ return "<tr><td>"+cells.join("</td><td>")+"</td></tr>"; }
+/* ---- ใบลดหนี้: ลดยอดบิลลูกหนี้ตามของที่ Shopee ไม่จ่าย ----
+   ensureCreditBills สร้างบิลจากยอดเต็มครั้งเดียวแบบ idempotent ไม่ย้อนกลับมาลดให้
+   → ต้องมีคนกดลดเอง · กันกดซ้ำด้วยการเขียนคำว่า "ใบลดหนี้" ลง shopee_orders.note */
+function cnDone(o){ return String(o.note||"").indexOf("ใบลดหนี้")>=0; }
+function canCN(){ return ROLE==="finance"||ROLE==="owner"; }
+function cnBtn(o,amt,why){
+  if(!canCN()) return '<span class="muted" style="font-size:11px">แจ้งการเงิน</span>';
+  if(!o.bill_no) return '<span class="chip warn">ยังไม่มีเลขบิล</span>';
+  return '<button class="btn sec sm" onclick="creditNote(\''+String(o.order_no).replace(/'/g,"")+'\','+r2(amt)+
+    ',\''+String(why).replace(/'/g,"")+'\')">📝 ออกใบลดหนี้</button>';
+}
+async function creditNote(orderNo,amt,why){
+  var o=(ALL||[]).filter(function(x){return x.order_no===orderNo;})[0];
+  if(!o||!o.bill_no) return;
+  var b=await sb.from("rev_credit_bills").select("*").eq("bill_no",o.bill_no).maybeSingle();
+  if(b.error||!b.data){ alert("หาบิล "+o.bill_no+" ในทะเบียนลูกหนี้ไม่เจอ"); return; }
+  var bill=b.data, oldT=num(bill.total_amount), newT=r2(oldT-num(amt));
+  if(newT<-0.005){ alert("ลดไม่ได้ — ยอดบิล "+fmt(oldT)+" น้อยกว่ายอดที่จะลด "+fmt(amt)); return; }
+  if(!confirm("ออกใบลดหนี้บิล "+o.bill_no+"\n\nออเดอร์ "+orderNo+"\nเหตุผล: "+why+
+      "\n\nยอดบิลเดิม   "+fmt(oldT)+"\nลดลง        "+fmt(amt)+"\nยอดใหม่      "+fmt(newT)+
+      "\n(จ่ายมาแล้ว "+fmt(num(bill.paid_amount))+")\n\nยืนยันหรือไม่?")) return;
+  var paid=num(bill.paid_amount);
+  var st=(paid>=newT-0.005)?"paid":(paid>0.005?"partial":"open");
+  var stamp="ใบลดหนี้ "+fmt(amt)+" ("+beDate(todayISO())+" · "+orderNo+" · "+why+")";
+  var u1=await sb.from("rev_credit_bills").update({total_amount:newT,status:st,
+    note:(bill.note?bill.note+" | ":"")+stamp}).eq("id",bill.id).select();
+  if(u1.error||!u1.data||!u1.data.length){ alert("ลดยอดบิลไม่สำเร็จ: "+((u1.error&&u1.error.message)||"อัปเดต 0 รายการ")); return; }
+  var u2=await sb.from("shopee_orders").update({note:(o.note?o.note+" | ":"")+stamp}).eq("order_no",orderNo).select();
+  if(u2.error) alert("ลดยอดบิลแล้ว แต่บันทึกโน้ตในออเดอร์ไม่สำเร็จ: "+u2.error.message);
+  alert("✅ ออกใบลดหนี้แล้ว\nบิล "+o.bill_no+"  "+fmt(oldT)+" → "+fmt(newT)+"  ("+st+")");
+  reload();
+}
 function aGrp(cls,icon,title,todo,head,rows,amount,open){
   if(!rows.length) return "";
   return '<details class="agrp '+cls+'"'+(open?" open":"")+'><summary>'+icon+" "+title+
@@ -887,16 +919,28 @@ function renderAlerts(){
 
   /* คืนบางส่วน: ensureCreditBills สร้างบิลลูกหนี้จากยอดเต็มครั้งเดียวแบบ idempotent
      พอมาติ๊กคืนบางส่วนทีหลัง บิลลูกหนี้ไม่ถูกลดตาม → ต้องออกใบลดหนี้เอง */
-  var part=(ALL||[]).filter(alertInScope).filter(function(o){ return isPartial(o); });
+  var part=(ALL||[]).filter(alertInScope).filter(function(o){ return isPartial(o)&&!cnDone(o); });
   var sPart=part.reduce(function(s,o){ return s+retAmt(o); },0);
   h+=aGrp("blue","↩","คืนบางส่วนแล้ว แต่บิลลูกหนี้ยังเป็นยอดเต็ม",
-    "แจ้งการเงินออกใบลดหนี้ให้บิลนี้ตามยอดที่คืน (ระบบลดยอดในหน้า Shopee ให้แล้ว แต่ลดบิลลูกหนี้ให้ไม่ได้)",
-    ["ออเดอร์","บิล","ลูกค้า","ยอดเต็ม","คืนไป","เหลือที่ควรเก็บ"],
+    "ออกใบลดหนี้ให้บิลนี้ตามยอดที่คืน (ระบบลดยอดในหน้า Shopee ให้แล้ว แต่ลดบิลลูกหนี้อัตโนมัติไม่ได้)",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดเต็ม","คืนไป","เหลือที่ควรเก็บ",""],
     part.map(function(o){ return aRow([no(o),bl(o),cu(o),fmt(origSale(o)),
-      '<b style="color:var(--amb)">'+fmt(retAmt(o))+"</b>",fmt(effSale(o))]); }),
+      '<b style="color:var(--amb)">'+fmt(retAmt(o))+"</b>",fmt(effSale(o)),
+      cnBtn(o,retAmt(o),"คืนบางส่วน")]); }),
     sPart,false);
 
-  var n=claw.length+short.length+unbill.length+late.length+part.length;
+  /* ตีกลับ/เคลมแล้ว Shopee ไม่จ่าย แต่ยังค้างเป็นลูกหนี้ = หนี้ที่ไม่มีวันเก็บได้ */
+  var ghost=(ALL||[]).filter(alertInScope).filter(function(o){
+    return o.return_status && !isPartial(o) && !o.paid && o.billed && !cnDone(o); });
+  var sGhost=ghost.reduce(function(s,o){ return s+effSale(o); },0);
+  h+=aGrp("red","👻","ตีกลับ/เคลมแล้ว Shopee ไม่จ่าย แต่ยังค้างเป็นลูกหนี้",
+    "ออกใบลดหนี้เต็มจำนวน — Shopee ไม่จ่ายออเดอร์นี้แล้ว ถ้าไม่ลดจะค้างเป็นหนี้ที่เก็บไม่ได้ตลอดไป",
+    ["ออเดอร์","บิล","ลูกค้า","สถานะ","ยอดค้าง",""],
+    ghost.map(function(o){ return aRow([no(o),bl(o),cu(o),esc(retLabel(o)),
+      '<b style="color:var(--red)">'+fmt(effSale(o))+"</b>",cnBtn(o,effSale(o),"ตีกลับ/เคลม")]); }),
+    sGhost,true);
+
+  var n=claw.length+short.length+unbill.length+late.length+part.length+ghost.length;
   var card=document.getElementById("alertCard");
   var sc=document.getElementById("alertScope");
   if(sc) sc.textContent="ตรวจทุกออเดอร์ตั้งแต่ "+beShort(ALERT_SINCE)+" เป็นต้นมา (ไม่ขึ้นกับเดือนที่เลือก · ข้าม พ.ค.–มิ.ย. ช่วงเริ่มใช้โปรแกรม)";
@@ -1196,11 +1240,16 @@ function renderPnl(rows,m,retCount){
   var sale=rows.reduce(function(s,o){return s+effSale(o);},0);
   var fee=rows.reduce(function(s,o){return s+Math.abs(effFee(o));},0);
   var cost=COSTS.filter(function(c){return m==="ALL"||c.month===m;}).reduce(function(s,c){return s+costAmount(c,packed,retCount);},0);
-  var net=sale-fee, profit=net-cost;
+  /* 🔑 เงินที่ Shopee หักเกินค่าธรรมเนียม 8 คอลัมน์ที่ parsePayout เก็บ (ค่าส่ง/คืนเงิน/ปรับปรุง)
+     ไม่หักตรงนี้ = กำไรสูงเกินจริง · รู้ค่าจริงเฉพาะออเดอร์ที่ Shopee จ่ายแล้ว */
+  var other=rows.reduce(function(s,o){return s+orderMiss(o);},0);
+  var otherN=rows.filter(function(o){return orderMiss(o)>0.5;}).length;
+  var net=sale-fee-other, profit=net-cost;
   var paidN=rows.filter(function(o){return o.paid;}).length;
   var h='<table class="pnl" style="max-width:460px">'+
     '<tr><td>ยอดขายรวม (ไม่รวมตีกลับ · หักยอดที่คืนบางส่วนแล้ว)</td><td class="n">'+fmt(sale)+'</td></tr>'+
     '<tr><td>− ค่าธรรมเนียม Shopee</td><td class="n" style="color:var(--red)">'+fmt(fee)+'</td></tr>'+
+    (other>0.5?'<tr><td>− Shopee หักเพิ่ม (ค่าส่ง/คืนเงิน) <span style="font-weight:400;font-size:11px;color:var(--mut)">'+otherN+' ออเดอร์</span></td><td class="n" style="color:var(--red)">'+fmt(other)+'</td></tr>':'')+
     '<tr class="tot"><td>= เงินได้รับสุทธิ</td><td class="n">'+fmt(net)+'</td></tr>'+
     '<tr><td>− ต้นทุน/ค่าใช้จ่าย (แท็บ ③)</td><td class="n" style="color:var(--red)">'+fmt(cost)+'</td></tr>'+
     '<tr class="tot"><td>= เงินเหลือ <span style="font-weight:400;font-size:12px;color:var(--red)">(ยังไม่หักต้นทุนสินค้า)</span></td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+';font-size:18px">'+fmt(profit)+'</td></tr>'+
@@ -1208,6 +1257,7 @@ function renderPnl(rows,m,retCount){
   h+='<table class="pnl" style="max-width:460px;margin-top:8px"><tr><td class="muted" colspan="2">เฉลี่ยต่อออเดอร์ ('+oc+' ออเดอร์ขายจริง)</td></tr>'+
     '<tr><td>ยอดขาย/ออเดอร์</td><td class="n">'+fmt(oc?sale/oc:0)+'</td></tr>'+
     '<tr><td>ค่าธรรมเนียม/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?fee/oc:0)+'</td></tr>'+
+    (other>0.5?'<tr><td>Shopee หักเพิ่ม/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?other/oc:0)+'</td></tr>':'')+
     '<tr><td>ต้นทุนแพ็ค/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?cost/oc:0)+'</td></tr>'+
     '<tr class="tot"><td>เงินเหลือ/ออเดอร์ <span style="font-weight:400;font-size:11px;color:var(--red)">(ก่อนหักต้นทุน)</span></td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+'">'+fmt(oc?profit/oc:0)+'</td></tr>'+
     '</table>';
@@ -1256,6 +1306,7 @@ async function saveBill(){
   if(!r.data||!r.data.length){ errEl.textContent="อัปเดต 0 รายการ — รีเฟรชแรงๆ (Ctrl+Shift+R) แล้วลองใหม่"; return; }
   closeBill(); reload();
 }
+window.goRtn=goRtn; window.creditNote=creditNote;
 window.openBill=openBill; window.closeBill=closeBill; window.saveBill=saveBill; window.billReasonChg=billReasonChg;
 window.reload=reload; window.render=render; window.tab=tab;
 </script>

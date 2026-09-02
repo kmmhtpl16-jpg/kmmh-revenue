@@ -1547,14 +1547,41 @@ window.matchKM=async function(id){
   var _h=payerHint(MP_P.from_name), _hc=_h?_h.customer:"";
   var _list=(r.data||[]).filter(function(b){ return Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100>0.01; });
   if(_hc){ _list.sort(function(a,b){ var ah=nameMatch(_hc,a.customer)?0:1, bh=nameMatch(_hc,b.customer)?0:1; if(ah!==bh) return ah-bh; return (a.bill_date<b.bill_date)?-1:1; }); }
-  var rows=_list.map(function(b){ var rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; var hit=_hc&&nameMatch(_hc,b.customer); return '<tr'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
+  var rows=_list.map(function(b,_ix){ var rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; var hit=_hc&&nameMatch(_hc,b.customer); return '<tr class="mpkr'+(hit?' hint':'')+'" data-i="'+_ix+'" data-s="'+esc(mpNorm(b.bill_no)+" "+mpNorm(b.customer))+'"'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
   mpOpen('<h3>จับคู่ '+TH(MP_P.amount)+' ฿ — เลือกบิลขาย (เก่าสุดบน)</h3>'+
     '<div class="mpmut">จาก '+esc(MP_P.from_name||"")+' · ติ๊กบิลที่เงินก้อนนี้ปิด</div>'+
     (_hc?('<div style="margin-top:6px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 8px;font-size:12.5px;color:#6d28d9">🔁 บัญชีนี้เคยจ่ายในชื่อ <b>'+esc(_hc)+'</b>'+(_h.hit_count>1?(' ('+_h.hit_count+' ครั้ง)'):'')+' — ยกบิลของลูกค้ารายนี้ขึ้นบนให้แล้ว</div>'):'')+
-    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div style="margin-top:8px;position:relative"><input id="mpKMq" type="search" autocomplete="off" placeholder="🔎 พิมพ์เลขบิล หรือ ชื่อลูกค้า เพื่อยกขึ้นบนสุด" oninput="mpFilterKM()" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px"><div id="mpKMfound" class="mpmut" style="margin-top:4px;display:none"></div></div>'+
+    '<div style="max-height:320px;overflow:auto;margin-top:8px"><table><thead><tr><th></th><th>วันที่</th><th>เลขบิล</th><th>ลูกค้า</th><th class="num">คงเหลือ</th></tr></thead><tbody id="mpKMtb">'+rows+'<tr id="mpKMsep" style="display:none"><td colspan="5" class="mpmut" style="background:#f8fafc;text-align:center;padding:4px">— บิลอื่น ๆ —</td></tr></tbody></table></div>'+
     '<div class="mpbar"><span id="mpKMmsg">เลือก 0 บิล</span><b id="mpKMsum" style="color:#2563eb">0.00 ฿</b></div>'+
     '<div id="mpKMshort"></div>'+
     '<div class="mpfoot"><button class="btn sec" onclick="mpClose()">ปิด</button><button class="btn" id="mpKMdo" disabled onclick="mpDoKM()">✓ จับคู่ &amp; ปิดบิล</button></div>');
+  try{ var _q=document.getElementById("mpKMq"); if(_q) setTimeout(function(){ _q.focus(); },60); }catch(e){}
+};
+/* ค้นหาบิล: ตัดอักขระคั่นทิ้ง เทียบแบบ "มีคำนี้อยู่" ทุกคำที่พิมพ์ — เจอแล้วยกขึ้นบนสุด ไม่ซ่อนใบอื่น
+   (ยกด้วยการย้าย <tr> จริง เลยไม่กระทบช่องติ๊กที่เลือกไว้แล้ว) */
+function mpNorm(x){ return String(x==null?"":x).toLowerCase().replace(/[\s\-_./]/g,""); }
+window.mpFilterKM=function(){
+  var q=mpNorm((document.getElementById("mpKMq")||{}).value);
+  var tb=document.getElementById("mpKMtb"), sep=document.getElementById("mpKMsep"), fd=document.getElementById("mpKMfound");
+  if(!tb) return;
+  var trs=[].slice.call(tb.querySelectorAll("tr.mpkr"));
+  trs.forEach(function(tr){ tr.style.outline=""; tr.style.background=tr.classList.contains("hint")?"#f5f3ff":""; });
+  if(!q){
+    trs.sort(function(a,b){ return (+a.getAttribute("data-i"))-(+b.getAttribute("data-i")); });
+    trs.forEach(function(tr){ tb.appendChild(tr); });
+    tb.appendChild(sep); sep.style.display="none"; fd.style.display="none";
+    return;
+  }
+  var hit=[], rest=[];
+  trs.forEach(function(tr){ ((tr.getAttribute("data-s")||"").indexOf(q)>=0?hit:rest).push(tr); });
+  /* ไม่เจอสักใบ = คืนลำดับเดิม จะได้ไม่งงว่าตารางสลับไปเอง */
+  if(!hit.length) rest.sort(function(a,b){ return (+a.getAttribute("data-i"))-(+b.getAttribute("data-i")); });
+  hit.forEach(function(tr){ tr.style.background="#fef9c3"; tb.appendChild(tr); });
+  tb.appendChild(sep); sep.style.display=(hit.length&&rest.length)?"":"none";
+  rest.forEach(function(tr){ tb.appendChild(tr); });
+  fd.style.display=""; fd.style.color=hit.length?"#15803d":"#b91c1c";
+  fd.textContent=hit.length?("พบ "+hit.length+" ใบ — ยกขึ้นบนสุดให้แล้ว"):"ไม่พบบิลที่ตรงกับ “"+((document.getElementById("mpKMq")||{}).value||"")+"”";
 };
 window.mpSumKM=function(){
   var ck=[].slice.call(document.querySelectorAll(".mpkb:checked"));

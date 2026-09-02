@@ -593,6 +593,74 @@ function lateSumFromRows(rows){ return Math.round(lateItemsFromRows(rows).reduce
 function lateUnbilled(items, xf){ return (items||[]).filter(function(x){ return !xferBill(xf||[], (+x.amt||0), "knv"); }); }
 function lateUnbilledSum(items, xf){ return Math.round(lateUnbilled(items,xf).reduce(function(s,x){ return s+(+x.amt||0); },0)*100)/100; }
 function isFlagRow(x){ return !!x && (x.source==="รับเข้าบัญชีอื่น" || /บัญชีอื่น|เกินรายงาน|เกินสเตทเมนต์/.test(x.ref||"")); }
+/* 🧾 รายการ "ข้ามวัน" ของช่องโอนกสิกร — กันธงเตือนหลอก (เคสจริง 1 ก.ย.69 ธง 46,195 ทั้งที่เงินเข้าครบ)
+   (ก) pre = บิลวันนี้ที่ลูกค้าจ่ายด้วยมัดจำซึ่งโอนเข้าบัญชีไปแล้ววันก่อน → ฟอร์มลงวันนี้ แต่สเตทเมนต์วันนี้ไม่มี = หักออกจากฝั่งฟอร์ม
+   (ข) oth = เงินเข้าบัญชีวันนี้ที่การเงินจับคู่แล้วว่าเป็นบิลเก่า/มัดจำที่ยังไม่ออกบิลวันนี้ = หักออกจากฝั่งสเตทเมนต์
+   ⚠️ ฝั่ง (ข) นับเฉพาะยอดที่เห็นในสเตทเมนต์วันนั้นจริง (กันมัดจำเงินสด/ธนาคารอื่นมาหักมั่ว) */
+/* K+ หลัง 15:30 ของเมื่อวาน ที่ออกบิลวันนี้ (การเงินจับคู่ไว้แล้วใน rev_pending source "K+ ตัดรอบ")
+   → ฟอร์มวันนี้มี แต่รายงาน K+ วันนี้ไม่มี = ยอดยกมา ไม่ใช่เงินหาย (หน้ารายละเอียดวันหักให้อยู่แล้ว ตรงนี้ทำให้ด่านบันทึกหักด้วย) */
+async function carryInK(date,xfer){
+  var out={sum:0,bills:[]};
+  try{
+    if(!sb||!date) return out;
+    var kn=(xfer||[]).filter(function(x){return (+x.knv||0)>0&&x.bill;});
+    if(!kn.length) return out;
+    var q=await sb.from("rev_pending").select("amount,matched_bill_no,date,source").in("matched_bill_no",kn.map(function(x){return String(x.bill).trim();})).lt("date",date);
+    (((q&&q.data)||[])).forEach(function(pp){
+      if(!/ตัดรอบ/.test(String(pp.source||""))) return;
+      var b=kn.find(function(x){return String(x.bill).trim()===String(pp.matched_bill_no||"").trim();});
+      if(b&&out.bills.indexOf(b.bill)<0){ out.sum+=(+b.knv||0); out.bills.push(b.bill); }
+    });
+  }catch(e){ console.warn("carryInK",e); }
+  out.sum=Math.round(out.sum*100)/100; return out;
+}
+async function kskDepAdj(date,xfer,pend,brows){
+  var out={pre:0,preRows:[],oth:0,othRows:[]};
+  try{
+    if(!sb||!date) return out;
+    var xf=(xfer||[]).filter(function(x){return (+x.ksk||0)>0&&x.bill;});
+    var allBills=(xfer||[]).map(function(x){return String(x.bill||"").trim();}).filter(Boolean);
+    if(xf.length){
+      var _bl=xf.map(function(x){return String(x.bill).trim();});
+      var dq=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no").in("matched_bill_no",_bl);
+      (((dq&&dq.data)||[])).forEach(function(d){
+        var rd=String(d.received_date||"").slice(0,10); if(!rd||rd>=date) return;
+        var b=String(d.matched_bill_no||"").trim(), ks=0;
+        xf.forEach(function(x){ if(String(x.bill).trim()===b) ks+=(+x.ksk||0); });
+        var used=(d.used_amount!=null&&(+d.used_amount)>0)?(+d.used_amount):(+d.amount||0);
+        var amt=Math.round(Math.min(used,ks)*100)/100;
+        if(amt>0.5){ out.pre+=amt; out.preRows.push({bill:b,amt:amt,d:rd,cust:d.customer||d.deposit_no||""}); }
+      });
+    }
+    /* ไม่มีชีต "โอน" ของวันนั้น = ไม่รู้ว่าบิลไหนจ่ายด้วยมัดจำ → หักฝั่งสเตทเมนต์ข้างเดียวไม่ได้ (จะเตือนบวมกว่าเดิม) */
+    if(!allBills.length){ out.pre=Math.round(out.pre*100)/100; return out; }
+    var pr=pend; if(!pr){ var pq2=await sb.from("rev_pending").select("amount,status,matched_bill_no,source,ref").eq("date",date); pr=((pq2&&pq2.data)||[]); }
+    (pr||[]).forEach(function(p){
+      if(p.status!=="matched") return;
+      if(!/สเตทเมนต์|โอนเข้าตรง/.test(String(p.ref||""))) return;
+      var mb=String(p.matched_bill_no||"").trim(); if(!mb||/มัดจำ/.test(mb)) return;
+      if(allBills.some(function(b){return b&&mb.indexOf(b)>=0;})) return;
+      var a=parseFloat(p.amount)||0; if(a>0.5){ out.oth+=a; out.othRows.push({ref:mb,amt:a}); }
+    });
+    var _bd=(brows||[]).filter(function(r){return (+r.dep>0&&!r.kp);});
+    if(_bd.length){
+      var dq2=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no").eq("received_date",date);
+      (((dq2&&dq2.data)||[])).forEach(function(d){
+        var a=Math.round((+d.amount||0)*100)/100; if(a<=0.5) return;
+        if(!_bd.some(function(r){return Math.abs((+r.dep||0)-a)<=1;})) return;
+        var mb=String(d.matched_bill_no||"").trim();
+        var own=mb&&allBills.some(function(b){return b&&mb.indexOf(b)>=0;});
+        var amt=own?Math.round((a-(+d.used_amount||0))*100)/100:a;
+        if(amt>0.5){ out.oth+=amt; out.othRows.push({ref:"มัดจำ "+(d.customer||d.deposit_no||""),amt:amt}); }
+      });
+    }
+  }catch(e){ console.warn("kskDepAdj",e); }
+  out.pre=Math.round(out.pre*100)/100; out.oth=Math.round(out.oth*100)/100; return out;
+}
+function kskAdjNote(adj){ if(!adj||(!(adj.pre>1)&&!(adj.oth>1))) return ""; var s=[];
+  if(adj.pre>1) s.push('ฝั่งฟอร์ม −'+TH(adj.pre)+' (ใช้มัดจำที่เข้าบัญชีวันก่อน: '+adj.preRows.map(function(x){return esc(x.cust)+' '+TH0(x.amt)+' เข้า '+beDate(x.d)+' → บิล '+esc(x.bill);}).join(' · ')+')');
+  if(adj.oth>1) s.push('ฝั่งสเตทเมนต์ −'+TH(adj.oth)+' (เงินเข้าวันนี้ของบิลเก่า/มัดจำ: '+adj.othRows.map(function(x){return esc(x.ref)+' '+TH0(x.amt);}).join(' · ')+')');
+  return '<div class="muted" style="margin:2px 0 0">ℹ️ หักรายการข้ามวันให้แล้ว — '+s.join(' · ')+'</div>'; }
 /* ช่องว่างของวันที่กำลังตรวจอยู่ (หน้าอัปไฟล์) — เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน */
 function currentGaps(){ var out={k:0,b:0};
   try{ var f=DATA.form, kp=DATA.kplus, bk=DATA.bank; if(!f||!f.date) return out;
@@ -606,7 +674,7 @@ function currentGaps(){ var out={k:0,b:0};
 async function gapsForSave(date){
   var g=currentGaps(); if(!sb||!date) return g;
   try{
-    var r=await sb.from("rev_daily").select("kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle").eq("date",date).maybeSingle();
+    var r=await sb.from("rev_daily").select("kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle,bank_rows").eq("date",date).maybeSingle();
     var d=r&&r.data; if(!d) return g;
     var f=DATA.form||{};
     if(d.kplus_total!=null){
@@ -615,11 +683,16 @@ async function gapsForSave(date){
       var lti=(d.kplus_rows&&d.kplus_rows.length)?lateItemsFromRows(d.kplus_rows):((DATA.kplus&&DATA.kplus.late&&DATA.kplus.late[date])?DATA.kplus.late[date]:[]);
       var lt=lateUnbilledSum(lti, f.xfer||[]);
       var k=Math.round((((+f.knv||0)-rep)+lt)*100)/100; g.k=(k>1)?k:0;
+      /* หักยอดยกมาจากเมื่อวาน (K+ ตัดรอบที่จับคู่บิลวันนี้แล้ว) — ไม่ใช่เงินหาย ห้ามบล็อก */
+      if(g.k>1){ var _ci=await carryInK(date,(f.xfer||[])); if(_ci.sum>1){ var _nk=Math.round((g.k-_ci.sum)*100)/100; g.k=(_nk>1)?_nk:0; g.kCarry=_ci; } }
     }
     if(d.bank_dep_total!=null&&f.ksk!=null){
       var dir=Math.round(((+d.bank_dep_total||0)-(+d.bank_kplus_settle||0))*100)/100;
       var b=Math.round(((+f.ksk||0)-dir)*100)/100; g.b=(b>1)?b:0;
     }
+    /* หักรายการข้ามวันด้วยสูตรเดียวกับหน้ารายละเอียดวัน — ฟอร์มหักบิลที่จ่ายด้วยมัดจำที่เข้าบัญชีไปแล้ว
+       สเตทเมนต์หักเงินเข้าวันนี้ที่เป็นบิลเก่า/มัดจำ (ยอดที่การเงินจับคู่ยืนยันแล้วเท่านั้น) */
+    if(g.b>1){ var _ad=await kskDepAdj(date,(f.xfer||[]),null,(d.bank_rows||null)); if(_ad.pre>1||_ad.oth>1){ var _nb=Math.round((g.b-_ad.pre+_ad.oth)*100)/100; g.b=(_nb>1)?_nb:0; g.bAdj=_ad; } }
   }catch(e){}
   return g;
 }
@@ -1046,16 +1119,18 @@ async function renderDay(date, edit){
         if(_carryIn>1 && _imp<=1){ html+=_carryBox; } else if(_imp>1){ html+=_carryBox; const Q4=String.fromCharCode(39); if(_otherAcct.length){ const _mb=_otherAcct.map(function(x){return x.matched_bill_no;}).filter(Boolean).join(', '); const _allm=_otherAcct.every(function(x){return x.status==='matched';}); html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ ติดธงรับเข้าบัญชีอื่นแล้ว '+TH(_otherAcctSum)+(_allm?(' — จับคู่บิลแล้ว'+(_mb?(' '+esc(_mb)):'')):' — รอออกบิล/จับคู่')+'</b><div class="muted" style="margin:2px 0 0">ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' บันทึกเป็นเงินรับเข้าบัญชีอื่นเรียบร้อย ไม่ต้องติดธงซ้ำ'+(function(){ var _sp=(_otherAcct.find(function(x){return x.slip_path;})||{}).slip_path; return _sp?(' · <a href="#" style="color:#2563eb;font-weight:700" onclick="openSlip('+Q4+_sp+Q4+');return false;">📎 ดูสลิปที่แนบ</a>'):' · <span style="color:#b45309">⚠️ ยังไม่ได้แนบสลิป</span>'; })()+'</div><button class="btn sec" style="padding:3px 10px;margin:6px 0 0;border-color:#fca5a5;color:#b91c1c" onclick="reflagOtherAcct('+Q4+date+Q4+')">↩️ แนบสลิปผิด? ติดธงใหม่</button></div>'; } else { html+='<div style="margin:4px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px"><b style="color:#1d4ed8">🔎 ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' — น่าจะลูกค้าโอนเข้าบัญชีอื่น</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fk)+' − รายงาน '+TH(_rk)+')'+(_lk>0?' + K+หลัง15:30 '+TH(_lk):'')+' = '+TH(_imp)+'</div><button class="btn sec" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_imp+','+Q4+date+Q4+','+Q4+'K+ ฟอร์มเกินรายงาน-โอนบัญชีอื่น ('+beDate(date)+')'+Q4+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } } } })();
     (function(){ const _li=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}).map(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return {hhmm:m?m[1]+':'+m[2]:'',amt:r.amt,name:''};}):[]); if(_li.length){ const _nd=nextISO(date); const Q5=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_li.length+' รายการ รวม '+TH(_li.reduce((s,x)=>s+(x.amt||0),0))+') — ตัดรอบ (นับใน K+ วันนี้แล้ว) จับคู่เลขบิลที่ออก '+beDate(_nd)+'</b><div class="muted" style="margin:2px 0 4px">↩️ ยกไปเป็น <b>ยอดยกมา</b> ของวันที่ '+beDate(_nd)+'</div>'+_li.map(function(x){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), x.amt, 'knv'); var _pm=(!_mb)?((pq&&pq.data)?pq.data:[]).find(function(pp){return /ตัดรอบ/.test(pp.source||'')&&Math.abs((parseFloat(pp.amount)||0)-(x.amt||0))<=1;}):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):(_pm?('<span style="color:#15803d;font-weight:700">✓ จับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="matchKLateBill('+(x.amt||0)+','+Q5+(x.hhmm||'')+Q5+','+Q5+date+Q5+',this)">จับคู่บิล</button>')); return '<div class="kv"><span>'+(x.hhmm||'')+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' '+act+'</b></div>'; }).join('')+'</div>'; } })();
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
-    (function(){ var _fks=(au.detail&&au.detail.form_ksk!=null)?(+au.detail.form_ksk):null;
+    await (async function(){ var _fks=(au.detail&&au.detail.form_ksk!=null)?(+au.detail.form_ksk):null;
       var _sd=(da&&da.bank_dep_total!=null)?Math.round((((+da.bank_dep_total)||0)-((+da.bank_kplus_settle)||0))*100)/100:((au.detail&&au.detail.stmt_direct!=null)?(+au.detail.stmt_direct):null);
       if(_sd==null) return;
       if(_fks==null){ html+='<div class="muted" style="margin:2px 0 0">— เงินโอนเข้าตรงตามสเตทเมนต์ '+TH(_sd)+' · วันนี้ไม่มีตัวเลขฝั่งฟอร์มเก็บไว้ เทียบอัตโนมัติไม่ได้ (วันใหม่จะเก็บให้เอง)</div>'; return; }
-      var _gb=Math.round((_fks-_sd)*100)/100; var Q8=String.fromCharCode(39);
+      var _adj=await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null);
+      var _fa=Math.round((_fks-_adj.pre)*100)/100, _sa=Math.round((_sd-_adj.oth)*100)/100; var _note=kskAdjNote(_adj);
+      var _gb=Math.round((_fa-_sa)*100)/100; var Q8=String.fromCharCode(39);
       if(_gb>1){ var _fl=_otherAcct.filter(function(x){return /สเตทเมนต์|กสิกร/.test(x.ref||"")||x.source==="รับเข้าบัญชีอื่น";});
         var _fs=Math.round(_fl.reduce(function(t,x){return t+(parseFloat(x.amount)||0);},0)*100)/100;
-        if(_fs>=_gb-1){ html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — ติดธงรับเข้าบัญชีอื่นแล้ว</b></div>'; }
-        else { html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🚩 โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — เงินไม่เข้าบัญชีร้าน ต้องติดธง+แนบสลิป</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fks)+' − โอนเข้าตรงตามสเตทเมนต์ '+TH(_sd)+')</div><button class="btn sec" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_gb+','+Q8+date+Q8+','+Q8+'โอนกสิกรเกินสเตทเมนต์-บัญชีอื่น ('+beDate(date)+')'+Q8+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } }
-      else { html+='<div class="kv"><span>โอนกสิกร (ฟอร์ม) vs โอนเข้าตรง (สเตทเมนต์)</span><b style="color:#15803d">'+TH(_fks)+' vs '+TH(_sd)+' ✓</b></div>'; }
+        if(_fs>=_gb-1){ html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — ติดธงรับเข้าบัญชีอื่นแล้ว</b>'+_note+'</div>'; }
+        else { html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🚩 โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — เงินไม่เข้าบัญชีร้าน ต้องติดธง+แนบสลิป</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fa)+' − โอนเข้าตรงตามสเตทเมนต์ '+TH(_sa)+')</div>'+_note+'<button class="btn sec" style="padding:3px 10px;margin:6px 0 0" onclick="prefillOtherAcct('+_gb+','+Q8+date+Q8+','+Q8+'โอนกสิกรเกินสเตทเมนต์-บัญชีอื่น ('+beDate(date)+')'+Q8+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } }
+      else { html+='<div class="kv"><span>โอนกสิกร (ฟอร์ม) vs โอนเข้าตรง (สเตทเมนต์)</span><b style="color:#15803d">'+TH(_fa)+' vs '+TH(_sa)+' ✓</b></div>'+((_adj.pre>1||_adj.oth>1)?('<div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(_fks)+' · สเตทเมนต์ '+TH(_sd)+'</div>'+_note):''); }
     })();
     (function(){ var _all=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(!_all.length) return; var Q6=String.fromCharCode(39);
       function _norm(s){ return String(s||'').replace(/['"]/g,'').slice(0,60); }
@@ -1420,7 +1495,7 @@ async function _annotateFlags(date){
     const r=await sb.from("rev_pending").select("amount,status,matched_bill_no,slip_path,source,ref").eq("date",date);
     const rows=(r&&r.data)?r.data:[];
     const flags=rows.filter(function(x){return x.source==="รับเข้าบัญชีอื่น"||/บัญชีอื่น|เกินรายงาน|เกินสเตทเมนต์/.test(x.ref||"");});
-    if(!flags.length) return;
+    if(!flags.length){ await _annotateKskAdj(date,rows); return; }
     const mk=function(list){
       const sum=Math.round(list.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
       const mb=list.map(function(x){return x.matched_bill_no;}).filter(Boolean).join(", ");
@@ -1434,6 +1509,21 @@ async function _annotateFlags(date){
     const bk=document.getElementById("flagBoxK"); if(bk&&kFlags.length) bk.outerHTML=mk(kFlags);
     const bb=document.getElementById("flagBoxB"); if(bb&&bFlags.length) bb.outerHTML=mk(bFlags);
     if(kFlags.length===0&&bFlags.length===0){ const any=document.getElementById("flagBoxK")||document.getElementById("flagBoxB"); if(any) any.outerHTML=mk(flags); }
+  }catch(e){}
+}
+/* หน้าอัปไฟล์: ถ้าส่วนต่าง "โอนกสิกรเกินสเตทเมนต์" อธิบายได้ด้วยรายการข้ามวัน → เปลี่ยนกล่องเตือนเป็นกล่องเขียว ไม่ต้องให้ติดธง */
+async function _annotateKskAdj(date,rows){
+  try{
+    var bb=document.getElementById("flagBoxB"); if(!bb) return;
+    var f=DATA.form; if(!f||f.date!==date) return;
+    var bd=(DATA.bank&&DATA.bank.map&&DATA.bank.map[date])||null; if(!bd) return;
+    var br=(DATA.bank&&DATA.bank.rowsByDate&&DATA.bank.rowsByDate[date])||null;
+    var adj=await kskDepAdj(date,f.xfer||[],rows,br);
+    if(!(adj.pre>1||adj.oth>1)) return;
+    var sd=Math.round((((+bd.dep||0)-(+bd.kplus||0)))*100)/100;
+    var fa=Math.round((((+f.ksk||0)-adj.pre))*100)/100, sa=Math.round((sd-adj.oth)*100)/100;
+    if(Math.round((fa-sa)*100)/100>1) return;
+    bb.outerHTML='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรตรงกันแล้ว '+TH(fa)+' vs '+TH(sa)+' — ไม่ต้องติดธง</b><div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(+f.ksk||0)+' · สเตทเมนต์ '+TH(sd)+'</div>'+kskAdjNote(adj)+'</div>';
   }catch(e){}
 }
 function prefillOtherAcct(amount, date, ref){

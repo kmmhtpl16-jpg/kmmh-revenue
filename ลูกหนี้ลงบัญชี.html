@@ -257,7 +257,7 @@ window.loadRegister=async function(){
 };
 
 /* ---------- รับชำระล่าสุด (จัดกลุ่มตามรหัสชุด = 1 ครั้งที่กดรับชำระ) ---------- */
-var PAYS=[];
+var PAYS=[], PAY_ALL=false, PAY_LIM=10;
 window.loadPays=async function(){
   var box=document.getElementById("payList"); if(!box) return;
   if(!sbReady()){ box.innerHTML='<span style="color:var(--red)">เชื่อม Supabase ไม่ได้</span>'; return; }
@@ -267,7 +267,7 @@ window.loadPays=async function(){
     .select("id,bill_id,pay_date,amount,method,ref,billing_note_no,batch_ref,confirmed_by,rev_credit_bills(bill_no,customer,bill_date)")
     .gte("pay_date",since).order("pay_date",{ascending:false});
   if(r.error){ box.innerHTML='<span style="color:var(--red)">โหลดรายการรับชำระไม่ได้: '+esc(r.error.message)+'</span>'; return; }
-  PAYS=r.data||[];
+  PAYS=r.data||[]; PAY_ALL=false;
   renderPays();
 };
 function payGroups(){
@@ -297,9 +297,12 @@ window.renderPays=function(){
           || String(b.customer||"").toLowerCase().replace(/[\s\-_./]/g,"").indexOf(q)>=0; }); });
   if(!gs.length){ box.innerHTML='<div class="muted">'+(q?'ไม่พบรายการรับชำระที่ตรงกับที่ค้น':'ยังไม่มีการรับชำระในช่วงนี้')+'</div>'; return; }
   var tot=Math.round(gs.reduce(function(s,g){return s+g.amt;},0)*100)/100;
-  var h='<div class="muted" style="margin-bottom:6px">'+gs.length+' ครั้ง · รวมรับ <b style="color:var(--g2)">'+fmt(tot)+'</b> บาท</div>';
+  var more=Math.max(0,gs.length-PAY_LIM), shown=PAY_ALL?gs:gs.slice(0,PAY_LIM);
+  var moreAmt=Math.round(gs.slice(PAY_LIM).reduce(function(s,g){return s+g.amt;},0)*100)/100;
+  var h='<div class="muted" style="margin-bottom:6px">'+gs.length+' ครั้ง · รวมรับ <b style="color:var(--g2)">'+fmt(tot)+'</b> บาท'+
+    ((more&&!PAY_ALL)?(' · <span style="color:var(--amb)">แสดง '+shown.length+' รายการล่าสุด</span>'):'')+'</div>';
   h+='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="n">ยอดรับ</th><th>ช่องทาง</th><th>ผู้รับเงิน</th><th>อ้างอิง</th></tr></thead><tbody>';
-  gs.forEach(function(g,i){
+  shown.forEach(function(g,i){
     var ms=Object.keys(g.methods).join(", ");
     h+='<tr style="cursor:pointer" onclick="togglePayGrp('+i+')"><td>▸ '+beDate(g.date)+'</td>'+
        '<td>'+esc(g.cust||"—")+' <span class="muted">('+g.items.length+' บิล)</span></td>'+
@@ -313,8 +316,12 @@ window.renderPays=function(){
        '</tbody></table>'+(g.batch?'<div class="muted" style="margin-top:4px">รหัสชุด '+esc(g.batch)+'</div>':'')+'</td></tr>';
   });
   h+='</tbody></table>';
+  if(more) h+='<div style="margin-top:8px;text-align:center">'+(PAY_ALL
+    ? '<button class="btn ghost sm" onclick="showAllPays(false)">▴ ย่อกลับเหลือ '+PAY_LIM+' รายการล่าสุด</button>'
+    : '<button class="btn ghost sm" onclick="showAllPays(true)">▾ ดูอีก '+more+' ครั้ง (รวม '+fmt(moreAmt)+' บาท)</button>')+'</div>';
   box.innerHTML=h;
 };
+window.showAllPays=function(v){ PAY_ALL=!!v; renderPays(); };
 window.togglePayGrp=function(i){ var d=document.getElementById("pg_"+i); if(d) d.classList.toggle("hide"); };
 
 function renderRegister(){

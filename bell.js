@@ -122,12 +122,12 @@
   function billedIn(xf, amt){ for(var i=0;i<(xf||[]).length;i++){ if((+xf[i].knv||0)>0 && Math.abs((+xf[i].knv||0)-amt)<=1) return xf[i].bill||true; } return null; }
   function unbilled(items, xf){ return (items||[]).filter(function(x){ return !billedIn(xf,(+x.amt||0)); }); }
   function sumAmt(a){ return r2(a.reduce(function(s,x){ return s+(+x.amt||0); },0)); }
-  function gapDays(audits, dailies, flagged, fromISO, cutBills){
-    cutBills=cutBills||{};
+  function gapDays(audits, dailies, flagged, fromISO, cutBills, deps, pendAll){
+    cutBills=cutBills||{}; deps=deps||[]; pendAll=pendAll||[];
     var A={}, D={};
     audits.forEach(function(a){ A[String(a.date).slice(0,10)]=a; });
     dailies.forEach(function(d){ D[String(d.date).slice(0,10)]=d; });
-    var out=[];
+    var out=[]; out.parts=[];
     Object.keys(A).sort().forEach(function(dt){
       if(dt<fromISO) return;
       var a=A[dt], d=D[dt]; if(!a||!d) return;
@@ -156,6 +156,14 @@
         }
         gapK=r2((fk-num(d.kplus_total))+sumAmt(lateU)-carry);
       }
+      /* ⏳ รายงาน K+ ที่อัปไว้เป็นของครึ่งวัน (รายการสุดท้ายก่อนบ่าย 3) = "ยังตรวจไม่ได้" ไม่ใช่ "เงินหาย"
+         เกณฑ์เดียวกับด่านตอนกดยืนยันใน index.html — แยกไปเตือนอีกหัวข้อ ไม่ปนกับธงแดง */
+      var kpart=false;
+      if(gapK>1){
+        var lastM=-1;
+        ((d&&d.kplus_rows)||[]).forEach(function(r){ var mm=String(r.t||"").match(/(\d{2}):(\d{2})/); if(mm){ var v=(+mm[1])*60+(+mm[2]); if(v>lastM) lastM=v; } });
+        if(lastM>=0 && lastM<15*60){ kpart=true; out.parts.push({date:dt, amt:r2(gapK), last:("0"+Math.floor(lastM/60)).slice(-2)+":"+("0"+(lastM%60)).slice(-2)}); gapK=0; }
+      }
       var fks=(a.fks==null||a.fks==="")?null:num(a.fks);
       var gapB=0;
       if(fks!=null && d.bank_dep_total!=null) gapB=r2(fks-(num(d.bank_dep_total)-num(d.bank_kplus_settle)));
@@ -163,6 +171,43 @@
          (ฝั่ง K+ มีตัวหักนี้อยู่แล้ว ฝั่งบัญชีไม่มี เลยเตือนหลอกมาตลอด — 2 ก.ย.69)
          กันหักมั่ว 2 ชั้น: (ก) ต้องมีเงินเข้า "ยอดตรงกันเป๊ะ" ในสเตทเมนต์เมื่อวาน 1 รายการ (ไม่ใช่ K+ settle)
                           (ข) เมื่อวานต้องมีเงินเข้าเกินฟอร์มอย่างน้อยเท่ายอดนั้น = ยังไม่ถูกนับไปในวันเมื่อวาน */
+      /* หักรายการข้ามวัน (สูตรเดียวกับ kskDepAdj ใน index.html):
+         ฟอร์ม −มัดจำที่เข้าบัญชีวันก่อนแล้วมาออกบิลวันนี้ · สเตทเมนต์ −เงินเข้าวันนี้ของบิลเก่า/มัดจำที่การเงินจับคู่แล้ว */
+      if(gapB>1){
+        var _ks={}, _allB={}, _nb=0;
+        xf.forEach(function(x){ var b=String(x.bill||"").trim(); if(!b) return; _allB[b]=1; _nb++; if((+x.ksk||0)>0) _ks[b]=(_ks[b]||0)+(+x.ksk||0); });
+        var _pre=0;
+        deps.forEach(function(dp){
+          var rd=String(dp.received_date||"").slice(0,10); if(!rd||rd>=dt) return;
+          var b=String(dp.matched_bill_no||"").trim(); if(!b||!_ks[b]) return;
+          var used=(dp.used_amount!=null&&num(dp.used_amount)>0)?num(dp.used_amount):num(dp.amount);
+          _pre+=Math.min(used,_ks[b]);
+        });
+        var _oth=0;
+        if(_nb){
+          pendAll.forEach(function(pp){
+            if(String(pp.date||"").slice(0,10)!==dt) return;
+            if(pp.status!=="matched") return;
+            if(!/สเตทเมนต์|โอนเข้าตรง/.test(String(pp.ref||""))) return;
+            var mb=String(pp.matched_bill_no||"").trim(); if(!mb||/มัดจำ/.test(mb)) return;
+            for(var b1 in _allB){ if(mb.indexOf(b1)>=0) return; }
+            _oth+=num(pp.amount);
+          });
+          var _brs=((d&&d.bank_rows)||[]).filter(function(r){ return ((+r.dep||0)>0 && !r.kp); });
+          if(_brs.length){
+            deps.forEach(function(dp){
+              if(String(dp.received_date||"").slice(0,10)!==dt) return;
+              var a2=r2(num(dp.amount)); if(a2<=1) return;
+              if(!_brs.some(function(r){ return Math.abs((+r.dep||0)-a2)<=1; })) return;
+              var mb2=String(dp.matched_bill_no||"").trim(), own=false;
+              for(var b2 in _allB){ if(mb2&&mb2.indexOf(b2)>=0){ own=true; break; } }
+              _oth += own ? Math.max(0, r2(a2-num(dp.used_amount))) : a2;
+            });
+          }
+          gapB=r2(gapB-_pre+_oth);
+        } else { gapB=r2(gapB-_pre); }
+        if(gapB<=1) gapB=0;
+      }
       if(gapB>1){
         var pvb=shiftISO(dt,-1), pab=A[pvb], pdb=D[pvb];
         if(pab && pdb && pab.status!=="วันหยุด" && pdb.bank_dep_total!=null){
@@ -207,10 +252,11 @@
       /* เฉพาะช่องเล็กๆ ที่ต้องใช้ ไม่ดึง detail ทั้งก้อน (กัน egress บาน) */
       S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle,bank_rows").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
-      S.from("rev_pending").select("date,amount,source,ref,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31)))
+      S.from("rev_pending").select("date,amount,source,ref,status,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31))),
+      S.from("rev_deposits").select("amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61)))
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
-    var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[];
+    var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[], gDep=(q[8]&&q[8].data)||[];
 
     /* 1) เงินออกจากสเตทเมนต์ที่ยังไม่ได้ลงรายจ่าย — คีย์เดียวกับหน้าการเงินบริษัท */
     if(sees.exp){
@@ -301,7 +347,7 @@
         var k=String(x.date).slice(0,10);
         if(!cutB[b] || k<cutB[b]) cutB[b]=k;
       });
-      var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS), cutB);
+      var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS), cutB, gDep, gPend);
       if(gaps.length){
         gaps.sort(function(a,b){ return a.date<b.date?1:-1; });
         var gsum=r2(gaps.reduce(function(s,x){ return s+x.left; },0));
@@ -314,6 +360,16 @@
                    (x.k>1&&x.b>1?" (K+ "+TH(x.k)+" · บัญชี "+TH(x.b)+")":(x.b>1?" (ฝั่งบัญชี)":""))+(x.ov?' <span style="color:#b45309">· ข้ามด้วยเหตุผล</span>':'');
           }),
           raw:true, more:Math.max(0,gaps.length-5), btn:null, act:null });
+      }
+      if(gaps.parts && gaps.parts.length){
+        gaps.parts.sort(function(a,b){ return a.date<b.date?1:-1; });
+        out.push({ key:"kpart", icon:"⏳",
+          title:"รายงาน K+ ยังไม่ครบวัน "+gaps.parts.length+" วัน",
+          sub:"ยอดฟอร์มมากกว่ารายงานที่อัปไว้ — ยังตรวจส่วนต่างไม่ได้ (ไม่ใช่เงินหาย) · โหลดรายงาน K+ ให้ครบวันแล้วอัปทับ",
+          items:gaps.parts.slice(0,5).map(function(x){
+            return '<a href="javascript:void(0)" onclick="__bellGoDay(\''+x.date+'\')" style="color:#b45309;font-weight:700">'+beDate(x.date)+'</a> · รายงานมีถึง '+esc(x.last)+' น. · ต่าง '+TH(x.amt);
+          }),
+          raw:true, more:Math.max(0,gaps.parts.length-5), btn:null, act:null });
       }
     }catch(e){ console.warn("bell gap", e); }
 
@@ -351,6 +407,7 @@
     }catch(e){ console.warn("bell", e); }
   }
   window.__bellRefresh=run;
+  window.__bellGapDays=gapDays; /* hook สำหรับตรวจสอบ/ทดสอบ — เรียกด้วยข้อมูลจริงได้จาก console */
 
   /* รอ sb พร้อมก่อน (แต่ละหน้าสร้าง client คนละจังหวะ) */
   var tries=0;

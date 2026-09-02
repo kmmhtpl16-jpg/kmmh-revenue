@@ -159,6 +159,25 @@
       var fks=(a.fks==null||a.fks==="")?null:num(a.fks);
       var gapB=0;
       if(fks!=null && d.bank_dep_total!=null) gapB=r2(fks-(num(d.bank_dep_total)-num(d.bank_kplus_settle)));
+      /* ยอดยกมาข้ามวันฝั่งบัญชี — ลูกค้าโอนตอนเย็น/หลังปิดฟอร์ม เงินเข้าเมื่อวาน แต่แคชเชียร์ลงฟอร์มวันนี้
+         (ฝั่ง K+ มีตัวหักนี้อยู่แล้ว ฝั่งบัญชีไม่มี เลยเตือนหลอกมาตลอด — 2 ก.ย.69)
+         กันหักมั่ว 2 ชั้น: (ก) ต้องมีเงินเข้า "ยอดตรงกันเป๊ะ" ในสเตทเมนต์เมื่อวาน 1 รายการ (ไม่ใช่ K+ settle)
+                          (ข) เมื่อวานต้องมีเงินเข้าเกินฟอร์มอย่างน้อยเท่ายอดนั้น = ยังไม่ถูกนับไปในวันเมื่อวาน */
+      if(gapB>1){
+        var pvb=shiftISO(dt,-1), pab=A[pvb], pdb=D[pvb];
+        if(pab && pdb && pab.status!=="วันหยุด" && pdb.bank_dep_total!=null){
+          var pfks=(pab.fks==null||pab.fks==="")?null:num(pab.fks);
+          var psur=(pfks==null)?0:r2((num(pdb.bank_dep_total)-num(pdb.bank_kplus_settle))-pfks);
+          if(psur>1){
+            var brs=pdb.bank_rows||[];
+            for(var bi=0;bi<brs.length;bi++){
+              var br=brs[bi]; if(!br||br.kp) continue;
+              var bdp=+br.dep||0;
+              if(bdp>1 && Math.abs(bdp-gapB)<=1 && bdp<=r2(psur+1)){ gapB=0; break; }
+            }
+          }
+        }
+      }
       var gap=r2((gapK>1?gapK:0)+(gapB>1?gapB:0));
       if(gap<=1) return;
       var left=r2(gap-(flagged[dt]||0));
@@ -187,7 +206,7 @@
       sees.exp ? S.from("rev_bell_ignore").select("kind,exp_date,amount,ref,pattern") : Promise.resolve({data:[]}),
       /* เฉพาะช่องเล็กๆ ที่ต้องใช้ ไม่ดึง detail ทั้งก้อน (กัน egress บาน) */
       S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
-      S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
+      S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle,bank_rows").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_pending").select("date,amount,source,ref,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31)))
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];

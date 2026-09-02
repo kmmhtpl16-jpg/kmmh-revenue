@@ -126,6 +126,23 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     <div id="selbar" class="selbar hide"></div>
   </div>
 
+  <!-- รับชำระล่าสุด -->
+  <div class="card" id="payCard">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h3 style="margin:0">🧾 รับชำระล่าสุด</h3>
+      <div class="row">
+        <select id="payDays" onchange="loadPays()" style="max-width:140px">
+          <option value="7">7 วันล่าสุด</option>
+          <option value="30" selected>30 วันล่าสุด</option>
+          <option value="90">90 วันล่าสุด</option>
+        </select>
+        <input id="payQ" placeholder="🔍 ค้นชื่อลูกค้า/เลขบิล" style="max-width:190px" oninput="renderPays()">
+      </div>
+    </div>
+    <div class="muted" style="margin-top:4px">บิลที่จ่ายครบจะหายจากทะเบียนด้านบน — ดูย้อนหลังได้ที่นี่ · กดแถวเพื่อกางดูว่าปิดบิลไหนบ้าง</div>
+    <div id="payList" class="muted" style="margin-top:8px">กำลังโหลด…</div>
+  </div>
+
   <!-- เพิ่มบิลเอง -->
   <div class="card">
     <h3>➕ เพิ่มบิลลงบัญชีเอง</h3>
@@ -143,7 +160,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   <!-- ใบวางบิล (ACC-Billing) -->
   <div class="card">
     <h3>📄 ใบวางบิล (ACC-Billing)</h3>
-    <div class="muted" style="margin-bottom:8px">ออกจากบิลค้าง: เลือกบิลของลูกค้าในทะเบียนด้านบน แล้วกด “📄 ออกใบวางบิล” ในแถบล่าง · หรือสร้างเองด้านล่าง (กรณีไม่มีบิลในระบบ เช่น หนี้เก่า)</div>
+    <div class="muted" style="margin-bottom:8px"><b>ใช้เฉพาะตอนลูกค้าขอเอกสารไปตั้งเบิก</b> — การรับเงินปกติกด “💰 รับชำระรวม” ได้เลย ไม่ต้องออกใบนี้ก่อน<br>ออกจากบิลค้าง: เลือกบิลของลูกค้าในทะเบียนด้านบน แล้วกด “📄 ออกใบวางบิล” ในแถบล่าง · หรือสร้างเองด้านล่าง (กรณีไม่มีบิลในระบบ เช่น หนี้เก่า)<br>การ์ดนี้แสดง<b>ใบวางบิลที่ออกไว้</b>เท่านั้น — เงินที่รับเข้ามาดูที่การ์ด “🧾 รับชำระล่าสุด”</div>
     <div class="row" style="border-top:1px dashed var(--bd);padding-top:10px">
       <b style="font-size:13px">สร้างเอง (ไม่มีบิล):</b>
       <input id="bn_no" placeholder="เลขที่ใบวางบิล (ACC-Billing)" style="max-width:210px">
@@ -236,7 +253,69 @@ window.loadRegister=async function(){
   // เรียง: ค้างมากก่อน
   GROUPS.sort(function(a,b){ return b.remain-a.remain; });
   renderRegister();
+  loadPays();
 };
+
+/* ---------- รับชำระล่าสุด (จัดกลุ่มตามรหัสชุด = 1 ครั้งที่กดรับชำระ) ---------- */
+var PAYS=[];
+window.loadPays=async function(){
+  var box=document.getElementById("payList"); if(!box) return;
+  if(!sbReady()){ box.innerHTML='<span style="color:var(--red)">เชื่อม Supabase ไม่ได้</span>'; return; }
+  var d=parseInt((document.getElementById("payDays")||{}).value,10)||30;
+  var since=new Date(Date.now()-d*86400000).toISOString().slice(0,10);
+  var r=await sb.from("rev_credit_payments")
+    .select("id,bill_id,pay_date,amount,method,ref,billing_note_no,batch_ref,confirmed_by,rev_credit_bills(bill_no,customer,bill_date)")
+    .gte("pay_date",since).order("pay_date",{ascending:false});
+  if(r.error){ box.innerHTML='<span style="color:var(--red)">โหลดรายการรับชำระไม่ได้: '+esc(r.error.message)+'</span>'; return; }
+  PAYS=r.data||[];
+  renderPays();
+};
+function payGroups(){
+  var map={}, order=[];
+  PAYS.forEach(function(p){
+    var k=p.batch_ref||("one:"+p.id);
+    if(!map[k]){ map[k]={key:k, batch:p.batch_ref||"", date:p.pay_date, amt:0, items:[], methods:{}, by:p.confirmed_by||"", note:p.billing_note_no||"", ref:p.ref||"", cust:""}; order.push(k); }
+    var g=map[k];
+    g.amt+=num(p.amount); g.items.push(p);
+    if(p.method) g.methods[p.method]=1;
+    if(!g.cust && p.rev_credit_bills && p.rev_credit_bills.customer) g.cust=p.rev_credit_bills.customer;
+    if(!g.by && p.confirmed_by) g.by=p.confirmed_by;
+    if(!g.note && p.billing_note_no) g.note=p.billing_note_no;
+    if(!g.ref && p.ref) g.ref=p.ref;
+    if(String(p.pay_date)<String(g.date)) g.date=p.pay_date;
+  });
+  return order.map(function(k){ var g=map[k]; g.amt=Math.round(g.amt*100)/100; return g; });
+}
+window.renderPays=function(){
+  var box=document.getElementById("payList"); if(!box) return;
+  var q=String((document.getElementById("payQ")||{}).value||"").toLowerCase().replace(/[\s\-_./]/g,"");
+  var gs=payGroups();
+  if(q) gs=gs.filter(function(g){
+    if(String(g.cust||"").toLowerCase().replace(/[\s\-_./]/g,"").indexOf(q)>=0) return true;
+    return g.items.some(function(p){ var b=p.rev_credit_bills||{};
+      return String(b.bill_no||"").toLowerCase().replace(/[\s\-_./]/g,"").indexOf(q)>=0
+          || String(b.customer||"").toLowerCase().replace(/[\s\-_./]/g,"").indexOf(q)>=0; }); });
+  if(!gs.length){ box.innerHTML='<div class="muted">'+(q?'ไม่พบรายการรับชำระที่ตรงกับที่ค้น':'ยังไม่มีการรับชำระในช่วงนี้')+'</div>'; return; }
+  var tot=Math.round(gs.reduce(function(s,g){return s+g.amt;},0)*100)/100;
+  var h='<div class="muted" style="margin-bottom:6px">'+gs.length+' ครั้ง · รวมรับ <b style="color:var(--g2)">'+fmt(tot)+'</b> บาท</div>';
+  h+='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="n">ยอดรับ</th><th>ช่องทาง</th><th>ผู้รับเงิน</th><th>อ้างอิง</th></tr></thead><tbody>';
+  gs.forEach(function(g,i){
+    var ms=Object.keys(g.methods).join(", ");
+    h+='<tr style="cursor:pointer" onclick="togglePayGrp('+i+')"><td>▸ '+beDate(g.date)+'</td>'+
+       '<td>'+esc(g.cust||"—")+' <span class="muted">('+g.items.length+' บิล)</span></td>'+
+       '<td class="n" style="color:var(--g2);font-weight:700">'+fmt(g.amt)+'</td>'+
+       '<td>'+esc(ms)+'</td><td>'+esc(g.by||"—")+'</td>'+
+       '<td class="muted">'+esc(g.note?("ใบวางบิล "+g.note):(g.ref||g.batch||"—"))+'</td></tr>';
+    h+='<tr id="pg_'+i+'" class="hide"><td colspan="6" style="background:#f8fafc">'+
+       '<table><thead><tr><th>เลขบิล</th><th>วันที่บิล</th><th class="n">ปิดไป</th></tr></thead><tbody>'+
+       g.items.map(function(p){ var b=p.rev_credit_bills||{};
+         return '<tr><td>'+esc(b.bill_no||"—")+'</td><td>'+beDate(b.bill_date)+'</td><td class="n">'+fmt(p.amount)+'</td></tr>'; }).join("")+
+       '</tbody></table>'+(g.batch?'<div class="muted" style="margin-top:4px">รหัสชุด '+esc(g.batch)+'</div>':'')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  box.innerHTML=h;
+};
+window.togglePayGrp=function(i){ var d=document.getElementById("pg_"+i); if(d) d.classList.toggle("hide"); };
 
 function renderRegister(){
   var reg=document.getElementById("reg");
@@ -333,7 +412,11 @@ function renderSelBar(){
   bar.innerHTML='<span style="font-weight:700">🧾 เลือก '+ids.length+' บิล · '+esc(cust)+' · รวมคงเหลือ '+fmt(tot)+' บาท</span>'+
     '<button class="btn" style="margin-left:auto" onclick="payCombined()">💰 รับชำระรวม (บิลเก่าก่อน)</button>'+
     '<button class="btn blu" onclick="issueNoteFromSel()">📄 ออกใบวางบิล</button>'+
-    '<button class="btn ghost" onclick="clearSel()">ล้างการเลือก</button>';
+    '<button class="btn ghost" onclick="clearSel()">ล้างการเลือก</button>'+
+    '<div class="muted" style="flex-basis:100%;margin-top:2px;line-height:1.55">'+
+      '<b style="color:#166534">💰 รับชำระรวม</b> = ลูกค้าจ่ายเงินมาแล้ว กดได้เลย <b>ไม่ต้องออกใบวางบิลก่อน</b>'+
+      ' &nbsp;·&nbsp; <b style="color:#1d4ed8">📄 ออกใบวางบิล</b> = เฉพาะตอนลูกค้าขอเอกสารไปตั้งเบิก (ยังไม่ใช่การรับเงิน)'+
+    '</div>';
 }
 
 /* ---------- รับชำระรวม FIFO + batch ref + เลขที่ใบวางบิล ---------- */

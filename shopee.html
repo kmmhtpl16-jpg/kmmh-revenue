@@ -118,6 +118,20 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .tab{padding:6px 12px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#374151}
 .tab.on{background:var(--o);color:#fff;border-color:var(--o)}
+/* 🔍 การ์ดค้นหาออเดอร์/เลขบิล */
+#findCard{border-left:4px solid var(--blu)}
+#findQ{font-size:15px;padding:9px 12px;flex:1 1 260px;min-width:200px}
+.fhit{cursor:pointer}
+.fhit:hover{background:#f8fafc}
+.fhit.on{background:#eff6ff}
+.fdet{border:1px solid var(--bd);border-radius:11px;padding:12px;margin-top:10px;background:#fcfcfd}
+.fhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+.fgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:13px;align-items:baseline}
+.fk{color:var(--mut);font-size:12.5px}
+.fv{font-weight:600;color:#1c1917;font-variant-numeric:tabular-nums}
+.fv.big{font-size:15.5px;font-weight:800;color:var(--g2)}
+.fv.red{color:var(--red)}
+@media(max-width:520px){.fgrid{grid-template-columns:1fr;gap:0}.fk{margin-top:7px}}
 </style>
 </head>
 <body>
@@ -169,6 +183,17 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   </div>
 
   <div id="dash" class="hide">
+    <!-- 🔍 ค้นหารายออเดอร์ — ไม่มี class r-fin โดยตั้งใจ: พนักงาน Shopee ต้องเช็คออเดอร์เองได้
+         ค้นทุกเดือนเสมอ (ไม่ผูกกับ monthPick) เพราะลูกค้าโทรถามบิลเก่าข้ามเดือนบ่อย -->
+    <div class="card" id="findCard">
+      <h3>🔍 ค้นหาออเดอร์ / เลขบิล</h3>
+      <div class="row">
+        <input id="findQ" placeholder="พิมพ์เลขออเดอร์ Shopee · เลขบิล KM… · ชื่อลูกค้า" autocomplete="off" oninput="findRun()">
+        <button class="btn ghost sm" onclick="findClear()">✕ ล้าง</button>
+      </div>
+      <div class="muted" style="margin-top:6px">ค้นทุกเดือน (ไม่ขึ้นกับเดือนที่เลือกด้านล่าง) · พิมพ์บางส่วนก็เจอ เช่น 4 ตัวท้ายของเลขออเดอร์</div>
+      <div id="findBox"></div>
+    </div>
     <div class="card">
       <div class="row" style="justify-content:space-between">
         <h3 style="margin:0">2) สรุป <select id="monthPick" onchange="render()" style="margin-left:6px"></select></h3>
@@ -799,6 +824,7 @@ function render(){
   var _kp=document.getElementById("kPack"); if(_kp) _kp.textContent=fmt(_cost);
   renderAlerts();
   renderPay(rows,all); renderFee(rows); renderPack(rows,m,retCount); renderPnl(rows,m,retCount); renderRtn();
+  findRun();
   if(!_creditBoot && (ROLE==="finance"||ROLE==="owner")){ _creditBoot=true; setTimeout(function(){ creditSync(false); },300); }
 }
 var _creditBoot=false;
@@ -1268,6 +1294,116 @@ function renderPnl(rows,m,retCount){
   document.getElementById("pnlBox").innerHTML=h;
 }
 
+/* ===== 🔍 ค้นหาออเดอร์ / เลขบิล =====
+   ค้นจาก ALL ทั้งก้อน (ทุกเดือน) — เลขออเดอร์ / เลขบิล acc-billing / ชื่อลูกค้า
+   เจอใบเดียว = กางรายละเอียดเลย · เจอหลายใบ = ตารางให้กดเลือก */
+var _findSel=null;
+function findNorm(s){ return String(s==null?"":s).toUpperCase().replace(/\s+/g," ").trim(); }
+function findClear(){ var e=document.getElementById("findQ"); if(e){ e.value=""; e.focus(); } _findSel=null; findRun(); }
+function findHits(q){
+  var k=findNorm(q); if(k.length<2) return null;
+  var hits=(ALL||[]).filter(function(o){
+    return findNorm(o.order_no).indexOf(k)>=0 || findNorm(o.bill_no).indexOf(k)>=0 || findNorm(o.buyer).indexOf(k)>=0;
+  });
+  return hits.sort(function(a,b){
+    var ea=(findNorm(a.order_no)===k||findNorm(a.bill_no)===k)?0:1;
+    var eb=(findNorm(b.order_no)===k||findNorm(b.bill_no)===k)?0:1;
+    if(ea!==eb) return ea-eb;
+    return String(b.bill_date||b.order_date||"").localeCompare(String(a.bill_date||a.order_date||""));
+  });
+}
+function findMoneyChip(o){
+  if(o.return_status&&!isPartial(o)) return '<span class="chip gray">↩ '+esc(retLabel(o))+'</span>';
+  if(o.paid) return '<span class="chip ok">💰 รับเงินแล้ว</span>';
+  var d=daysSince(o.order_date||o.bill_date);
+  return '<span class="chip '+(d>ALERT_LATE_DAYS?"warn":"amb")+'">รอเงิน '+d+' วัน</span>';
+}
+function findPick(no){ _findSel=String(no); findRun(); }
+function findGoRtn(no){
+  var o=findOrd(no), sel=document.getElementById("monthPick");
+  if(o&&sel&&sel.value!=="ALL"&&!inMonth(o,sel.value)){ sel.value="ALL"; render(); }
+  goRtn(no);
+}
+function fRow(k,v,cls){ return '<div class="fk">'+k+'</div><div class="fv'+(cls?" "+cls:"")+'">'+v+'</div>'; }
+function findDetail(o){
+  var no=String(o.order_no).replace(/'/g,""), part=isPartial(o), ret=!!o.return_status&&!part;
+  var d=daysSince(o.order_date||o.bill_date), dBill=daysSince(o.bill_date||o.order_date), miss=orderMiss(o);
+  var h='<div class="fdet"><div class="fhd"><span class="ono" style="font-size:14.5px;font-weight:700">'+esc(o.order_no)+'</span> '+
+    findMoneyChip(o)+(part?' <span class="chip amb">↩ คืนบางส่วน</span>':'')+'</div>';
+  var w=[];
+  if(o.paid&&miss>0.5&&!ret) w.push((miss>=ALERT_CLAWBACK_MIN||num(o.payout_net)<=0)
+      ?'💸 Shopee ดึงเงินคืน '+fmt(miss)+' บาท แต่ยังไม่ได้ติ๊กตีกลับ'
+      :'📉 เงินโอนเข้าไม่ครบ ขาดอยู่ '+fmt(miss)+' บาท');
+  if(o.paid&&!o.billed&&!ret) w.push('🧾 จ่ายเงินแล้ว แต่ยังไม่ได้ออกบิล acc-billing');
+  if(o.billed&&!o.paid&&!ret&&dBill>ALERT_LATE_DAYS) w.push('⏰ ออกบิล/ส่งของแล้ว '+dBill+' วัน Shopee ยังไม่จ่าย');
+  if(part&&!cnDone(o)) w.push('↩ คืนบางส่วน '+fmt(retAmt(o))+' บาท แต่บิลลูกหนี้ยังเป็นยอดเต็ม (ยังไม่ออกใบลดหนี้)');
+  if(ret&&!o.paid&&o.billed&&!cnDone(o)) w.push('👻 ตีกลับ/เคลมแล้ว Shopee ไม่จ่าย แต่ยังค้างเป็นลูกหนี้');
+  h+=w.length?'<div class="note" style="margin:9px 0">'+w.map(function(x){return "• "+x;}).join("<br>")+'</div>'
+             :'<div class="okbox" style="margin:9px 0">✓ ออเดอร์นี้ไม่มีเรื่องต้องตาม</div>';
+  h+='<div class="fgrid">';
+  h+=fRow("วันสั่ง",beDate(o.order_date));
+  h+=fRow("ลูกค้า",esc(o.buyer||"—"));
+  h+=fRow("สถานะส่ง",esc(o.ship_status||"—"));
+  h+=fRow("เลขบิล", o.bill_no
+      ? esc(o.bill_no)+' <span class="muted">(วันบิล '+beDate(o.bill_date)+')</span>'
+      : '<span class="chip warn">ยังไม่ออกบิล</span>'+(canCN()?' <button class="pen" title="ออกบิลเอง (กรอกเลขบิล acc-billing)" onclick="openBill(\''+no+'\')">✏️</button>':''));
+  h+=fRow("ยอดขาย", part
+      ? fmt(effSale(o))+' <span class="muted">(เต็ม '+fmt(origSale(o))+' − คืน '+fmt(retAmt(o))+')</span>'
+      : fmt(effSale(o)));
+  if(o.paid){
+    h+=fRow("วันเงินเข้า",beDate(o.payout_date));
+    var f=Math.abs(num(o.payout_fee)), sl=effSale(o);
+    h+=fRow("ค่าธรรมเนียมที่ถูกหัก",fmt(f)+(sl?' <span class="muted">('+(f/sl*100).toFixed(1)+'% ของยอดขาย)</span>':''));
+    h+=fRow("โอนเข้าจริง",fmt(num(o.payout_net)),"big");
+    if(miss>0.5) h+=fRow("หักเกิน / ดึงคืน",fmt(miss),"red");
+    else if(miss<-0.5) h+=fRow("ได้คืนเพิ่ม",fmt(-miss));
+  } else if(!ret){
+    h+=fRow("สถานะเงิน","ยังไม่ได้รับ — รอมาแล้ว "+d+" วัน", d>ALERT_LATE_DAYS?"red":"");
+    h+=fRow("ค่าธรรมเนียม (ประมาณ)",fmt(Math.abs(num(effFee(o)))));
+    h+=fRow("คาดว่าจะได้รับ",fmt(effRevenue(o)));
+  }
+  if(o.return_status){
+    h+=fRow("ตีกลับ/ยกเลิก",esc(retLabel(o))+' <span class="muted">'+beDate(o.return_date)+'</span>');
+    h+=fRow("ของที่คืน",esc(retQtyText(o))+(retAmt(o)?' · '+fmt(retAmt(o))+' บาท':''));
+  }
+  if(o.note) h+=fRow("โน้ต",esc(o.note));
+  h+='</div>';
+  var pr=o.products;
+  if(pr&&pr.length) h+='<div class="muted" style="margin-top:9px">สินค้าในบิล: '+pr.map(function(p){
+      return esc(p.name||p.code||"สินค้า")+" ×"+num(p.qty); }).join(" · ")+'</div>';
+  h+='<div class="row" style="margin-top:11px">';
+  if(!o.bill_no&&canCN()) h+='<button class="btn sm" onclick="openBill(\''+no+'\')">✏️ ออกบิลเอง</button>';
+  h+='<button class="btn sm ghost" onclick="findGoRtn(\''+no+'\')">↩ ไปหน้าตีกลับ/ยกเลิก</button>';
+  h+='</div></div>';
+  return h;
+}
+function findRun(){
+  var box=document.getElementById("findBox"); if(!box) return;
+  var q=((document.getElementById("findQ")||{}).value||"");
+  var hits=findHits(q);
+  if(hits===null){ _findSel=null;
+    box.innerHTML=q.trim()?'<div class="muted" style="margin-top:8px">พิมพ์อย่างน้อย 2 ตัวอักษร</div>':"";
+    return; }
+  if(!hits.length){ _findSel=null;
+    box.innerHTML='<div class="errbox" style="margin-top:9px">ไม่พบออเดอร์ที่ตรงกับ “'+esc(q.trim())+'”'+
+      '<div style="font-weight:400;margin-top:3px">ลองพิมพ์เลขบางส่วน · ถ้าเป็นออเดอร์ใหม่มาก อาจยังไม่ได้อัปไฟล์เข้าระบบ</div></div>';
+    return; }
+  var sel=(hits.length===1)?hits[0]:hits.filter(function(o){return String(o.order_no)===_findSel;})[0]||null;
+  var h="";
+  if(hits.length>1){
+    h+='<div class="muted" style="margin:9px 0 5px">เจอ '+hits.length+' ออเดอร์'+(hits.length>60?" (แสดง 60 ใบแรก)":"")+' — กดแถวเพื่อดูรายละเอียด</div>'+
+      '<div style="overflow:auto;max-height:330px"><table><thead><tr><th>ออเดอร์</th><th>วันสั่ง</th><th>ลูกค้า</th><th>บิล</th><th class="n">ยอดขาย</th><th>เงิน</th></tr></thead><tbody>';
+    hits.slice(0,60).forEach(function(o){
+      var no=String(o.order_no).replace(/'/g,"");
+      h+='<tr class="fhit'+(String(o.order_no)===_findSel?" on":"")+'" onclick="findPick(\''+no+'\')">'+
+        '<td><span class="ono">'+esc(o.order_no)+'</span></td><td>'+beDate(o.order_date)+'</td><td>'+esc(o.buyer||"—")+'</td><td>'+
+        (o.bill_no?esc(o.bill_no):'<span class="chip warn">ยังไม่ออกบิล</span>')+'</td><td class="n">'+fmt(effSale(o))+'</td><td>'+findMoneyChip(o)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  if(sel) h+=findDetail(sel);
+  box.innerHTML=h;
+}
 function tab(t){ if(!canSee(t)) t="pack"; CURTAB=t; document.querySelectorAll(".tab").forEach(function(e){e.classList.toggle("on",e.getAttribute("data-t")===t);});
   ["pay","fee","pack","pnl","rtn"].forEach(function(x){ document.getElementById("tab_"+x).classList.toggle("hide",x!==t); }); }
 window.pushToFinance=async function(){

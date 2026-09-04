@@ -118,6 +118,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .tab{padding:6px 12px;border-radius:999px;border:1px solid var(--bd);background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#374151}
 .tab.on{background:var(--o);color:#fff;border-color:var(--o)}
+/* แถบเปลี่ยนหน้าในกลุ่มธงเตือน */
+.apgnav{display:flex;gap:10px;align-items:center;justify-content:center;padding:8px 10px;border-top:1px solid var(--bd);background:#fafafa;flex-wrap:wrap}
+.apgnav .btn{padding:4px 12px}
+.apgnav .btn:disabled{opacity:.35;cursor:not-allowed}
+.apgl{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums;min-width:170px;text-align:center}
 /* 🔍 การ์ดค้นหาออเดอร์/เลขบิล */
 #findCard{border-left:4px solid var(--blu)}
 #findQ{font-size:15px;padding:9px 12px;flex:1 1 260px;min-width:200px}
@@ -281,7 +286,7 @@ function sbReady(){ return !!sb; }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
 function num(v){ if(v==null) return 0; if(typeof v==="number") return isNaN(v)?0:v; var n=parseFloat(String(v).replace(/[, ฿]/g,"")); return isNaN(n)?0:n; }
 function r2(n){ return Math.round(num(n)*100)/100; }
-function fmt(n){ return r2(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmt(n){ var v=r2(n); if(v===0) v=0; /* กัน -0.00 โผล่ */ return v.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function pad2(n){ return String(n).padStart(2,"0"); }
 function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
 function beDate(s){ if(!s) return "—"; var p=String(s).slice(0,10).split("-"); if(p.length<3) return s; return p[2]+"/"+p[1]+"/"+(parseInt(p[0],10)+543); }
@@ -346,6 +351,13 @@ function parseAcc(wb){
 }
 // payout (โอนเงินสำเร็จ)
 var P_FEE=["ค่าคอมมิชชั่น AMS","ค่าคอมมิชชั่น","ค่าบริการ","ค่าธรรมเนียมโครงสร้างพื้นฐานแพลตฟอร์ม","ค่าธรรมเนียม ของโปรแกรมประหยัดค่าจัดส่ง","ค่าธุรกรรมการชำระเงิน","ภาษี","ค่าธรรมเนียมเติมเงินโฆษณาจากเงิน Escrow"];
+/* 🔑 สูตรที่ Shopee ใช้จริง (ตรวจกับไฟล์รายรับ 652 ใบ ตรงทั้ง 652):
+   เงินโอนเข้า = ยอดขาย + ค่าส่งสุทธิ + คืนเงินลูกค้า + ค่าธรรมเนียม + อื่นๆ
+   เดิมเก็บแค่ค่าธรรมเนียม 8 ช่อง เลยเหมาว่า "ส่วนที่เหลือ = โดนหักเกิน" → เตือนหลอกทุกใบที่ร้านออกค่าส่งเอง */
+var P_SHIP=["ค่าจัดส่งที่ชำระโดยผู้ซื้อ","ค่าจัดส่งสินค้าที่ออกโดย Shopee","ค่าจัดส่งที่ Shopee ชำระโดยชื่อของคุณ","ค่าจัดส่งสินค้าคืน","ค่าจัดส่งสินค้าคืนผู้ขาย","โปรแกรมประหยัดค่าจัดส่งคืนสินค้า","โปรโมชั่นค่าจัดส่งจากผู้ขาย"];
+var P_REFUND="จำนวนเงินที่ทำการคืนให้ผู้ซื้อ";
+var P_SHIPCOST="ค่าจัดส่งที่ Shopee ชำระโดยชื่อของคุณ";  /* ค่าส่งจริงที่ขนส่งคิด (ติดลบ) */
+var P_OTHER=["ส่วนลดสินค้าจากผู้ขาย","ส่วนลดสินค้าที่ออกโดย Shopee","โค้ดส่วนลดที่ออกโดยผู้ขาย","โค้ดส่วนลดร่วมที่ออกโดยผู้ขาย","Coins Cashback ที่สนับสนุนโดยผู้ขาย","Coins Cashback ร่วมที่สนับสนุนโดยผู้ขาย","ค่าบริการติดตั้งที่ชำระโดยผู้ซื้อ","ค่าบริการติดตั้งจริงจากผู้ให้บริการ","โบนัสส่วนลดเครื่องเก่าแลกใหม่จากผู้ขาย","ค่าชดเชยที่หายไป"];
 function parsePayout(wb){
   var ws=null,rows=null,hi=-1,hdr=null;
   for(var s=0;s<wb.SheetNames.length;s++){ var w=wb.Sheets[wb.SheetNames[s]],rr=rowsOf(w);
@@ -354,10 +366,13 @@ function parsePayout(wb){
   if(!ws) throw new Error("ไฟล์รายรับ: ไม่พบหัวตาราง 'หมายเลขคำสั่งซื้อ'");
   var io=hdr.indexOf("หมายเลขคำสั่งซื้อ"),it=hdr.indexOf("วันที่โอนชำระเงินสำเร็จ"),iod=hdr.indexOf("วันที่ทำการสั่งซื้อ"),inet=hdr.indexOf("จำนวนเงินทั้งหมดที่โอนแล้ว (฿)"),inorm=hdr.indexOf("สินค้าราคาปกติ");
   var fi=P_FEE.map(function(n){return hdr.indexOf(n);}).filter(function(k){return k>=0;});
+  var si=P_SHIP.map(function(n){return hdr.indexOf(n);}).filter(function(k){return k>=0;});
+  var oi=P_OTHER.map(function(n){return hdr.indexOf(n);}).filter(function(k){return k>=0;});
+  var iref=hdr.indexOf(P_REFUND), isc=hdr.indexOf(P_SHIPCOST);
   var out=[];
   for(var r=hi+1;r<rows.length;r++){ var row=rows[r]||[],o=row[io]; if(!o||!/^[0-9A-Z]{10,}$/.test(String(o).trim())) continue;
     var fee=fi.reduce(function(a,k){return a+num(row[k]);},0);
-    out.push({order_no:String(o).trim().toUpperCase(),paid:true,order_date:(iod>=0?cellDate(row[iod]):null),payout_date:cellDate(row[it]),payout_net:r2(num(row[inet])),payout_fee:r2(fee),sale_amount:r2(num(row[inorm]))});
+    out.push({order_no:String(o).trim().toUpperCase(),paid:true,order_date:(iod>=0?cellDate(row[iod]):null),payout_date:cellDate(row[it]),payout_net:r2(num(row[inet])),payout_fee:r2(fee),sale_amount:r2(num(row[inorm])),payout_ship:r2(si.reduce(function(a,k){return a+num(row[k]);},0)),payout_refund:r2(iref>=0?num(row[iref]):0),payout_other:r2(oi.reduce(function(a,k){return a+num(row[k]);},0)),payout_ship_cost:r2(isc>=0?num(row[isc]):0)});
   }
   return out;
 }
@@ -802,12 +817,17 @@ function render(){
      "นับออเดอร์เข้าเดือนตามวันที่ acc-billing ออกบิล (ไม่ใช่วันที่ลูกค้าสั่ง) — เกณฑ์เดียวกับการ์ด Shopee บน Dashboard และหน้าลูกหนี้"],
     retRows.length?["รวมตีกลับ / เคลม",fmt(retSale)]:null,
     ["ค่าธรรมเนียมทั้งเดือน",fmt(feeBasket)+(sale>0?" ("+(feeBasket/sale*100).toFixed(1)+"%)":"")] ]);
+  var shipOutT=paidRows.reduce(function(s,o){return s+payShipOut(o);},0);
+  var refOutT=paidRows.reduce(function(s,o){return s+payRefundOut(o);},0);
+  var othOutT=r2(paidOther-shipOutT-refOutT);
   document.getElementById("kPaid").textContent=fmt(paidGross);
   _sub("kPaidSub",[
     ["จำนวนออเดอร์",paidRows.length+" ใบ"],
     ["− ค่าธรรมเนียม",fmt(feeReal)],
-    paidOther>0.5?["− หักอื่น (ค่าส่ง/คืนเงิน)",fmt(paidOther)]:
-      (paidOther<-0.5?["+ ได้คืน (ส่วนลดค่าส่ง ฯลฯ)",fmt(-paidOther)]:null),
+    shipOutT>0.5?["− ค่าส่งที่ร้านออกเอง",fmt(shipOutT),"",
+      "ค่าส่งจริงที่ขนส่งคิด มากกว่าที่ลูกค้าจ่าย+Shopee ช่วย — เป็นต้นทุนปกติ ไม่ใช่การหักเกิน"]:null,
+    refOutT>0.5?["− คืนเงินลูกค้า",fmt(refOutT),"warn"]:null,
+    Math.abs(othOutT)>0.5?[(othOutT>0?"− หักอื่น":"+ ได้คืนเพิ่ม"),fmt(Math.abs(othOutT)),"warn"]:null,
     ["= โอนเข้าจริง",fmt(paidNet),"sum"] ]);
   document.getElementById("kWait").textContent=fmt(waitGross);
   _sub("kWaitSub",[
@@ -847,6 +867,19 @@ function orderMiss(o){
   if(!o.paid||o.payout_fee==null||o.payout_net==null) return 0;
   return r2(effSale(o)-Math.abs(num(o.payout_fee))-num(o.payout_net));
 }
+/* ---- แยก "ส่วนที่หายไปนอกเหนือค่าธรรมเนียม" ออกเป็นก้อนที่เรียกชื่อได้ ----
+   ยึด effSale (ยอดที่ทั้งหน้าใช้) เป็นตัวตั้ง → ค่าธรรมเนียม+ค่าส่ง+คืนเงิน+อื่นๆ บวกกลับแล้ว = เงินเข้าจริงเป๊ะ
+   ออเดอร์เก่าที่ยังไม่มี payout_ship (ยังไม่ได้อัปไฟล์รายรับหลังอัปเดตนี้) → ยกทั้งก้อนไปเป็น "หักอื่น" */
+function payKnown(o){ return !!o.paid && o.payout_ship!=null; }
+function payShipOut(o){ return payKnown(o)?r2(-num(o.payout_ship)):0; }
+function payRefundOut(o){ if(!payKnown(o)) return 0;
+  var r=r2(-num(o.payout_refund));
+  if(isPartial(o)) r=r2(r-retAmt(o));   /* effSale หักยอดที่คืนไปแล้ว ห้ามหักซ้ำ */
+  return r; }
+function payOtherOut(o){ return r2(orderMiss(o)-payShipOut(o)-payRefundOut(o)); }
+/* ค่าส่ง: จ่ายจริงเท่าไร ได้มาเท่าไร (ได้มา = ค่าส่งสุทธิ − ค่าส่งจริง) */
+function shipCost(o){ return o.payout_ship_cost!=null?Math.abs(num(o.payout_ship_cost)):null; }
+function shipGot(o){ var c=shipCost(o); return c==null?null:r2(num(o.payout_ship)-num(o.payout_ship_cost)); }
 function goRtn(no){
   var e=document.getElementById("rtnQ"); if(e) e.value=no;
   tab("rtn"); if(window.renderRtn) renderRtn();
@@ -885,22 +918,60 @@ async function creditNote(orderNo,amt,why){
   alert("✅ ออกใบลดหนี้แล้ว\nบิล "+o.bill_no+"  "+fmt(oldT)+" → "+fmt(newT)+"  ("+st+")");
   reload();
 }
+/* กลุ่มธงเตือน — แสดงหน้าละ 10 แถว มีปุ่มเปลี่ยนหน้า (คุณหลิงเคาะ 4 ก.ย.69)
+   ทุกหน้าถูกวาดลง DOM ไว้แล้ว การกดเปลี่ยนหน้าแค่สลับซ่อน/แสดง → ไม่ต้องวาดใหม่
+   กลุ่มที่เปิดค้างไว้จึงไม่หุบเวลากดเปลี่ยนหน้า */
+var AGRP_PER=10, _agrpSeq=0;
 function aGrp(cls,icon,title,todo,head,rows,amount,open){
   if(!rows.length) return "";
+  var key="ag"+(_agrpSeq++), pages=Math.ceil(rows.length/AGRP_PER), body="";
+  for(var p=0;p<pages;p++){
+    body+='<tbody class="apg" data-g="'+key+'" data-p="'+p+'"'+(p?' style="display:none"':'')+'>'+
+      rows.slice(p*AGRP_PER,(p+1)*AGRP_PER).join("")+'</tbody>';
+  }
+  var nav=pages>1?'<div class="apgnav" data-total="'+rows.length+'" data-pages="'+pages+'">'+
+    '<button class="btn ghost sm" id="prev_'+key+'" disabled onclick="aPage(\''+key+'\',-1)">‹ ก่อนหน้า</button>'+
+    '<span class="apgl" id="lbl_'+key+'">หน้า 1/'+pages+' · ใบที่ 1–'+Math.min(AGRP_PER,rows.length)+' จาก '+rows.length+'</span>'+
+    '<button class="btn ghost sm" id="next_'+key+'" onclick="aPage(\''+key+'\',1)">ถัดไป ›</button></div>':'';
   return '<details class="agrp '+cls+'"'+(open?" open":"")+'><summary>'+icon+" "+title+
     '<span class="n">'+rows.length+" ใบ"+(amount?" · "+fmt(amount)+" บาท":"")+"</span></summary>"+
     '<div class="todo">👉 <b>ต้องทำ:</b> '+todo+"</div>"+
     '<div style="overflow:auto"><table><thead><tr><th>'+head.join("</th><th>")+
-    "</th></tr></thead><tbody>"+rows.join("")+"</tbody></table></div></details>";
+    "</th></tr></thead>"+body+"</table></div>"+nav+"</details>";
 }
+function aPage(key,dir){
+  var tb=Array.prototype.slice.call(document.querySelectorAll('tbody.apg[data-g="'+key+'"]'));
+  if(tb.length<2) return;
+  var cur=0; tb.forEach(function(e,i){ if(e.style.display!=="none") cur=i; });
+  var nx=Math.min(tb.length-1,Math.max(0,cur+dir));
+  if(nx===cur) return;
+  tb.forEach(function(e,i){ e.style.display=(i===nx)?"":"none"; });
+  var lbl=document.getElementById("lbl_"+key), nav=lbl&&lbl.parentNode;
+  if(nav){ var total=num(nav.getAttribute("data-total")), pages=tb.length;
+    lbl.textContent="หน้า "+(nx+1)+"/"+pages+" · ใบที่ "+(nx*AGRP_PER+1)+"–"+Math.min((nx+1)*AGRP_PER,total)+" จาก "+total; }
+  var pv=document.getElementById("prev_"+key), nt=document.getElementById("next_"+key);
+  if(pv) pv.disabled=(nx===0);
+  if(nt) nt.disabled=(nx===tb.length-1);
+  var d=tb[0].closest?tb[0].closest("details"):null;
+  if(d&&d.scrollIntoView) d.scrollIntoView({block:"nearest"});
+}
+window.aPage=aPage;
 function renderAlerts(){
   var box=document.getElementById("alertBox"); if(!box) return;
+  _agrpSeq=0;
   var claw=[],short=[],unbill=[],late=[], sClaw=0,sShort=0,sUnbill=0,sLate=0;
   (ALL||[]).filter(alertInScope).forEach(function(o){
     var miss=orderMiss(o), ret=!!o.return_status;
-    if(o.paid&&miss>0.5&&!ret){
-      if(miss>=ALERT_CLAWBACK_MIN||num(o.payout_net)<=0){ claw.push({o:o,m:miss}); sClaw+=miss; }
-      else { short.push({o:o,m:miss}); sShort+=miss; }
+    if(o.paid&&!ret){
+      if(payKnown(o)){
+        /* คืนเงินลูกค้า = สัญญาณจริงว่าต้องติ๊กตีกลับ · ค่าส่งที่ร้านออกเองไม่ใช่ปัญหา ไม่ต้องขึ้นธง */
+        var _rf=payRefundOut(o); if(_rf>0.5){ claw.push({o:o,m:_rf}); sClaw+=_rf; }
+        var _ot=payOtherOut(o); if(Math.abs(_ot)>0.5){ short.push({o:o,m:_ot}); sShort+=_ot; }
+      } else if(miss>0.5){
+        /* ยังไม่มีรายละเอียดค่าส่ง/คืนเงิน (ไฟล์รายรับเก่า) — ใช้เกณฑ์เดิมไปก่อน */
+        if(miss>=ALERT_CLAWBACK_MIN||num(o.payout_net)<=0){ claw.push({o:o,m:miss}); sClaw+=miss; }
+        else { short.push({o:o,m:miss}); sShort+=miss; }
+      }
     }
     if(o.paid&&!o.billed&&!ret){ unbill.push({o:o}); sUnbill+=effSale(o); }
     if(o.billed&&!o.paid&&!ret){ var d=daysSince(o.bill_date||o.order_date);
@@ -911,9 +982,9 @@ function renderAlerts(){
   var cu=function(o){ return esc(o.buyer||"—"); };
 
   var h="";
-  h+=aGrp("red","💸","Shopee ดึงเงินคืน แต่ยังไม่ได้ติ๊กตีกลับ",
+  h+=aGrp("red","💸","Shopee คืนเงินให้ลูกค้าแล้ว แต่ยังไม่ได้ติ๊กตีกลับ",
     "เช็คว่าของกลับมาถึงร้านหรือยัง แล้วกดติ๊กสถานะในแท็บ ↩ ตีกลับ/ยกเลิก (กดปุ่มขวาสุดเพื่อไปที่ออเดอร์นั้นเลย)",
-    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","Shopee ดึงคืน","เงินเข้าจริง",""],
+    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","คืนให้ลูกค้า","เงินเข้าจริง",""],
     claw.sort(function(a,b){return b.m-a.m;}).map(function(x){ return aRow([no(x.o),bl(x.o),cu(x.o),
       '<span class="n">'+fmt(effSale(x.o))+"</span>",
       '<b style="color:var(--red)">'+fmt(x.m)+"</b>",
@@ -921,11 +992,14 @@ function renderAlerts(){
       '<button class="btn sec sm" onclick="goRtn(\''+String(x.o.order_no).replace(/'/g,"")+'\')">↩ ไปติ๊ก</button>']); }),
     sClaw,true);
 
-  h+=aGrp("amb","📉","เงินโอนเข้าไม่ครบ (โดนหักเกินค่าธรรมเนียม)",
-    "เปิดแอป Shopee → รายละเอียดการโอนของออเดอร์นั้น ดูว่าโดนหักค่าอะไรเพิ่ม แล้วแจ้งการเงิน",
-    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","ค่าธรรมเนียม","ควรได้","เข้าจริง","ขาด"],
-    short.sort(function(a,b){return b.m-a.m;}).map(function(x){ var f=Math.abs(num(x.o.payout_fee));
-      return aRow([no(x.o),bl(x.o),cu(x.o),fmt(effSale(x.o)),fmt(f),fmt(effSale(x.o)-f),
+  h+=aGrp("amb","📉","เงินเข้าไม่ตรงกับรายละเอียดที่ Shopee แจ้ง",
+    "เปิดแอป Shopee → รายละเอียดการโอนของออเดอร์นั้น ไล่ทีละช่องว่าขาดตรงไหน แล้วแจ้งการเงิน "+
+    "(ถ้าเป็นออเดอร์เก่าที่ยังไม่ได้อัปไฟล์รายรับใหม่ ให้อัปไฟล์รายรับอีกรอบก่อน ระบบจะเติมค่าส่ง/คืนเงินให้เอง)",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","ค่าธรรมเนียม","ค่าส่งร้านออกเอง","คืนเงินลูกค้า","เข้าจริง","ยังไม่รู้ที่มา"],
+    short.sort(function(a,b){return Math.abs(b.m)-Math.abs(a.m);}).map(function(x){ var f=Math.abs(num(x.o.payout_fee));
+      return aRow([no(x.o),bl(x.o),cu(x.o),fmt(effSale(x.o)),fmt(f),
+        payKnown(x.o)?fmt(payShipOut(x.o)):'<span class="muted">—</span>',
+        payKnown(x.o)?fmt(payRefundOut(x.o)):'<span class="muted">—</span>',
         fmt(num(x.o.payout_net)),'<b style="color:var(--amb)">'+fmt(x.m)+"</b>"]); }),
     sShort,false);
 
@@ -966,13 +1040,29 @@ function renderAlerts(){
       '<b style="color:var(--red)">'+fmt(effSale(o))+"</b>",cnBtn(o,effSale(o),"ตีกลับ/เคลม")]); }),
     sGhost,true);
 
+  /* 🚚 ค่าส่งคิดขาด — ร้านออกส่วนต่างเอง · เป็นงาน "แก้ตั้งค่า" ไม่ใช่ "ตามเงิน"
+     จึงแยกกล่องออกมา ไม่นับรวมในยอด "ออเดอร์ที่ต้องตามเรื่อง" (คุณหลิงเคาะ 4 ก.ย.69) */
+  var shortShip=(ALL||[]).filter(alertInScope).filter(function(o){
+    return o.paid && !o.return_status && payKnown(o) && payShipOut(o)>0.5; });
+  var sShip=shortShip.reduce(function(s,o){ return s+payShipOut(o); },0);
+  var shipH=aGrp("amb","🚚","ค่าส่งคิดขาด — ร้านต้องออกส่วนต่างเอง",
+    "ค่าส่งจริงที่ขนส่งคิด แพงกว่าค่าส่งที่เก็บได้ → เช็ค<b>ขนาด/น้ำหนักพัสดุ</b>ที่ตั้งไว้ของสินค้าในบิลนี้ ให้ตรงของจริง แล้วแก้ในร้าน Shopee ใบต่อไปจะได้ไม่ขาดอีก (ของชิ้นใหญ่มักตั้งต่ำกว่าจริง)",
+    ["ออเดอร์","บิล","ลูกค้า","ยอดขาย","ได้ค่าส่งมา","ค่าส่งจริง","ร้านออกเอง"],
+    shortShip.sort(function(a,b){return payShipOut(b)-payShipOut(a);}).map(function(o){
+      var g=shipGot(o), c=shipCost(o);
+      return aRow([no(o),bl(o),cu(o),fmt(effSale(o)),
+        g==null?'<span class="muted">—</span>':fmt(g),
+        c==null?'<span class="muted">—</span>':fmt(c),
+        '<b style="color:var(--amb)">'+fmt(payShipOut(o))+"</b>"]); }),
+    sShip,false);
+
   var n=claw.length+short.length+unbill.length+late.length+part.length+ghost.length;
   var card=document.getElementById("alertCard");
   var sc=document.getElementById("alertScope");
   if(sc) sc.textContent="ตรวจทุกออเดอร์ตั้งแต่ "+beShort(ALERT_SINCE)+" เป็นต้นมา (ไม่ขึ้นกับเดือนที่เลือก · ข้าม พ.ค.–มิ.ย. ช่วงเริ่มใช้โปรแกรม)";
   document.getElementById("alertCount").textContent=n?n+" ใบ":"ไม่มี ✓";
   if(card) card.classList.toggle("clean",n===0);
-  box.innerHTML=n?h:'<div class="okbox">✓ ไม่มีออเดอร์ที่ต้องตามเรื่อง — เงินเข้าครบ ออกบิลครบ ไม่มีใบไหนค้างเกิน '+ALERT_LATE_DAYS+' วัน</div>';
+  box.innerHTML=(n?h:'<div class="okbox">✓ ไม่มีออเดอร์ที่ต้องตามเรื่อง — เงินเข้าครบ ออกบิลครบ ไม่มีใบไหนค้างเกิน '+ALERT_LATE_DAYS+' วัน</div>')+shipH;
 }
 
 /* ① จ่ายครบไหม — เน้นว่าได้เงินหรือยัง (ไม่เทียบกับค่าประมาณ) */
@@ -1268,14 +1358,20 @@ function renderPnl(rows,m,retCount){
   var cost=COSTS.filter(function(c){return m==="ALL"||c.month===m;}).reduce(function(s,c){return s+costAmount(c,packed,retCount);},0);
   /* 🔑 เงินที่ Shopee หักเกินค่าธรรมเนียม 8 คอลัมน์ที่ parsePayout เก็บ (ค่าส่ง/คืนเงิน/ปรับปรุง)
      ไม่หักตรงนี้ = กำไรสูงเกินจริง · รู้ค่าจริงเฉพาะออเดอร์ที่ Shopee จ่ายแล้ว */
-  var other=rows.reduce(function(s,o){return s+orderMiss(o);},0);
-  var otherN=rows.filter(function(o){return orderMiss(o)>0.5;}).length;
+  var shipO=rows.reduce(function(s,o){return s+payShipOut(o);},0);
+  var refO=rows.reduce(function(s,o){return s+payRefundOut(o);},0);
+  var othO=rows.reduce(function(s,o){return s+payOtherOut(o);},0);
+  var shipN=rows.filter(function(o){return payShipOut(o)>0.5;}).length;
+  var refN=rows.filter(function(o){return payRefundOut(o)>0.5;}).length;
+  var other=r2(shipO+refO+othO);
   var net=sale-fee-other, profit=net-cost;
   var paidN=rows.filter(function(o){return o.paid;}).length;
   var h='<table class="pnl" style="max-width:460px">'+
     '<tr><td>ยอดขายรวม (ไม่รวมตีกลับ · หักยอดที่คืนบางส่วนแล้ว)</td><td class="n">'+fmt(sale)+'</td></tr>'+
     '<tr><td>− ค่าธรรมเนียม Shopee</td><td class="n" style="color:var(--red)">'+fmt(fee)+'</td></tr>'+
-    (other>0.5?'<tr><td>− Shopee หักเพิ่ม (ค่าส่ง/คืนเงิน) <span style="font-weight:400;font-size:11px;color:var(--mut)">'+otherN+' ออเดอร์</span></td><td class="n" style="color:var(--red)">'+fmt(other)+'</td></tr>':'')+
+    (shipO>0.5?'<tr><td>− ค่าส่งที่ร้านออกเอง <span style="font-weight:400;font-size:11px;color:var(--mut)">'+shipN+' ออเดอร์ · ค่าส่งจริงเกินที่ลูกค้าจ่าย+Shopee ช่วย</span></td><td class="n" style="color:var(--red)">'+fmt(shipO)+'</td></tr>':'')+
+    (refO>0.5?'<tr><td>− คืนเงินลูกค้า <span style="font-weight:400;font-size:11px;color:var(--mut)">'+refN+' ออเดอร์ (ยังไม่ได้ติ๊กตีกลับ)</span></td><td class="n" style="color:var(--red)">'+fmt(refO)+'</td></tr>':'')+
+    (Math.abs(othO)>0.5?'<tr><td>'+(othO>0?'− หักอื่น (ยังไม่รู้ที่มา)':'+ ได้คืนเพิ่ม')+'</td><td class="n" style="color:var(--red)">'+fmt(Math.abs(othO))+'</td></tr>':'')+
     '<tr class="tot"><td>= เงินได้รับสุทธิ</td><td class="n">'+fmt(net)+'</td></tr>'+
     '<tr><td>− ต้นทุน/ค่าใช้จ่าย (แท็บ ③)</td><td class="n" style="color:var(--red)">'+fmt(cost)+'</td></tr>'+
     '<tr class="tot"><td>= เงินเหลือ <span style="font-weight:400;font-size:12px;color:var(--red)">(ยังไม่หักต้นทุนสินค้า)</span></td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+';font-size:18px">'+fmt(profit)+'</td></tr>'+
@@ -1283,7 +1379,7 @@ function renderPnl(rows,m,retCount){
   h+='<table class="pnl" style="max-width:460px;margin-top:8px"><tr><td class="muted" colspan="2">เฉลี่ยต่อออเดอร์ ('+oc+' ออเดอร์ขายจริง)</td></tr>'+
     '<tr><td>ยอดขาย/ออเดอร์</td><td class="n">'+fmt(oc?sale/oc:0)+'</td></tr>'+
     '<tr><td>ค่าธรรมเนียม/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?fee/oc:0)+'</td></tr>'+
-    (other>0.5?'<tr><td>Shopee หักเพิ่ม/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?other/oc:0)+'</td></tr>':'')+
+    (other>0.5?'<tr><td>ค่าส่ง/คืนเงินที่ Shopee หัก /ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?other/oc:0)+'</td></tr>':'')+
     '<tr><td>ต้นทุนแพ็ค/ออเดอร์</td><td class="n" style="color:var(--red)">'+fmt(oc?cost/oc:0)+'</td></tr>'+
     '<tr class="tot"><td>เงินเหลือ/ออเดอร์ <span style="font-weight:400;font-size:11px;color:var(--red)">(ก่อนหักต้นทุน)</span></td><td class="n" style="color:'+(profit>=0?'var(--g2)':'var(--red)')+'">'+fmt(oc?profit/oc:0)+'</td></tr>'+
     '</table>';
@@ -1331,9 +1427,13 @@ function findDetail(o){
   var h='<div class="fdet"><div class="fhd"><span class="ono" style="font-size:14.5px;font-weight:700">'+esc(o.order_no)+'</span> '+
     findMoneyChip(o)+(part?' <span class="chip amb">↩ คืนบางส่วน</span>':'')+'</div>';
   var w=[];
-  if(o.paid&&miss>0.5&&!ret) w.push((miss>=ALERT_CLAWBACK_MIN||num(o.payout_net)<=0)
-      ?'💸 Shopee ดึงเงินคืน '+fmt(miss)+' บาท แต่ยังไม่ได้ติ๊กตีกลับ'
-      :'📉 เงินโอนเข้าไม่ครบ ขาดอยู่ '+fmt(miss)+' บาท');
+  if(o.paid&&!ret&&payKnown(o)){
+    if(payShipOut(o)>0.5) w.push('🚚 ค่าส่งคิดขาด '+fmt(payShipOut(o))+' บาท (ร้านออกเอง) — เช็คขนาด/น้ำหนักพัสดุที่ตั้งไว้ของสินค้าในบิลนี้');
+    if(payRefundOut(o)>0.5) w.push('💸 Shopee คืนเงินให้ลูกค้าแล้ว '+fmt(payRefundOut(o))+' บาท แต่ยังไม่ได้ติ๊กตีกลับ');
+    if(Math.abs(payOtherOut(o))>0.5) w.push('📉 เงินเข้าไม่ตรงกับรายละเอียดที่ Shopee แจ้ง ต่างอยู่ '+fmt(Math.abs(payOtherOut(o)))+' บาท');
+  } else if(o.paid&&!ret&&miss>0.5) w.push((miss>=ALERT_CLAWBACK_MIN||num(o.payout_net)<=0)
+      ?'💸 Shopee ดึงเงินคืน '+fmt(miss)+' บาท แต่ยังไม่ได้ติ๊กตีกลับ (ยังไม่มีรายละเอียด — อัปไฟล์รายรับใหม่จะแยกให้ว่าเป็นค่าส่งหรือคืนเงิน)'
+      :'📉 หักเพิ่ม '+fmt(miss)+' บาท ยังไม่รู้ที่มา — อัปไฟล์รายรับอีกรอบ ระบบจะแยกค่าส่ง/คืนเงินให้เอง');
   if(o.paid&&!o.billed&&!ret) w.push('🧾 จ่ายเงินแล้ว แต่ยังไม่ได้ออกบิล acc-billing');
   if(o.billed&&!o.paid&&!ret&&dBill>ALERT_LATE_DAYS) w.push('⏰ ออกบิล/ส่งของแล้ว '+dBill+' วัน Shopee ยังไม่จ่าย');
   if(part&&!cnDone(o)) w.push('↩ คืนบางส่วน '+fmt(retAmt(o))+' บาท แต่บิลลูกหนี้ยังเป็นยอดเต็ม (ยังไม่ออกใบลดหนี้)');
@@ -1353,10 +1453,17 @@ function findDetail(o){
   if(o.paid){
     h+=fRow("วันเงินเข้า",beDate(o.payout_date));
     var f=Math.abs(num(o.payout_fee)), sl=effSale(o);
-    h+=fRow("ค่าธรรมเนียมที่ถูกหัก",fmt(f)+(sl?' <span class="muted">('+(f/sl*100).toFixed(1)+'% ของยอดขาย)</span>':''));
-    h+=fRow("โอนเข้าจริง",fmt(num(o.payout_net)),"big");
-    if(miss>0.5) h+=fRow("หักเกิน / ดึงคืน",fmt(miss),"red");
-    else if(miss<-0.5) h+=fRow("ได้คืนเพิ่ม",fmt(-miss));
+    h+=fRow("− ค่าธรรมเนียม",fmt(f)+(sl?' <span class="muted">('+(f/sl*100).toFixed(1)+'% ของยอดขาย)</span>':''));
+    var _so=payShipOut(o), _ro=payRefundOut(o), _oo=payOtherOut(o);
+    if(_so>0.5){ var _sg=shipGot(o), _sc=shipCost(o);
+      h+=fRow("− ค่าส่งที่ร้านออกเอง",fmt(_so)+(_sc!=null
+        ?' <span class="muted">(เก็บค่าส่งได้ '+fmt(_sg)+' · ขนส่งคิดจริง '+fmt(_sc)+' → คิดค่าส่งขาด)</span>'
+        :' <span class="muted">(ค่าส่งจริงเกินที่เก็บได้ — คิดค่าส่งขาด)</span>')); }
+    else if(_so<-0.5) h+=fRow("+ ได้ค่าส่งคืน",fmt(-_so));
+    if(_ro>0.5) h+=fRow("− คืนเงินลูกค้า",fmt(_ro),"red");
+    else if(_ro<-0.5) h+=fRow("+ ได้เงินคืนกลับ",fmt(-_ro));
+    if(Math.abs(_oo)>0.5) h+=fRow(_oo>0?(payKnown(o)?"− หักอื่น":"− หักอื่น (ยังไม่รู้ที่มา)"):"+ ได้คืนเพิ่ม",fmt(Math.abs(_oo)),"red");
+    h+=fRow("= โอนเข้าจริง",fmt(num(o.payout_net)),"big");
   } else if(!ret){
     h+=fRow("สถานะเงิน","ยังไม่ได้รับ — รอมาแล้ว "+d+" วัน", d>ALERT_LATE_DAYS?"red":"");
     h+=fRow("ค่าธรรมเนียม (ประมาณ)",fmt(Math.abs(num(effFee(o)))));

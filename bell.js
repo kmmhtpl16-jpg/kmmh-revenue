@@ -20,7 +20,7 @@
   var AUDIT_DAYS = 30;   /* ย้อนหลังที่เช็ควันตรวจไม่ครบ */
   var PEND_DAYS  = 120;
   var GAP_DAYS   = 30;   /* ย้อนหลังที่ไล่หาเงินลงฟอร์มแต่ไม่เข้าบัญชี/K+ ร้าน */  /* ย้อนหลังที่นับเงินรอจับคู่ */
-  var REFRESH_MS = 5*60*1000;
+  var REF_DAYS   = 90;   /* ย้อนหลังที่ไล่หา "คืนเงินสดไม่มีที่มา" */  var REFRESH_MS = 5*60*1000;
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
   function num(v){ if(v==null) return 0; var n=parseFloat(String(v).replace(/[, ]/g,"")); return isNaN(n)?0:n; }
@@ -253,10 +253,10 @@
       S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle,bank_rows").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_pending").select("date,amount,source,ref,status,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31))),
-      S.from("rev_deposits").select("amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61)))
+      S.from("rev_deposits").select("amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61))),      /* คืนเงินสดที่ยังไม่มีที่มา — ดึงเฉพาะวันที่มีคืนเงินจริง (กัน egress บาน) */      S.from("rev_audit").select("date,status,machine_net,form_main,form_upk,form_refund,cn_total,ex:detail->ex").gt("form_refund",0).gte("date",shiftISO(today,-REF_DAYS)).lte("date",today)
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
-    var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[], gDep=(q[8]&&q[8].data)||[];
+    var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[], gDep=(q[8]&&q[8].data)||[];    var gRef=(q[9]&&q[9].data)||[];
 
     /* 1) เงินออกจากสเตทเมนต์ที่ยังไม่ได้ลงรายจ่าย — คีย์เดียวกับหน้าการเงินบริษัท */
     if(sees.exp){
@@ -371,7 +371,7 @@
           }),
           raw:true, more:Math.max(0,gaps.parts.length-5), btn:null, act:null });
       }
-    }catch(e){ console.warn("bell gap", e); }
+    }catch(e){ console.warn("bell gap", e); }    /* 5) คืนเงินสดที่ยังไม่มีที่มา — วันที่ยอดตรงแบบ "ไม่หักคืนเงิน" = เงินก้อนนั้นไม่ได้ถูกหักจากยอดขายวันนั้น */    try{      var refBad=[];      gRef.forEach(function(a){        if(a.status==="วันหยุด") return;        if(a.machine_net==null || a.form_main==null) return;        var rf=num(a.form_refund); if(rf<=0) return;        var mn=num(a.machine_net), fm=r2(num(a.form_main)+num(a.form_upk));        var okr=Math.abs(mn-fm)<=1, oka=Math.abs(mn-r2(fm-rf))<=1;        if(!okr || oka) return;        var exs=0; (a.ex||[]).forEach(function(e){ exs+=num(e&&e.amt); });        if(exs>=rf-1) return;        refBad.push({date:String(a.date).slice(0,10), rf:rf, left:r2(rf-exs), cn:num(a.cn_total)});      });      if(refBad.length){        refBad.sort(function(a,b){ return a.date<b.date?1:-1; });        out.push({ key:"refund", icon:"\u21a9\ufe0f",          title:"คืนเงินสดยังไม่มีที่มา "+refBad.length+" วัน",          sub:"รวม "+TH(refBad.reduce(function(s,x){ return s+x.left; },0))+" บาท · เงินออกจากลิ้นชักแต่ไม่ได้หักจากยอดขาย — ต้องระบุว่าเป็นใบลดหนี้ที่คืนสด / คืนมัดจำ / โอนผิด (กด \u270f\ufe0f แก้ไข แล้วเติมในตาราง \ud83d\udcb8 คืนเงิน/มัดจำ)",          items:refBad.slice(0,5).map(function(x){            return '<a href="javascript:void(0)" onclick="__bellGoDay(\''+x.date+'\')" style="color:#b45309;font-weight:700">'+beDate(x.date)+'</a> · คืนเงิน '+TH(x.rf)+(x.left<x.rf?(" · ยังขาด "+TH(x.left)):"")+(x.cn?"":' <span style="color:#b91c1c">· ไม่มีใบลดหนี้เลย</span>');          }),          raw:true, more:Math.max(0,refBad.length-5), btn:null, act:null });      }    }catch(e){ console.warn("bell refund", e); }
 
     return out;
   }

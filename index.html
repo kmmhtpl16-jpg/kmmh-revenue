@@ -1773,10 +1773,7 @@ window.refundPending=async function(id){
   var d=prompt("วันที่โอนคืน (YYYY-MM-DD):",mpToday()); if(d===null) return; d=String(d||"").slice(0,10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ alert("รูปแบบวันที่ไม่ถูกต้อง"); return; }
   var by=prompt("ผู้ยืนยัน:",""); if(by===null) return; by=(by||"").trim();
-  var _needCN=/สินค้า|ของ/.test(why); var _cn=prompt(_needCN?"เลขที่ใบลดหนี้ (บังคับ เพราะเป็นการคืน/เปลี่ยนสินค้า)
-เช่น CN6909-0004":"เลขที่ใบลดหนี้ (ถ้ามี — โอนผิด/ยกเลิกออเดอร์/คืนมัดจำ เว้นว่างได้)",""); if(_cn===null) return; _cn=String(_cn||"").trim().toUpperCase(); if(_needCN&&!_cn){ alert("เหตุผลนี้เป็นการคืน/เปลี่ยนสินค้า ต้องกรอกเลขที่ใบลดหนี้"); return; } if(_cn&&!/^CN\d{4}-\d{4}$/.test(_cn)){ if(!confirm("เลขใบลดหนี้ \""+_cn+"\" ไม่ตรงรูปแบบ CNxxxx-xxxx
-
-ใช้เลขนี้ต่อไหม?")) return; } if(!confirm("บันทึกว่าเงิน "+TH(p.amount)+" บาทก้อนนี้โอนคืนลูกค้าแล้ว?\n\nรายการจะออกจาก \"รอจับคู่\" (ยกเลิกได้ที่รายการจับคู่แล้ว)")) return;
+  var _needCN=/สินค้า|ของ/.test(why); var _cn=prompt(_needCN?"เลขที่ใบลดหนี้ (บังคับ เพราะเป็นการคืน/เปลี่ยนสินค้า)\nเช่น CN6909-0004":"เลขที่ใบลดหนี้ (ถ้ามี — โอนผิด/ยกเลิกออเดอร์/คืนมัดจำ เว้นว่างได้)",""); if(_cn===null) return; _cn=String(_cn||"").trim().toUpperCase(); if(_needCN&&!_cn){ alert("เหตุผลนี้เป็นการคืน/เปลี่ยนสินค้า ต้องกรอกเลขที่ใบลดหนี้"); return; } if(_cn&&!/^CN\d{4}-\d{4}$/.test(_cn)){ if(!confirm("เลขใบลดหนี้ \""+_cn+"\" ไม่ตรงรูปแบบ CNxxxx-xxxx\n\nใช้เลขนี้ต่อไหม?")) return; } if(!confirm("บันทึกว่าเงิน "+TH(p.amount)+" บาทก้อนนี้โอนคืนลูกค้าแล้ว?\n\nรายการจะออกจาก \"รอจับคู่\" (ยกเลิกได้ที่รายการจับคู่แล้ว)")) return;
   var batch=mpBatch();
   var up=await sb.from("rev_pending").update({status:"matched",matched_bill_no:"\u21a9\ufe0f คืนเงิน",matched_date:d,confirmed_by:by||null,match_batch:batch,cn_no:_cn||null,
     note:"\u21a9\ufe0f คืนเงินลูกค้า | "+why+(_cn?(" | ใบลดหนี้ "+_cn):"")+" | คืนวันที่ "+d+" | โดย "+(by||"-")}).eq("id",id).eq("status","open");

@@ -259,8 +259,8 @@
     return String(formDate||"")+"#"+String(e.method||"")+"#"+normName(e.customer||e.bill_no||"")+"#"+num(e.amount)+"#"+i;
   }
   /* หาบิลที่เงินก้อนนี้น่าจะปิด — คิดสดทุกครั้ง ไม่ใช้ของเก่าที่เก็บไว้ (บิลอาจถูกจ่าย/แก้ชื่อไปแล้ว) */
-  async function obPlan(pr){
-    var r=await sb.from("rev_credit_bills").select("id,bill_no,customer,total_amount,paid_amount,bill_date").neq("status","paid").order("bill_date",{ascending:true});
+  var _obC={on:false,b:null,ab:null,po:null,pm:null}; async function _obBills(){ if(_obC.on&&_obC.b) return _obC.b; var r=await sb.from("rev_credit_bills").select("id,bill_no,customer,total_amount,paid_amount,bill_date").neq("status","paid").order("bill_date",{ascending:true}).order("bill_no",{ascending:true}); var d=r.data||[]; if(_obC.on) _obC.b=d; return d; } async function _obAll(){ if(_obC.on&&_obC.ab) return _obC.ab; var r=await sb.from("rev_credit_bills").select("bill_no,customer,status"); var d=r.data||[]; if(_obC.on) _obC.ab=d; return d; } async function _obPend(st){ var k=(st==="open")?"po":"pm"; if(_obC.on&&_obC[k]) return _obC[k]; var r=await sb.from("rev_pending").select("id,date,amount,source,from_name,status,matched_bill_no,matched_date").eq("status",st); var d=r.data||[]; if(_obC.on) _obC[k]=d; return d; } async function obPlan(pr){
+    var r={data:(await _obBills()).map(function(b){ return {id:b.id,bill_no:b.bill_no,customer:b.customer,total_amount:b.total_amount,paid_amount:b.paid_amount,bill_date:b.bill_date}; })};
     var bills=(r.data||[]).map(function(b){ b._paid=num(b.paid_amount); return b; });
     var cand;
     if(pr.bill_no){ cand=bills.filter(function(b){ return String(b.bill_no||"").trim()===String(pr.bill_no).trim(); }); }
@@ -277,7 +277,7 @@
     var allPaid=false, noBill=false;
     if(!allocs.length){
       try{
-        var q2=await sb.from("rev_credit_bills").select("bill_no,customer,status");
+        var q2={data:await _obAll()};
         var all=(q2.data||[]);
         var hit;
         if(pr.bill_no){ hit=all.filter(function(b){ return String(b.bill_no||"").trim()===String(pr.bill_no).trim(); }); }
@@ -290,11 +290,11 @@
   /* หาเงินจริงในสเตทเมนต์ที่ตรงกับข้อเสนอนี้ (ยอด+ช่องทาง ตรง และยังไม่ถูกจับคู่) */
   async function obMoney(pr){
     if(pr.method==="เงินสด") return {kind:"cash"};
-    var r=await sb.from("rev_pending").select("id,date,amount,source,from_name,status").eq("status","open");
+    var r={data:await _obPend("open")};
     var c=(r.data||[]).filter(function(x){ return Math.abs(num(x.amount)-num(pr.amount))<0.01 && String(x.source||"")===String(pr.method||""); });
     if(c.length>1){ var same=c.filter(function(x){ return String(x.date).slice(0,10)===String(pr.form_date).slice(0,10); }); if(same.length) c=same; }
     if(!c.length){
-      var r2=await sb.from("rev_pending").select("id,date,amount,source,from_name,status,matched_bill_no,matched_date").eq("status","matched");
+      var r2={data:await _obPend("matched")};
       var u=(r2.data||[]).filter(function(x){ return Math.abs(num(x.amount)-num(pr.amount))<0.01 && String(x.source||"")===String(pr.method||""); });
       if(u.length) return {kind:"used", p:u[0]};
       /* เงินอาจเข้าทาง K+/QR ซึ่งไม่เคยลง rev_pending — ต้องไปหาใน rev_daily.kplus_rows (แก้ 3ส.ค.69) */
@@ -454,7 +454,7 @@
     var P=(r.data||[]);
     if(!P.length){ card.style.display="none"; return; }
     card.style.display=""; if(cnt) cnt.textContent=P.length+" รายการ";
-    OB_CACHE={};
+    OB_CACHE={}; _obC.on=true; _obC.b=null; _obC.ab=null; _obC.po=null; _obC.pm=null;
     var out=[];
     for(var i=0;i<P.length;i++){
       var pr=P[i];
@@ -490,7 +490,7 @@
           '<button class="btn sec" style="padding:3px 9px;border-color:#fca5a5;color:#b91c1c" onclick="__obReject(\''+pr.id+'\')">✕ ยกเลิกรายการ</button>'+
         '</td></tr>');
     }
-    box.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="num">ยอดจ่าย</th><th>วิธี</th><th>จะตัดบิล</th><th>เงินจริง</th><th></th></tr></thead><tbody>'+out.join("")+'</tbody></table>';
+    box.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="num">ยอดจ่าย</th><th>วิธี</th><th>จะตัดบิล</th><th>เงินจริง</th><th></th></tr></thead><tbody>'+out.join("")+'</tbody></table>'; _obC.on=false; _obC.b=null; _obC.ab=null; _obC.po=null; _obC.pm=null;
   };
 
   window.__obConfirm=async function(id){

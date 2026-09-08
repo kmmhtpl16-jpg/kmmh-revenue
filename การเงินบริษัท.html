@@ -758,7 +758,7 @@ function renderExpense(){
                 nopay:'<span style="color:#f59e0b">ยังไม่จ่าย</span>',
                 noprop:'<span style="color:#dc2626">ไม่มีใบเสนอจากระบบจัดส่ง</span>',
                 acked:'<span style="color:#78716c">✓ ตรวจแล้ว · ปิดเคส</span>'};
-  const tCards=buildTripCheck().map(c=>`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
+  const tCards=buildTripCheck().map((c,ci)=>(ci===0?"":'<details style="margin-bottom:8px"><summary style="cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-weight:700">'+beMonth(c.ym)+' <span style="font-weight:400;color:#6b7280">· '+c.rows.length+' คน · เสนอ '+TH(c.propTot)+' · จ่ายจริง '+TH(c.payTot)+'</span> '+(c.bad?'<span style="color:#dc2626">⚠️ ต่าง '+c.bad+' คน</span>':'<span style="color:#16a34a">✅ ตรงทุกคน</span>')+'</summary>')+`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
       <div class="row" style="align-items:center;gap:8px">
         <b>${beMonth(c.ym)}</b>
         <span class="muted">${c.rows.length} คน</span>
@@ -777,7 +777,7 @@ function renderExpense(){
               ?` <a href="#" onclick="unackTrip('${c.ym}','${esc(r.n).replace(/'/g,"\\'")}');return false" style="color:#c00;text-decoration:none" title="เอาการปิดเคสออก">✕</a>`
               :(r.st!=="ok"?` <button class="btn sm gray" onclick="ackTrip('${c.ym}','${esc(r.n).replace(/'/g,"\\'")}')">✓ ปิดเคส</button>`:"")}</td></tr>`).join("")}</tbody>
       </table></div>
-    </div>`).join("");
+    </div>`+(ci===0?"":"</details>")).join("");
 
   /* ═══ 🛡️ แถบเตือนตัวกันพลาด ═══ */
   const warns=[];

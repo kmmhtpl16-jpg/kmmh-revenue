@@ -258,10 +258,12 @@ function buildPayrollMatch(){
   (STATE.vouchers||[]).forEach(v=>{
     const lines=Array.isArray(v.lines)?v.lines:[];
     const lo=dShift(v.vdate,-1), hi=dShift(v.vdate,3);
-    const det=[]; let trTot=0, cashTot=0;
+    const det=[]; let trTot=0, cashTot=0, negTot=0;
     lines.forEach(ln=>{
       const need=r2(ln.to_pay);
-      if(need<=0){ det.push({nick:ln.nickname,amt:0,st:"none"}); return; }
+      /* ➖ ยอดติดลบ (เช่น ลาออกกลางเดือน รับรายสัปดาห์ไปเกินยอดทั้งเดือน) — ใบนับติดลบไว้ในยอดรวมแล้ว แต่ไม่มีเงินไหลออก/กลับ */
+      if(need<0){ negTot+=need; det.push({nick:ln.nickname,amt:need,st:"neg",gap:0}); return; }
+      if(need===0){ det.push({nick:ln.nickname,amt:0,st:"none"}); return; }
       /* จับคู่โอน: หายอดตรงเป๊ะก่อน ถ้าไม่เจอค่อยยอมให้ต่างไม่เกิน PAY_TOL บาท (ปัดเศษ/โอนเกิน-ขาดเล็กน้อย)
          → นับเป็น "โอน" ที่ยอดในใบ (need) แล้วติดป้ายบอกส่วนต่างให้เห็น ไม่กลืนเงียบ */
       const okRow=sx=>!used.has(sx.id)&&sx.exp_date>=lo&&sx.exp_date<=hi&&nameHit(ln.full_name,sx.ref||sx.description);
@@ -281,8 +283,15 @@ function buildPayrollMatch(){
     const advRows=(STATE.cashAdv||[]).filter(a=>a.date===v.vdate);
     const advTot=r2(advRows.reduce((s,a)=>s+num(a.amt),0));
     const noStmt=!stmt.some(sx=>sx.exp_date>=lo&&sx.exp_date<=hi);
-    cards.push({v,det,trTot,cashTot,pcTot,advRows,advTot,noStmt,
-                diff:r2(num(v.total_amount)+advTot-(trTot+pcTot))});
+    negTot=r2(negTot); cashTot=r2(cashTot);
+    /* 💵 คนที่หาแถวโอนไม่เจอ: ตรวจว่า ผลรวมของคนกลุ่มนี้ (+เงินเบิกสดวันเดียวกัน) = เงินสดย่อย 5211-10 วันนั้นพอดีไหม
+       ถ้าพอดี → ป้ายเปลี่ยนเป็น "เงินสดย่อย" (ผ่านการตรวจแล้ว) · ถ้าไม่พอดี → คงป้าย "ไม่พบรายการโอน" ไว้ ไม่เดา */
+    const cashByPc=cashTot>0&&Math.abs(r2(pcTot)-r2(cashTot+advTot))<1;
+    if(cashByPc) det.forEach(d=>{ if(d.st==="cash") d.st="pc"; });
+    const diff=r2(num(v.total_amount)+advTot-(trTot+pcTot));
+    /* ส่วนต่างที่เหลือหลังหักยอดติดลบ — ถ้า ≈0 แปลว่า "ต่าง" มาจากบรรทัดติดลบล้วนๆ ไม่ใช่เงินหาย */
+    const resid=r2(diff-negTot);
+    cards.push({v,det,trTot,cashTot,pcTot,advRows,advTot,noStmt,negTot,resid,cashByPc,diff});
   });
   return {map,cards};
 }
@@ -724,15 +733,21 @@ function renderExpense(){
       <td>${rowActions(x)}</td></tr>`).join("");
   const pettyTot=expsAll.filter(x=>x.source==="petty_cash").reduce((s,x)=>s+num(x.amount),0);
   /* การ์ดกระทบยอดใบสำคัญจ่าย payroll (ไม่บวกเข้ารายจ่าย — เงินออกจริงอยู่ในสเตทเมนต์/เงินสดย่อยแล้ว) */
-  const stMark={transfer:'<span style="color:#0369a1">โอน</span>',cash:'<span style="color:#7c3aed">ไม่พบรายการโอน</span>',none:'<span class="muted">—</span>'};
+  const stMark={transfer:'<span style="color:#0369a1">โอน</span>',cash:'<span style="color:#7c3aed">ไม่พบรายการโอน</span>',
+                pc:'<span style="color:#15803d" title="ยอดรวมคนที่ไม่พบรายการโอน เท่ากับเงินสดย่อยหมวดเงินเดือนของวันนั้นพอดี">💵 เงินสดย่อย</span>',
+                neg:'<span style="color:#b45309" title="ยอดสุทธิทั้งเดือนน้อยกว่าที่รับไปแล้วในใบรายสัปดาห์ — ใบสำคัญจ่ายนับยอดติดลบนี้ไว้ แต่ไม่มีเงินจ่ายออก">ติดลบ · จ่ายเกินในรอบก่อน</span>',
+                none:'<span class="muted">—</span>'};
   /* ⚠️ "ไม่พบรายการโอน" ไม่ได้แปลว่าจ่ายเงินสด — แปลว่าโปรแกรมหาแถวโอนที่ตรงไม่เจอ (อาจจ่ายสด หรือยอด/ชื่อไม่ตรง) */
   const gapMark=g=>g?` <span style="color:#b45309">(โอนจริงต่าง ${g>0?"+":""}${TH(g)})</span>`:"";
   const vCards=(STATE.payCards||[]).map(c=>{
     const ok=Math.abs(c.diff)<1;
+    const negOk=!ok&&c.negTot<0&&Math.abs(c.resid)<1;   /* ต่างเพราะยอดติดลบล้วนๆ = อธิบายได้ */
+    const negNames=c.det.filter(d=>d.st==="neg").map(d=>d.nick).join(", ");
     const badge=c.noStmt
       ? '<span class="chip" style="background:#94a3b8;color:#fff">ยังไม่ได้นำเข้าสเตทเมนต์ช่วงนี้</span>'
       : (ok?'<span class="chip" style="background:#16a34a;color:#fff">✅ ยอดตรง</span>'
-           :`<span class="chip" style="background:#dc2626;color:#fff">⚠️ ต่าง ${TH(c.diff)}</span>`);
+           :(negOk?`<span class="chip" style="background:#f59e0b;color:#fff" title="ใบสำคัญจ่ายหักยอดติดลบไว้ในยอดรวม แต่ไม่มีเงินจ่ายออก ส่วนต่างจึงเท่ากับยอดติดลบพอดี ไม่ใช่เงินหาย">ℹ️ ต่าง ${TH(c.diff)} = ยอดติดลบของ ${esc(negNames)}</span>`
+           :`<span class="chip" style="background:#dc2626;color:#fff">⚠️ ต่าง ${TH(c.diff)}${c.negTot<0?` (ในนี้เป็นยอดติดลบ ${TH(c.negTot)})`:""}</span>`));
     return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
       <div class="row" style="align-items:center;gap:8px">
         <b>${esc(c.v.voucher_no)}</b><span class="muted">งวด ${beDate(c.v.vdate)} · ${c.v.employee_count||0} คน</span>
@@ -747,7 +762,7 @@ function renderExpense(){
       </div>`:""}
       <details style="margin-top:6px"><summary class="muted" style="cursor:pointer">ดูรายคน (${c.det.length})</summary>
         <div style="margin-top:6px;font-size:13px;line-height:1.9">
-          ${c.det.map(d=>`<span class="chip mn" style="margin:2px">${esc(d.nick)} ${TH(d.amt)} · ${stMark[d.st]}${gapMark(d.gap)}</span>`).join("")}
+          ${c.det.map(d=>`<span class="chip mn" style="margin:2px${d.st==="neg"?";background:#fef3c7":""}">${esc(d.nick)} ${TH(d.amt)} · ${stMark[d.st]}${gapMark(d.gap)}</span>`).join("")}
         </div></details>
     </div>`;
   }).join("");

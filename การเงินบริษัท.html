@@ -71,7 +71,7 @@ canvas{max-height:320px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.10 (เงินสดล้วน · ต้นทุนจาก ACC-BILLING · กระทบยอดใบสำคัญจ่ายรวมเงินเบิกสด · จับคู่โอนยอมต่าง ≤2 บาท)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.11 (โอนคืนลูกค้าไม่นับเป็นรายจ่าย · เงินสดล้วน · ต้นทุนจาก ACC-BILLING · กระทบยอดใบสำคัญจ่ายรวมเงินเบิกสด · จับคู่โอนยอมต่าง ≤2 บาท)</span></div>
 </header>
 <div class="wrap">
   <nav>
@@ -142,6 +142,8 @@ function isoFromExcel(v){
 }
 
 /* หมวดรายจ่ายมาตรฐาน (COGS = ต้นทุนสินค้า) */
+/* ↩️ โอนเงินคืนลูกค้า ไม่ใช่รายจ่าย — ยอดขาย (เครื่อง) หักใบลดหนี้ไปแล้ว / เงินโอนผิด-คืนมัดจำ ก็ไม่เคยเป็นรายได้ · นับซ้ำ = กำไร/กระแสเงินสดต่ำเกินจริง (กฎ 15 ก.ย.69) */
+const isRefundCust=x=>/คืน(เงิน)?ลูกค้า/.test(String((x&&x.category)||""));
 const CATS_DEFAULT=["ค่าซื้อสินค้า","ค่าแรง/เงินเดือน","ค่าขนส่ง","ค่าน้ำ-ไฟ-โทรศัพท์","ค่าเช่า","ดอกเบี้ยจ่าย (ธนาคาร)","ค่าธรรมเนียม/ดอกเบี้ย","ภาษี","ซ่อมบำรุง","ของใช้สำนักงาน","การตลาด","อื่นๆ"];
 function loadCustomCats(){ try{ const a=JSON.parse(localStorage.getItem("rev_custom_cats")||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
 function saveCustomCats(a){ try{ localStorage.setItem("rev_custom_cats",JSON.stringify(a)); }catch(e){} }
@@ -695,7 +697,7 @@ function renderExpense(){
   const srcCount={}; expsAll.forEach(x=>srcKeys(x).forEach(k=>srcCount[k]=(srcCount[k]||0)+1));
   const srcsInData=SRC_ORDER.filter(k=>srcCount[k]);
   const catsInData=[...new Set(expsAll.map(x=>x.category))].sort();
-  const grandTot=expsAll.reduce((s,x)=>s+num(x.amount),0);
+  const grandTot=expsAll.filter(x=>!isRefundCust(x)).reduce((s,x)=>s+num(x.amount),0);
   const creditTot=expsAll.filter(x=>payKey(x)==="credit").reduce((s,x)=>s+num(x.amount),0);
   const filtered=(EXPF.cat||EXPF.pay||EXPF.src);
   const srcChip=s=>s==="statement"?'<span class="chip st">สเตทเมนต์</span>':s==="acc_billing"?'<span class="chip ac">ACC-BILLING</span>':isShopeeSrc(s)?'<span class="chip ac">Shopee</span>':s==="petty_cash"?'<span class="chip" style="background:#7c3aed;color:#fff">เงินสดย่อย</span>':'<span class="chip mn">กรอกมือ</span>';
@@ -728,7 +730,7 @@ function renderExpense(){
           <button class="btn sm red" onclick="delExp('${x.id}')">ลบ</button>`;
   let expHtml=exps.map(x=>`<tr>
       <td>${beDate(x.exp_date)}</td><td>${esc(x.category)}</td>
-      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${x.is_advance?'<span class="chip" style="background:#3b82f6;color:#fff">⏳ จ่ายล่วงหน้า</span>':''} ${uobChip(x)} ${payBadge(x)}</td>
+      <td>${payTag(x)}${esc(x.description||x.ref||"")} ${x.is_cogs?'<span class="chip cogs">ต้นทุน</span>':''} ${x.is_advance?'<span class="chip" style="background:#3b82f6;color:#fff">⏳ จ่ายล่วงหน้า</span>':''} ${uobChip(x)} ${payBadge(x)}${isRefundCust(x)?' <span class="chip" style="background:#e2e8f0;color:#334155" title="ยอดขายหักใบลดหนี้ไปแล้ว — ไม่รวมในยอดรวมรายจ่าย สรุปรายเดือน และกระแสเงินสด">↩️ คืนเงินลูกค้า · ไม่นับเป็นรายจ่าย</span>':''}</td>
       <td>${srcChip(x.source)}</td><td class="n">${TH(x.amount)}</td>
       <td>${rowActions(x)}</td></tr>`).join("");
   const pettyTot=expsAll.filter(x=>x.source==="petty_cash").reduce((s,x)=>s+num(x.amount),0);
@@ -766,7 +768,8 @@ function renderExpense(){
         </div></details>
     </div>`;
   }).join("");
-  const expTot=exps.reduce((s,x)=>s+num(x.amount),0);
+  const expTot=exps.filter(x=>!isRefundCust(x)).reduce((s,x)=>s+num(x.amount),0);
+  const refTotShown=exps.filter(isRefundCust).reduce((s,x)=>s+num(x.amount),0);
 
   const tripSt={ok:'<span style="color:#16a34a">ตรงกัน</span>',
                 diff:'<span style="color:#dc2626">ยอดไม่ตรง</span>',
@@ -915,6 +918,7 @@ function renderExpense(){
       <thead><tr><th>วันที่</th><th>หมวด</th><th>รายละเอียด</th><th>แหล่ง</th><th class="n">จำนวน</th><th></th></tr></thead>
       <tbody>${expHtml}</tbody>
       <tfoot><tr class="tot"><td colspan="4">${filtered?"รวมเฉพาะที่กรอง":"รวมรายจ่ายในช่วง"}</td><td class="n">${TH(expTot)}</td><td></td></tr>
+      ${refTotShown?`<tr><td colspan="4" class="muted" style="font-size:12px">↩️ ไม่รวมโอนเงินคืนลูกค้า (ไม่ใช่รายจ่าย)</td><td class="n muted" style="font-size:12px">${TH(refTotShown)}</td><td></td></tr>`:""}
       ${filtered?`<tr class="tot"><td colspan="4" style="opacity:.7">รวมรายจ่ายทั้งช่วง (ไม่กรอง)</td><td class="n" style="opacity:.7">${TH(grandTot)}</td><td></td></tr>`:""}
       </tfoot>
     </table></div>`:`<div class="muted">${filtered?"ไม่มีรายการที่ตรงกับตัวกรอง":"ยังไม่มีรายจ่ายบันทึกในช่วงนี้"}</div>`}
@@ -1486,7 +1490,8 @@ let MON_MODE="baht";   /* "baht" | "pct" — โหมดแสดงผลต�
 window.setMonMode=function(m){ MON_MODE=m; renderMonthly(); };
 function renderMonthly(){
   const el=document.getElementById("p_monthly");
-  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual");
+  const EX=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual"&&!isRefundCust(x));
+  const refundTotM=STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual"&&isRefundCust(x)).reduce((s,x)=>s+num(x.amount),0);
   const months=[...new Set(EX.map(x=>monthKey(x.exp_date)))].sort();
   const cats=[...new Set(EX.map(x=>x.category))];
   const grid={}; months.forEach(m=>{grid[m]={};cats.forEach(c=>grid[m][c]=0);});
@@ -1558,6 +1563,7 @@ function renderMonthly(){
       ${btn("baht","฿ บาท")}${btn("pct","% ของยอดขาย")}
       <span class="muted" style="font-size:12px">${isPct?"ตัวเลขในตาราง = % ของยอดขายเดือนนั้น":"ตัวเลขในตาราง = บาท"}</span>
     </div>
+    ${refundTotM?`<div class="note" style="background:#f1f5f9;border-color:#cbd5e1">↩️ <b>โอนเงินคืนลูกค้า ${TH(refundTotM)} บาท ไม่นับในตารางนี้</b> — ยอดขายจากเครื่องหักใบลดหนี้ไปแล้ว ถ้านับเป็นรายจ่ายอีกจะหักซ้ำ (ดูรายการได้ที่แท็บรายจ่าย)</div>`:""}
     <div class="note">ฐานคิด % = <b>ยอดขายที่ “ตรวจแล้ว” + ยอดขาย Shopee</b> (เกณฑ์เดียวกับแท็บกระแสเงินสด) · เดือนที่ยังตรวจไม่ครบ ยอดขายจะต่ำกว่าจริง → % จะสูงเกินจริง</div>
     <div class="note" style="background:#eff6ff;border-color:#93c5fd">📊 <b>แถวสรุปท้ายตาราง</b> · <b>ค่าซื้อสินค้า</b> ในตาราง = เงินสดที่จ่ายซื้อของเดือนนั้น <u>ไม่ใช่</u> ต้นทุนของที่ขายไป → เอาไปคิดกำไรไม่ได้ · <b>ต้นทุนขาย</b> ใช้ตัวที่กรอกจากรายงาน ACC-BILLING (แท็บกำไรขั้นต้น) เดือนไหนยังไม่กรอกจะขึ้น “—” · <b>กำไรก่อนภาษี (ประมาณ)</b> = กำไรขั้นต้น − ค่าใช้จ่ายดำเนินงาน (ยังไม่รวมภาษี/ค่าเสื่อม)</div>
     ${months.length?`<div class="scroll"><table><thead>${head}</thead><tbody>${salesRow}${body}</tbody><tfoot>${foot}</tfoot></table></div>
@@ -1580,7 +1586,7 @@ function renderCash(){
   const rev={},exp={}; months.forEach(m=>{rev[m]=0;exp[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null) rev[m]+=num(a.machine_net); });
   STATE.exp.filter(x=>x.source==="shopee_income").forEach(x=>{ const m=monthKey(x.exp_date); if(rev[m]!=null) rev[m]+=num(x.amount); });
-  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual").forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
+  STATE.exp.filter(x=>x.source!=="shopee_income"&&x.source!=="settlement"&&x.source!=="acc_billing"&&x.source!=="uob_manual"&&!isRefundCust(x)).forEach(x=>{ const m=monthKey(x.exp_date); if(exp[m]!=null) exp[m]+=num(x.amount); });
   let cum=0;
   let body=months.map(m=>{ const net=rev[m]-exp[m]; cum+=net;
     return `<tr><td>${beMonth(m)}</td><td class="n pos">${TH0(rev[m])}</td><td class="n neg">${TH0(exp[m])}</td><td class="n ${net>=0?'pos':'neg'}">${TH0(net)}</td><td class="n">${TH0(cum)}</td></tr>`;
@@ -1590,7 +1596,7 @@ function renderCash(){
   el.innerHTML=`
   <div class="card">
     <h3>🔄 กระแสเงินสด (รายรับ − รายจ่าย)</h3>
-    <div class="note">รายรับ = ยอดขายที่ “ตรวจแล้ว” (จากตัวตรวจรายได้) + ยอดขาย Shopee (ปุ่มสิ้นเดือน) · รายจ่าย = รายการที่บันทึกในหน้านี้ (รวมค่าธรรมเนียม Shopee) · ยอดสะสมเริ่มจาก 0 (ยังไม่รวมยอดยกมา/เงินคงเหลือต้นงวด)</div>
+    <div class="note">รายรับ = ยอดขายที่ “ตรวจแล้ว” (จากตัวตรวจรายได้) + ยอดขาย Shopee (ปุ่มสิ้นเดือน) · รายจ่าย = รายการที่บันทึกในหน้านี้ (รวมค่าธรรมเนียม Shopee) <b>ไม่รวมโอนเงินคืนลูกค้า</b> เพราะรายรับเป็นยอดขายที่หักใบลดหนี้แล้ว · ยอดสะสมเริ่มจาก 0 (ยังไม่รวมยอดยกมา/เงินคงเหลือต้นงวด)</div>
     ${months.length?`<div class="scroll"><table>
       <thead><tr><th>เดือน</th><th class="n">รายรับ</th><th class="n">รายจ่าย</th><th class="n">กระแสสุทธิ</th><th class="n">สะสม</th></tr></thead>
       <tbody>${body}</tbody>

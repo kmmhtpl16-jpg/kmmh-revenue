@@ -245,7 +245,9 @@ function rowsOf(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defva
 const BA_TOL=1;
 const r2c=n=>Math.round((+n||0)*100)/100;
 const normBill=b=>String(b||"").split("(")[0].trim().toUpperCase();
-const raOf=b=>{ const m=/\((RA[\w-]+)\)/i.exec(String(b||"")); return m?m[1]:null; };
+/* เลขใบมัดจำ: ทำให้เป็นแบบเดียวกับทะเบียน (RA6909-0004) — กันพิมพ์ "RA-6909-0004" / เว้นวรรค / ตัวเล็ก แล้วหาใบไม่เจอ */
+function normRA(s){ var t=String(s==null?"":s).toUpperCase().replace(/\s+/g,""); if(!t) return ""; var m=/^RA[-_.]?(\d{4})[-_.]?(\d{3,5})$/.exec(t); return m?("RA"+m[1]+"-"+m[2]):String(s).trim(); }
+const raOf=b=>{ const m=/\((RA[\w\s-]+)\)/i.exec(String(b||"")); return m?normRA(m[1]):null; };
 const BA_SUMROW=/^(ยอดรวม|รวมทั้งหมด|รวม|ยอดเงิน|ชื่อร้านค้า)$/;
 const baIsSum=n=>BA_SUMROW.test(String(n||"").trim());
 /* ฟอร์มพิมพ์ชื่อลูกค้าสั้น/ตัดคำนำหน้า → เทียบแบบหลวม */
@@ -262,7 +264,7 @@ function buildBillAudit(form,pos){
 
   const paid={}, raBill={};
   (form.xfer||[]).forEach(x=>{ const b=normBill(x.bill);
-    paid[b]=r2c((paid[b]||0)+(+x.knv||0)+(+x.ksk||0)); if(x.ra) raBill[b]=x.ra; });
+    paid[b]=r2c((paid[b]||0)+(+x.knv||0)+(+x.ksk||0)); if(x.ra) raBill[b]=normRA(x.ra); });
 
   const names=Object.keys(pos.custTotalByName||{});
   const byCust={}, acctByCust={}, unknown=[];
@@ -715,7 +717,7 @@ function collectDetail(){
      เดิมเก็บ "KM6907-0396(RA6907-0004)" ทั้งก้อน ทำให้ billCust[] หาไม่เจอ (cust ว่าง)
      และ xferBill() เทียบเลขบิลตรงๆ ไม่ได้ · มัดจำที่มีเลขบิลแล้ว = หักจากบิลไปแล้ว ไม่ใช่มัดจำค้าง */
   xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ const b=normBill(x.bill);
-    return {bill:b, knv:x.knv, ksk:x.ksk, ra:(x.ra||raOf(x.bill)||null),
+    return {bill:b, knv:x.knv, ksk:x.ksk, ra:(normRA(x.ra||raOf(x.bill))||null),
             cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[b])||"")}; })), bill_audit:(DATA._billAudit||null), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -743,7 +745,7 @@ function parseDepositReport(wb){
   const ra=/^RA/i; const recs=[];
   R.forEach(r=>{ if(!r) return; const c0=r[0]!=null?String(r[0]).trim():""; if(!ra.test(c0)) return;
     const iso = isoFromExcel(r[1]);
-    recs.push({ deposit_no:c0, received_date:iso, customer_code:r[2]!=null?String(r[2]).trim():null, customer:r[3]!=null?String(r[3]).trim():null, amount:num(r[7])||num(r[5]) });
+    recs.push({ deposit_no:normRA(c0), received_date:iso, customer_code:r[2]!=null?String(r[2]).trim():null, customer:r[3]!=null?String(r[3]).trim():null, amount:num(r[7])||num(r[5]) });
   });
   return recs;
 }
@@ -844,7 +846,7 @@ async function loadDeposits(){
 }
 async function addDeposit(){
   const msg=document.getElementById("dep_msg"); if(!sb){ msg.textContent="เชื่อม Supabase ไม่ได้"; msg.style.color="#b91c1c"; return; }
-  const no=document.getElementById("nd_no").value.trim(), cust=document.getElementById("nd_cust").value.trim();
+  const no=normRA(document.getElementById("nd_no").value.trim()), cust=document.getElementById("nd_cust").value.trim();
   const amt=parseFloat(document.getElementById("nd_amt").value)||0; const date=document.getElementById("nd_date").value||new Date().toISOString().slice(0,10);
   if(amt<=0){ msg.textContent="ใส่ยอดมัดจำก่อน"; msg.style.color="#b91c1c"; return; }
   const {error}=await sb.from("rev_deposits").insert({deposit_no:no,customer:cust,amount:amt,received_date:date});
@@ -1164,14 +1166,14 @@ async function renderDay(date, edit){
     try{
       var _raX=((au.detail&&au.detail.xfer)||[]).filter(function(x){ return x.ra && (((+x.knv||0)+(+x.ksk||0))>0.005); });
       if(_raX.length){
-        var _raNos=[]; _raX.forEach(function(x){ if(_raNos.indexOf(x.ra)<0) _raNos.push(x.ra); });
+        var _raNos=[]; _raX.forEach(function(x){ var _n=normRA(x.ra); if(_raNos.indexOf(_n)<0) _raNos.push(_n); });
         var _dq2=await sb.from("rev_deposits").select("id,deposit_no,customer,amount,used_amount,status").in("deposit_no",_raNos);
-        var _dmap={}; (_dq2.data||[]).forEach(function(d0){ _dmap[d0.deposit_no]=d0; });
+        var _dmap={}; (_dq2.data||[]).forEach(function(d0){ _dmap[normRA(d0.deposit_no)]=d0; });
         var _dids=(_dq2.data||[]).map(function(d0){ return d0.id; });
         var _uses=[]; if(_dids.length){ var _uq=await sb.from("rev_deposit_uses").select("deposit_id,bill_no,amount").in("deposit_id",_dids); _uses=(_uq.data||[]); }
         var Q7=String.fromCharCode(39), _bad=0;
         var _raRows=_raX.map(function(x){
-          var amt=Math.round((((+x.knv||0)+(+x.ksk||0)))*100)/100, bill=normBill(x.bill), dep=_dmap[x.ra];
+          var amt=Math.round((((+x.knv||0)+(+x.ksk||0)))*100)/100, bill=normBill(x.bill), dep=_dmap[normRA(x.ra)]; x={bill:x.bill,knv:x.knv,ksk:x.ksk,cust:x.cust,ra:normRA(x.ra)};
           var head='<td style="white-space:nowrap"><b>'+esc(bill)+'</b></td><td style="font-size:12px">'+esc(x.cust||'')+'</td><td class="num">'+TH(amt)+'</td>';
           if(!dep){ _bad++;
             return '<tr style="background:#fef2f2">'+head+'<td style="color:#b91c1c;font-size:12.5px">\u26a0 ยังไม่มีใบมัดจำ '+esc(x.ra)+' ในทะเบียน \u2014 เงินก้อนนี้ยังไม่ถูกบันทึกเป็นมัดจำ</td><td style="font-size:12px;color:#4338ca">ไปที่ \ud83d\udc8e ยอดเงินรอจับคู่ \u2192 \u25be เลือก \u2192 \ud83d\udcb0 ยอดมัดจำ</td></tr>'; }
@@ -1249,7 +1251,7 @@ async function loadPending(){
   const _mainSum=sum-_othSum-_carSum;
   cnt.textContent=data.length+" รายการ · "+TH(sum)+" บาท";
   var _openEmpty=!data.length;
-  let _bills=[]; try{ const _minD=data.reduce(function(m,d){return d.date<m?d.date:m;},data[0].date); const _a2=await sb.from("rev_audit").select("date,detail").gte("date",_minD); (_a2.data||[]).forEach(function(a){ const xf=(a.detail&&a.detail.xfer)||[]; xf.forEach(function(x){ _bills.push({date:a.date,bill:x.bill,knv:(+x.knv||0),ksk:(+x.ksk||0),cust:x.cust||"",ra:x.ra||""}); }); }); }catch(e){}
+  let _bills=[]; try{ const _minD=data.reduce(function(m,d){return d.date<m?d.date:m;},data[0].date); const _a2=await sb.from("rev_audit").select("date,detail").gte("date",_minD); (_a2.data||[]).forEach(function(a){ const xf=(a.detail&&a.detail.xfer)||[]; xf.forEach(function(x){ _bills.push({date:a.date,bill:x.bill,knv:(+x.knv||0),ksk:(+x.ksk||0),cust:x.cust||"",ra:normRA(x.ra)}); }); }); }catch(e){}
   const _Q=String.fromCharCode(39);
   function _sg(P){ var amt=parseFloat(P.amount)||0; var c=_bills.filter(function(b){ return b.date>=P.date && (Math.abs(b.ksk-amt)<=1||Math.abs(b.knv-amt)<=1); }); if(!c.length) return ''; var nm=P.from_name||''; var _h=payerHint(nm); var _hc=_h?_h.customer:'';
     c.sort(function(a,b){ var ah=(_hc&&nameMatch(_hc,a.cust))?0:1, bh=(_hc&&nameMatch(_hc,b.cust))?0:1; if(ah!==bh) return ah-bh; var an=nameMatch(nm,a.cust)?0:1, bn=nameMatch(nm,b.cust)?0:1; if(an!==bn) return an-bn; return a.date<b.date?-1:1; });
@@ -1745,7 +1747,7 @@ window.depositFromPending=async function(id){
   if(!sb) return;
   var p=await mpLoadPend(id); if(!p){ alert("ไม่พบรายการ"); return; }
   if(p.status!=="open"){ alert("รายการนี้ไม่ได้อยู่ในสถานะรอจับคู่แล้ว"); return; }
-  var no=prompt("เลขที่ใบรับมัดจำ (RA\u2026) \u2014 ยังไม่มีเลขเว้นว่างได้:",""); if(no===null) return; no=(no||"").trim().toUpperCase();
+  var no=prompt("เลขที่ใบรับมัดจำ (RA\u2026) \u2014 ยังไม่มีเลขเว้นว่างได้:",""); if(no===null) return; no=normRA((no||"").trim());
   var guess=String(p.from_name||"").replace(/^จาก\s+\S+\s+/,"").replace(/\++\s*$/,"").trim();
   var cust=prompt("ชื่อลูกค้าที่วางมัดจำ:",guess); if(cust===null) return; cust=(cust||"").trim();
   if(!cust){ alert("ต้องระบุชื่อลูกค้า"); return; }

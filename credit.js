@@ -392,10 +392,10 @@
   window.__creditCutFromDeposit=async function(billNo, amount, payDate, by, depositNo){
     try{
       if(!sbReady()||!billNo) return {skipped:true};
-      var q=await sb.from("rev_credit_bills").select("id,bill_no,total_amount,paid_amount,status").eq("bill_no",String(billNo).trim());
+      var q=await sb.from("rev_credit_bills").select("id,bill_no,total_amount,paid_amount,status,bill_date").eq("bill_no",String(billNo).trim());
       var bills=(q.data||[]);
       if(!bills.length) return {skipped:true};                 /* ไม่ใช่บิลลงบัญชี = ปกติ ไม่ต้องทำอะไร */
-      if(bills.length>1) return {skipped:true, dup:true};       /* เลขบิลซ้ำ อย่าเดา */
+      if(bills.length>1) return {skipped:true, dup:true}; var _b0=bills[0], _ra=null; try{ var _d=String(_b0.bill_date||"").slice(0,10); if(_d.length===10 && _d.charAt(4)==="-"){ var _t=new Date(_d+"T00:00:00"), _iso=function(x){ return x.getFullYear()+"-"+pad2(x.getMonth()+1)+"-"+pad2(x.getDate()); }; var _qa=await sb.from("rev_audit").select("date,detail").gte("date",_iso(new Date(_t.getTime()-172800000))).lte("date",_iso(new Date(_t.getTime()+172800000))); var _rw=(_qa.data||[]), _want=String(_b0.bill_no||"").trim().toUpperCase(); for(var _i=0;_i<_rw.length && !_ra;_i++){ var _xf=(_rw[_i].detail&&_rw[_i].detail.xfer)||[]; for(var _j=0;_j<_xf.length;_j++){ var _x=_xf[_j]; if(_x&&_x.ra&&String(_x.bill||"").trim().toUpperCase()===_want){ _ra=String(_x.ra); break; } } } } }catch(_e){ console.warn("raInXfer",_e); } if(_ra){ try{ alert("✓ หักมัดจำในทะเบียนมัดจำแล้ว — ℹ ไม่ได้ตัดยอดบิล "+_b0.bill_no+" ซ้ำ เพราะบิลนี้มีเลขมัดจำ "+_ra+" กำกับในชีตโอน = เครื่อง ACC-BILLING หักมัดจำออกจากบิลตั้งแต่ออกบิลแล้ว · ยอดในทะเบียนลูกหนี้ "+fmt(_b0.total_amount)+" คือยอดหลังหักมัดจำอยู่แล้ว รอเงินจริงเข้าค่อยจับคู่ปิดบิล"); }catch(_e2){} return {skipped:true, alreadyNet:true, bill_no:_b0.bill_no, ra:_ra}; }       /* เลขบิลซ้ำ อย่าเดา */
       var b=bills[0];
       var batch="DEP"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
       var ins=await sb.from("rev_credit_payments").insert([{ bill_id:b.id, pay_date:String(payDate||todayISO()).slice(0,10),

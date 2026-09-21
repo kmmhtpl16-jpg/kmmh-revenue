@@ -395,7 +395,37 @@
       var q=await sb.from("rev_credit_bills").select("id,bill_no,total_amount,paid_amount,status,bill_date").eq("bill_no",String(billNo).trim());
       var bills=(q.data||[]);
       if(!bills.length) return {skipped:true};                 /* ไม่ใช่บิลลงบัญชี = ปกติ ไม่ต้องทำอะไร */
-      if(bills.length>1) return {skipped:true, dup:true}; var _b0=bills[0], _ra=null; try{ var _d=String(_b0.bill_date||"").slice(0,10); if(_d.length===10 && _d.charAt(4)==="-"){ var _t=new Date(_d+"T00:00:00"), _iso=function(x){ return x.getFullYear()+"-"+pad2(x.getMonth()+1)+"-"+pad2(x.getDate()); }; var _qa=await sb.from("rev_audit").select("date,detail").gte("date",_iso(new Date(_t.getTime()-172800000))).lte("date",_iso(new Date(_t.getTime()+172800000))); var _rw=(_qa.data||[]), _want=String(_b0.bill_no||"").trim().toUpperCase(); for(var _i=0;_i<_rw.length && !_ra;_i++){ var _xf=(_rw[_i].detail&&_rw[_i].detail.xfer)||[]; for(var _j=0;_j<_xf.length;_j++){ var _x=_xf[_j]; if(_x&&_x.ra&&String(_x.bill||"").trim().toUpperCase()===_want){ _ra=String(_x.ra); break; } } } } }catch(_e){ console.warn("raInXfer",_e); } if(_ra){ try{ alert("✓ หักมัดจำในทะเบียนมัดจำแล้ว — ℹ ไม่ได้ตัดยอดบิล "+_b0.bill_no+" ซ้ำ เพราะบิลนี้มีเลขมัดจำ "+_ra+" กำกับในชีตโอน = เครื่อง ACC-BILLING หักมัดจำออกจากบิลตั้งแต่ออกบิลแล้ว · ยอดในทะเบียนลูกหนี้ "+fmt(_b0.total_amount)+" คือยอดหลังหักมัดจำอยู่แล้ว รอเงินจริงเข้าค่อยจับคู่ปิดบิล"); }catch(_e2){} return {skipped:true, alreadyNet:true, bill_no:_b0.bill_no, ra:_ra}; }       /* เลขบิลซ้ำ อย่าเดา */
+      if(bills.length>1) return {skipped:true, dup:true};   /* เลขบิลซ้ำ อย่าเดา */
+      var _b0=bills[0], _ra=null, _seenDay=false, _bd=String(_b0.bill_date||"").slice(0,10);
+      /* 19ก.ย.69 — หาหลักฐานว่าเครื่อหักมัดจำออกจากบิลไปแล้ว (เลข RA ในชีตโอน) + จำว่าเจอชีตโอนของวันนั้นหรือยัง */
+      try{
+        if(_bd.length===10 && _bd.charAt(4)==="-"){
+          var _t=new Date(_bd+"T00:00:00"), _iso=function(x){ return x.getFullYear()+"-"+pad2(x.getMonth()+1)+"-"+pad2(x.getDate()); };
+          var _qa=await sb.from("rev_audit").select("date,detail").gte("date",_iso(new Date(_t.getTime()-172800000))).lte("date",_iso(new Date(_t.getTime()+172800000)));
+          var _rw=(_qa.data||[]), _want=String(_b0.bill_no||"").trim().toUpperCase();
+          for(var _i=0;_i<_rw.length;_i++){
+            var _xf=(_rw[_i].detail&&_rw[_i].detail.xfer)||[];
+            if(String(_rw[_i].date||"").slice(0,10)===_bd && _xf.length) _seenDay=true;
+            for(var _j=0;_j<_xf.length && !_ra;_j++){ var _x=_xf[_j]; if(_x&&_x.ra&&String(_x.bill||"").trim().toUpperCase()===_want){ _ra=String(_x.ra); } }
+          }
+        }
+      }catch(_e){ console.warn("raInXfer",_e); }
+      if(_ra){ try{ alert("✓ หักมัดจำในทะเบียนมัดจำแล้ว — ℹ ไม่ได้ตัดยอดบิล "+_b0.bill_no+" ซ้ำ เพราะบิลนี้มีเลขมัดจำ "+_ra+" กำกับในชีตโอน = เครื่อง ACC-BILLING หักมัดจำออกจากบิลตั้งแต่ออกบิลแล้ว · ยอดในทะเบียนลูกหนี้ "+fmt(_b0.total_amount)+" คือยอดหลังหักมัดจำอยู่แล้ว รอเงินจริงเข้าค่อยจับคู่ปิดบิล"); }catch(_e2){} return {skipped:true, alreadyNet:true, bill_no:_b0.bill_no, ra:_ra}; }
+      /* 21ก.ย.69 — ไม่มีหลักฐาน = ต้องถามก่อนเสมอ ห้ามเดาแล้วตัด (ชีตโอนของวันที่ออกบิลอาจเข้าระบบทีหลังกดปุ่ม) */
+      var _def=_seenDay?"2":"1";
+      var _ev=_seenDay
+        ? "✅ ตรวจชีตโอนของวันที่ออกบิลแล้ว — ไม่พบเลขมัดจำ (RA) กำกับบิลนี้\nน่าจะเป็นข้อ 2 (เครื่อยังไม่ได้หัก)"
+        : "⚠ ยังไม่ได้อัปฟอร์มของวันที่ "+beDate(_bd)+" เข้าระบบ — ระบบตรวจให้ไม่ได้\nถ้าไม่แน่ใจ ให้เปิด ACC-BILLING ดูก่อน หรือตอบ 1 ไว้ก่อน";
+      var _msg="⚠ กันตัดยอดซ้ำ — บิล "+_b0.bill_no+" (วันที่บิล "+beDate(_bd)+")\n"
+        +"ยอดในทะเบียนลูกหนี้ตอนนี้ = "+fmt(_b0.total_amount)+" บาท\n\n"
+        +_ev+"\n\n"
+        +"ในเครื่อง ACC-BILLING บิลนี้หักมัดจำออกจากยอดบิลไปแล้วหรือยัง?\n"
+        +"   1 = หักแล้ว → "+fmt(_b0.total_amount)+" คือยอดที่เหลือ  ⇒ ไม่ตัดซ้ำ\n"
+        +"   2 = ยังไม่หัก → "+fmt(_b0.total_amount)+" คือยอดเต็มบิล  ⇒ ตัดยอดให้ "+fmt(amount)+"\n\n"
+        +"พิมพ์ 1 หรือ 2  (กด Cancel = ไม่ตัด)";
+      var _ans=null; try{ _ans=prompt(_msg,_def); }catch(_e3){ _ans=null; }
+      if(_ans===null) return {skipped:true, askedNoCut:true, cancelled:true, bill_no:_b0.bill_no, seenDay:_seenDay};
+      if(String(_ans).trim()!=="2") return {skipped:true, askedNoCut:true, bill_no:_b0.bill_no, seenDay:_seenDay};
       var b=bills[0];
       var batch="DEP"+String(new Date().getFullYear()+543).slice(2)+pad2(new Date().getMonth()+1)+pad2(new Date().getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase();
       var ins=await sb.from("rev_credit_payments").insert([{ bill_id:b.id, pay_date:String(payDate||todayISO()).slice(0,10),

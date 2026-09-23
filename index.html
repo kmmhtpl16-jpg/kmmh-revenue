@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.2</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.2.1</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -105,6 +105,7 @@
         <div class="drop" id="d_acc" style="cursor:default;border-style:solid">
           <div class="ic">🖥️</div><div class="nm">ยอดจากเครื่อง</div>
           <div class="hint">ACC-BILLING</div><div class="fn" id="fn_acc">กำลังโหลด…</div>
+          <label id="acc_up" style="display:none;margin-top:8px;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องแทน</span><div class="fn" id="fn_pos" style="margin-top:4px"></div></label>
         </div>
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
         <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
@@ -216,10 +217,10 @@ function isoFromExcel(v){
   const ms=String(v).trim().match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})$/); if(ms){ let d=parseInt(ms[1],10), mo=parseInt(ms[2],10), y=parseInt(ms[3],10); if(y<100)y+=2500; if(y>2400)y-=543; if(d>=1&&d<=31&&mo>=1&&mo<=12) return y+"-"+pad2(mo)+"-"+pad2(d); }
   return null;
 }
-const FMAP={form:["d_form","fn_form"],pos:["d_pos","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
+const FMAP={form:["d_form","fn_form"],pos:["d_acc","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
 function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
   el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
-function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null;
+function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="pos"){ DATA._posFile=null; DATA._posFileDate=null; setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
@@ -246,6 +247,7 @@ function readFile(input, kind, onName){
     r.onload = ev=>{
       try{ const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
         DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null;
+        if(kind==="pos"){ var _ad=document.getElementById("accDate"); DATA._posFile=DATA.pos; DATA._posFileDate=(_ad&&_ad.value)||null; DATA.pos.fromFile=true; setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
       }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null; }
       render(); matchReminder(); if(kind==="form"){ loadDeposits(); onFormLoaded(); }
     };
@@ -290,17 +292,29 @@ async function loadAccDay(){
     const { data, error } = await sb.rpc("rev_day_from_acc", { p_date:d });
     if(error) throw error;
     DATA._acc = data;
+    const _up=document.getElementById("acc_up"); if(_up) _up.style.display=(data && data.has_data)?"none":"block";
     if(data && data.has_data){
       DATA.pos = posFromAcc(data); DATA["_e_pos"]=null;
       if(box) box.classList.add("on");
       if(fn) fn.innerHTML = "✓ "+TH0(data.bills_count)+" บิล · "+TH(data.net)+"<br><span style='color:#78716c;font-weight:400'>ซิงก์ "+fmtSync(data.syncedAt)+"</span>";
     }else{
-      DATA.pos=null; DATA["_e_pos"]=null; DATA._acc=data||null;
-      if(box) box.classList.remove("on");
-      if(fn) fn.innerHTML = "<span style='color:#b45309'>ยังไม่มีข้อมูลของวันนี้</span>";
+      DATA._acc=data||null;
+      if(DATA._posFile && DATA._posFileDate===d){
+        /* คลาวด์ยังไม่มีวันนี้ (ตัวดึงวิ่งทุกเช้า) → ใช้ไฟล์เครื่องที่แคชเชียร์อัปแบบเดิม */
+        DATA.pos=DATA._posFile; DATA["_e_pos"]=null;
+        try{ setFn("fn_pos", (DATA._files&&DATA._files.pos)||"ไฟล์เครื่อง", "pos"); }catch(_e){}
+        if(box) box.classList.add("on");
+        if(fn) fn.innerHTML = "✓ จากไฟล์ที่อัป · "+TH(DATA.pos.net)+"<br><span style='color:#78716c;font-weight:400'>พรุ่งนี้เช้าระบบเทียบกับ ACC-BILLING ให้อีกรอบ</span>";
+      }else{
+        DATA.pos=null; DATA["_e_pos"]=null;
+        if(box) box.classList.remove("on");
+        try{ var _fp=document.getElementById("fn_pos"); if(_fp && DATA._posFile && DATA._posFileDate!==d) _fp.innerHTML="<span style='color:#78716c;font-weight:400'>ไฟล์ที่อัปไว้เป็นของ "+beDate(DATA._posFileDate)+"</span>"; }catch(_e){}
+        if(fn) fn.innerHTML = "<span style='color:#b45309'>ยังไม่มีข้อมูลของวันนี้</span><br><span style='color:#78716c;font-weight:400'>ระบบดึงให้ทุกเช้า · ตรวจวันนี้เลย = อัปไฟล์เครื่องแบบเดิม</span>";
+      }
     }
   }catch(e){
-    DATA.pos=null; DATA["_e_pos"]=(e&&e.message)||"ดึงข้อมูลจากคลาวด์ไม่สำเร็จ";
+    DATA.pos=(DATA._posFile && DATA._posFileDate===d)?DATA._posFile:null; DATA["_e_pos"]=DATA.pos?null:((e&&e.message)||"ดึงข้อมูลจากคลาวด์ไม่สำเร็จ");
+    try{ var _up2=document.getElementById("acc_up"); if(_up2) _up2.style.display="block"; }catch(_e){}
     if(box) box.classList.remove("on");
     if(fn) fn.innerHTML = "<span style='color:#b91c1c'>ดึงข้อมูลไม่ได้</span>";
   }
@@ -554,7 +568,7 @@ function render(){
   const out = document.getElementById("out"); out.innerHTML="";
   const f=DATA.form, p=DATA.pos;
   if(!f || !p){
-    const need = !p ? 'ยังไม่มียอดจากเครื่องของวันที่เลือก — ลองเปลี่ยนวันที่ หรือกด “↻ ดึงข้อมูลล่าสุด”'
+    const need = !p ? 'ยังไม่มียอดจากเครื่องของวันที่เลือก — ระบบดึงจาก ACC-BILLING ให้ทุกเช้า<br><b>จะตรวจ/ยืนยันวันนี้เลย:</b> กด “📂 อัปไฟล์เครื่องแทน” ในช่อง 🖥️ ยอดจากเครื่อง (ไฟล์รายลูกค้าแบบเดิม)'
                     : 'อัปโหลด <b>ฟอร์มแคชเชียร์</b> เพื่อเริ่มตรวจ (ยอดจากเครื่องดึงให้แล้ว)';
     out.innerHTML = '<div class="muted">'+need+'</div>' + pendingCardHtml();
     return;
@@ -2032,6 +2046,8 @@ async function matchPending(id){
 }
 
 readFile(document.getElementById("f_form"),"form",n=>{setFn("fn_form",n,"form");document.getElementById("d_form").classList.add("on");});
+/* ทางสำรอง: วันไหนคลาวด์ยังไม่มี (ตัวดึงวิ่งทุกเช้า) อัปไฟล์เครื่องแบบเดิมได้ — เพิ่ม 23 ก.ย. 69 */
+readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");document.getElementById("d_acc").classList.add("on");});
 /* ไฟล์จากเครื่องไม่ต้องอัปแล้ว — ดึงจาก ACC-BILLING บนคลาวด์ตามวันที่ที่เลือก */
 (function initAccDay(){
   try{

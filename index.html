@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">อัปโหลดไฟล์ → โปรแกรมตรวจให้อัตโนมัติ · วันที่แสดงเป็น พ.ศ. · <b>v0.1</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.2</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -90,11 +90,27 @@
     <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
   </nav>
 
-  <div class="drops">
-    <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">1. ไฟล์รายรับ (ฟอร์มพนักงาน)</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
-    <label class="drop" id="d_pos"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><div class="ic">🖥️</div><div class="nm">2. ไฟล์จากเครื่อง (รายลูกค้า)</div><div class="hint">มี ยอดบิลรวม / ใบลดหนี้ / สุทธิ</div><div class="fn" id="fn_pos"></div></label>
-    <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">3. รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
-    <label class="drop r-fin" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">4. สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
+  <div class="card" id="dayBar">
+    <div class="rowflex" style="gap:8px">
+      <b style="font-size:15px">ตรวจของวันที่</b>
+      <button class="btn sec" type="button" onclick="stepDay(-1)" aria-label="วันก่อนหน้า" style="padding:9px 14px">‹</button>
+      <input id="accDate" type="date" class="rsn" style="max-width:170px;text-align:center;font-weight:800" onchange="loadAccDay()">
+      <button class="btn sec" type="button" onclick="stepDay(1)" aria-label="วันถัดไป" style="padding:9px 14px">›</button>
+      <span class="muted" id="accDateBe"></span>
+      <button class="btn sec" type="button" onclick="loadAccDay(true)" style="margin-left:auto">↻ ดึงข้อมูลล่าสุด</button>
+    </div>
+    <div style="border-top:1px dashed #e7e5e4;margin-top:12px;padding-top:10px">
+      <div class="muted" style="margin-bottom:8px">แหล่งข้อมูลของวันนี้</div>
+      <div class="drops" style="margin-bottom:0">
+        <div class="drop" id="d_acc" style="cursor:default;border-style:solid">
+          <div class="ic">🖥️</div><div class="nm">ยอดจากเครื่อง</div>
+          <div class="hint">ACC-BILLING</div><div class="fn" id="fn_acc">กำลังโหลด…</div>
+        </div>
+        <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
+        <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
+        <label class="drop r-fin" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
+      </div>
+    </div>
   </div>
 
   <div class="card" id="statusCard">
@@ -111,7 +127,7 @@
   <div class="card" id="depcard">
     <h2>📌 ทะเบียนมัดจำค้าง <span class="badge info" id="depcount">…</span></h2>
     <div class="muted" style="margin-bottom:10px">มัดจำที่รับไว้แต่ยังไม่ออกบิล — เก็บถาวรใน Supabase · ประกบบิลตอนออกของ กันลืมหักให้ลูกค้า · ค้างเกิน 30 วันจะเตือน ⚠</div>
-    <div style="margin-bottom:12px"><label class="btn" style="cursor:pointer;display:inline-block">⬆ อัปรายงาน “รับมัดจำ” (ดูดเข้าทะเบียนอัตโนมัติ)<input type="file" accept=".xlsx,.xls" class="hide" id="f_dep"></label></div>
+    <div class="muted" style="margin-bottom:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px">✅ ไม่ต้องอัปรายงาน “รับมัดจำ” แล้ว — ใบมัดจำ (RA) ดึงจาก ACC-BILLING อัตโนมัติทุกเช้า ดูสรุปที่การ์ด ⑤ ด้านบน · ทะเบียนข้างล่างนี้ยังใช้บันทึกมัดจำที่ยังไม่ได้ออกใบในระบบได้</div>
     <div id="deplist" class="muted">กำลังโหลด…</div>
     <div class="rowflex" style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px">
       <input class="rsn" id="nd_no" placeholder="เลขที่ใบมัดจำ" style="max-width:150px">
@@ -231,10 +247,70 @@ function readFile(input, kind, onName){
       try{ const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
         DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null;
       }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null; }
-      render(); matchReminder(); if(kind==="form") loadDeposits();
+      render(); matchReminder(); if(kind==="form"){ loadDeposits(); onFormLoaded(); }
     };
     r.readAsArrayBuffer(file);
   });
+}
+
+/* ═══════════ ยอดฝั่งเครื่อง — ดึงจาก ACC-BILLING บนคลาวด์ ═══════════
+   เดิมต้องให้แคชเชียร์อัปรายงานจากเครื่อง ตอนนี้ตัวดึงส่งขึ้นคลาวด์ทุกเช้าแล้ว
+   รูปร่างข้อมูลที่ประกอบขึ้นตรงกับที่ parsePos() เคยคืน หน้าจอส่วนอื่นจึงไม่ต้องแก้ */
+function posFromAcc(a){
+  const billTotal={}, billCust={}, codes={}, custTotal={}, custBill={}, custTotalByName={};
+  (a.bills||[]).forEach(function(b){
+    const no=String(b.no||"").trim(), code=String(b.code||"").trim(), nm=String(b.name||"").trim(), amt=+b.amt||0;
+    if(!no) return;
+    billTotal[no]=r2c((billTotal[no]||0)+amt); billCust[no]=nm;
+    if(code){ codes[code]=nm; custTotal[code]=r2c((custTotal[code]||0)+amt); if(!custBill[code]) custBill[code]=no; }
+    if(nm){ custTotalByName[nm]=r2c((custTotalByName[nm]||0)+amt); }
+  });
+  const cns=(a.cns||[]).map(function(x){ return {customer:x.customer||"(ไม่ระบุ)", cn:+x.cn||0, cn_no:x.cn_no||"", bill_no:x.bill_no||"", bill_amt:+x.bill_amt||0}; });
+  const dns=(a.dns||[]).map(function(x){ return {customer:x.customer||"(ไม่ระบุ)", dn:+x.dn||0, dn_no:x.dn_no||"", bill_no:x.bill_no||"", bill_amt:+x.bill_amt||0}; });
+  return { gross:+a.gross||0, cnTotal:+a.cnTotal||0, dnTotal:+a.dnTotal||0, net:+a.net||0,
+           cns:cns, dns:dns, codes:Object.keys(codes), codeName:codes,
+           custTotal:custTotal, custBill:custBill, billCust:billCust, billTotal:billTotal,
+           custTotalByName:custTotalByName, fromCloud:true };
+}
+function fmtSync(s){ if(!s) return "—"; const d=new Date(s);
+  return beDate(d.toISOString().slice(0,10))+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.value) return;
+  const t=new Date(el.value+"T00:00:00"); t.setDate(t.getDate()+n);
+  el.value=t.getFullYear()+"-"+pad2(t.getMonth()+1)+"-"+pad2(t.getDate()); loadAccDay(); }
+async function loadAccDay(){
+  const el=document.getElementById("accDate"); if(!el) return;
+  if(!el.value){ const y=new Date(Date.now()-864e5); el.value=(DATA.form&&DATA.form.date)||(y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate())); }
+  const d=el.value;
+  const be=document.getElementById("accDateBe"); if(be) be.textContent=beDate(d);
+  const fn=document.getElementById("fn_acc"), box=document.getElementById("d_acc");
+  if(fn) fn.textContent="กำลังโหลด…";
+  try{
+    if(!sb) throw new Error("ยังเชื่อมต่อฐานข้อมูลไม่ได้");
+    await ensureOwnerSession();
+    const { data, error } = await sb.rpc("rev_day_from_acc", { p_date:d });
+    if(error) throw error;
+    DATA._acc = data;
+    if(data && data.has_data){
+      DATA.pos = posFromAcc(data); DATA["_e_pos"]=null;
+      if(box) box.classList.add("on");
+      if(fn) fn.innerHTML = "✓ "+TH0(data.bills_count)+" บิล · "+TH(data.net)+"<br><span style='color:#78716c;font-weight:400'>ซิงก์ "+fmtSync(data.syncedAt)+"</span>";
+    }else{
+      DATA.pos=null; DATA["_e_pos"]=null; DATA._acc=data||null;
+      if(box) box.classList.remove("on");
+      if(fn) fn.innerHTML = "<span style='color:#b45309'>ยังไม่มีข้อมูลของวันนี้</span>";
+    }
+  }catch(e){
+    DATA.pos=null; DATA["_e_pos"]=(e&&e.message)||"ดึงข้อมูลจากคลาวด์ไม่สำเร็จ";
+    if(box) box.classList.remove("on");
+    if(fn) fn.innerHTML = "<span style='color:#b91c1c'>ดึงข้อมูลไม่ได้</span>";
+  }
+  render(); matchReminder();
+}
+async function onFormLoaded(){
+  const f=DATA.form; if(!f) return;
+  if(f.date){ const el=document.getElementById("accDate"); if(el) el.value=f.date; }
+  await saveDeclared(f);
+  await loadAccDay();
 }
 function rowsOf(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
 
@@ -379,15 +455,19 @@ function parseForm(wb){
   const main=cash+knv+ksk+acc;
   let refund=0, upk=0, old=0;
   R.forEach(r=>{ const a=lab(r); if(a==="คืนเงิน")refund=num(r[3]); if(a==="UPK")upk=num(r[3]); });
-  if(iref>iold) for(let i=iold+1;i<iref;i++) old+=num(R[i][3]);
+  /* บิลเก่า: เก็บชื่อลูกค้าด้วย ไม่ใช่แค่ยอดรวม — ใช้ตรวจว่าตัดชำระแล้วหรือยัง */
+  const oldRows=[];
+  if(iref>iold) for(let i=iold+1;i<iref;i++){ const a=num(R[i][3]); old+=a;
+    if(a) oldRows.push({name:lab(R[i]) || "(ไม่ระบุชื่อ)", amt:a}); }
   /* เลขบิลในชีท "โอน" อาจเป็น KM6907-0396(RA6907-0004) — ในวงเล็บคือเลขใบมัดจำของ ACC-BILLING
      ยอดที่ลงคือ "มัดจำ" ส่วนที่เหลือของบิลไปโผล่ในชีท "ลงบัญชี" (เป็นลูกหนี้) */
   let xfer=[]; const wsX=wb.Sheets["โอน"];
   if(wsX){ const RX=rowsOf(wsX);
     for(let i=0;i<RX.length;i++){ const r=RX[i]; if(!r) continue;
-      [[1,2,3],[6,7,8]].forEach(function(c){ const raw=r[c[0]]; if(!raw||!/^KM/i.test(String(raw).trim())) return;
+      /* ซ้าย = ลูกค้าปลีก · ขวา = สมาชิก/ร้านค้า — แยกไว้เพื่อบันทึกเป็น "รายการที่แจ้ง" */
+      [[1,2,3,"retail"],[6,7,8,"member"]].forEach(function(c){ const raw=r[c[0]]; if(!raw||!/^KM/i.test(String(raw).trim())) return;
         const kn=num(r[c[1]]), ks=num(r[c[2]]); if(!kn&&!ks) return;
-        xfer.push({bill:normBill(raw), knv:kn, ksk:ks, ra:raOf(raw)});
+        xfer.push({bill:normBill(raw), knv:kn, ksk:ks, ra:raOf(raw), grp:c[3]});
       });
     }
   }
@@ -399,7 +479,36 @@ function parseForm(wb){
   /* เงินสดลูกค้าปลีก: ตัวเลขล้วนคอลัมน์ A แถวสุดท้าย = ยอดรวม */
   let retailCash=[]; const wsR=wb.Sheets["ง-ส คุณ1"];
   if(wsR){ const all=rowsOf(wsR).map(r=>r&&r[0]).filter(v=>v!=null&&v!=="").map(num); retailCash=all.slice(0,-1); }
-  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr, xfer, acctRows, shopCash, retailCash };
+  return { main, cash, knv, ksk, acc, refund, upk, old, date:dstr, xfer, acctRows, shopCash, retailCash, oldRows };
+}
+
+/* ═══════════ รายการที่แคชเชียร์แจ้ง → ฐานข้อมูล ═══════════
+   แปลงไฟล์ฟอร์มเป็นรายการทีละบรรทัด เก็บไว้เทียบกับ ACC-BILLING
+   ว่าเงินเข้าตรงไหม และวันต่อมาตัดชำระแล้วหรือยัง */
+function declaredRowsFromForm(f){
+  const rows=[];
+  (f.xfer||[]).forEach(function(x){
+    const sec = (x.grp==="member") ? "transfer_member" : "transfer_retail";
+    if(x.knv) rows.push({section:sec, channel:"kplus", bill_no:x.bill, customer:null, amount:r2c(x.knv), note:x.ra||null});
+    if(x.ksk) rows.push({section:sec, channel:"ksk",   bill_no:x.bill, customer:null, amount:r2c(x.ksk), note:x.ra||null});
+  });
+  (f.acctRows||[]).forEach(function(x){ if(x.amt) rows.push({section:"account", channel:null, bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
+  (f.shopCash||[]).forEach(function(x){ if(x.amt) rows.push({section:"shop_cash", channel:"cash", bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
+  (f.oldRows||[]).forEach(function(x){ if(x.amt) rows.push({section:"oldbill", channel:null, bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
+  if(f.refund) rows.push({section:"refund", channel:null, bill_no:null, customer:null, amount:r2c(f.refund), note:null});
+  if(f.upk)    rows.push({section:"upk",    channel:null, bill_no:null, customer:null, amount:r2c(f.upk),    note:null});
+  return rows.filter(function(r){ return r.amount && String(r.customer||"")!=="ยอดรวม"; });
+}
+
+async function saveDeclared(f){
+  if(!sb || !f || !f.date) return;
+  try{
+    await ensureOwnerSession();
+    const rows=declaredRowsFromForm(f);
+    const { data, error } = await sb.rpc("rev_save_form_declared", { p_date:f.date, p_rows:rows });
+    if(error) throw error;
+    DATA._declaredN = data;
+  }catch(e){ DATA._declaredErr = (e&&e.message)||String(e); }
 }
 function parsePos(wb){
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -444,7 +553,12 @@ function render(){
   if(msgs.length){ err.classList.remove("hide"); err.innerHTML="⚠ "+msgs.join("<br>"); } else err.classList.add("hide");
   const out = document.getElementById("out"); out.innerHTML="";
   const f=DATA.form, p=DATA.pos;
-  if(!f || !p){ out.innerHTML = '<div class="muted">อัปโหลดทั้ง <b>ไฟล์รายรับ</b> และ <b>ไฟล์เครื่อง</b> เพื่อเริ่มตรวจ</div>'; return; }
+  if(!f || !p){
+    const need = !p ? 'ยังไม่มียอดจากเครื่องของวันที่เลือก — ลองเปลี่ยนวันที่ หรือกด “↻ ดึงข้อมูลล่าสุด”'
+                    : 'อัปโหลด <b>ฟอร์มแคชเชียร์</b> เพื่อเริ่มตรวจ (ยอดจากเครื่องดึงให้แล้ว)';
+    out.innerHTML = '<div class="muted">'+need+'</div>' + pendingCardHtml();
+    return;
+  }
 
   DATA._refund = f.refund;
   const _dnT = +(p.dnTotal||0);
@@ -552,8 +666,57 @@ function render(){
   if(otherDays.length){
     out.innerHTML += `<div class="card" style="border-color:#c4b5fd;background:#faf5ff"><h2>📅 ข้อมูลวันอื่นในไฟล์ <span class="badge" style="background:#ede9fe;color:#5b21b6">${otherDays.length} วัน</span></h2><div class="muted" style="margin-bottom:10px">วันที่ไม่ใช่วันของฟอร์มนี้ — เก็บเข้าระบบ (rev_daily) แล้ว รอตรวจเป็นวันๆ เมื่อมีฟอร์มของวันนั้น</div><table><thead><tr><th>วันที่</th><th>ยอด K+ (QR)</th><th>ฝากเข้าบัญชี</th></tr></thead><tbody>${otherDays.map(d=>'<tr><td>'+beDate(d)+'</td><td class="num">'+((kp&&kp.map[d]!=null)?TH(kp.map[d]):'—')+'</td><td class="num">'+((bank&&bank.map[d])?TH(bank.map[d].dep):'—')+'</td></tr>').join('')}</tbody></table></div>`;
   }
+  out.innerHTML += pendingCardHtml() + depositCardHtml();
+
   if(document.getElementById("exsum")) recalcEx();
   if(sb && f && f.date) _annotateFlags(f.date); if(sb&&f&&f.date&&DATA._hydratedFor!==f.date&&((!DATA.kplus||DATA.kplus.map[f.date]==null)||(!DATA.bank||!DATA.bank.map||DATA.bank.map[f.date]==null)))hydrateFromDaily(f.date);
+}
+
+/* ═══════════ ④ รายการที่แคชเชียร์แจ้ง แต่ยังไม่ได้ตัดชำระ ═══════════
+   แคชเชียร์ลงในฟอร์มว่ารับเงินแล้ว ถ้าเลยวันถัดไปยังไม่มีใบเสร็จใน ACC-BILLING
+   ให้ขึ้นเตือนตรงนี้ (และเตือนซ้ำทาง Telegram ทุกเช้า) */
+function pendingCardHtml(){
+  const a=DATA._acc; if(!a) return "";
+  const rows=a.pending||[]; const n=+a.pendingCount||0; const amt=+a.pendingAmt||0;
+  if(DATA._declaredErr){
+    return '<div class="card" style="border-color:#fca5a5;background:#fef2f2"><h2>④ รายการที่แคชเชียร์แจ้ง</h2>'
+         + '<div class="muted">บันทึกรายการจากฟอร์มไม่สำเร็จ: '+DATA._declaredErr+'</div></div>';
+  }
+  if(!n){
+    return '<div class="card"><h2>④ รายการที่แคชเชียร์แจ้ง <span class="badge ok">ตัดชำระครบ ✓</span></h2>'
+         + '<div class="muted">ทุกรายการที่แจ้งไว้ มีใบเสร็จใน ACC-BILLING แล้ว</div></div>';
+  }
+  const body=rows.map(function(x){
+    const late = (+x.days>=3) ? ' <span style="color:#b91c1c;font-weight:800">⚠'+x.days+' วัน</span>' : '';
+    const note = (x.amount_status && x.amount_status!=='ตรง') ? '<div class="muted">'+x.amount_status+'</div>' : '';
+    return '<tr><td>'+beDate(x.form_date)+'</td><td>'+(x.section||'')+'</td><td>'
+      + (x.bill_no || x.customer || '—') + note + '</td><td class="num">'+TH(x.declared)+'</td>'
+      + '<td class="num">'+(x.outstanding!=null?TH(x.outstanding):'—')+'</td>'
+      + '<td style="text-align:left">'+(x.settle_status||'')+late+'</td></tr>';
+  }).join("");
+  return '<div class="card" style="border-color:#fca5a5">'
+    + '<h2>④ รายการที่แคชเชียร์แจ้ง <span class="badge warn">รอตัดชำระ '+n+' รายการ · '+TH(amt)+' 🚩</span></h2>'
+    + '<div class="muted" style="margin-bottom:10px">แคชเชียร์ลงในฟอร์มว่ารับเงินแล้ว แต่ ACC-BILLING ยังไม่มีใบเสร็จ — ตัดชำระแล้วรายการจะหายไปเอง</div>'
+    + '<table><thead><tr><th>วันที่แจ้ง</th><th>ช่อง</th><th>บิล / ลูกค้า</th><th>ยอดที่แจ้ง</th><th>ยอดค้างในระบบ</th><th>สถานะ</th></tr></thead>'
+    + '<tbody>'+body+'</tbody>'
+    + '<tfoot><tr class="tot"><td colspan="3">รวม</td><td class="num">'+TH(amt)+'</td><td></td><td></td></tr></tfoot></table></div>';
+}
+
+/* ═══════════ ⑤ มัดจำ — อ่านจาก ACC-BILLING ไม่ต้องอัปรายงานแล้ว ═══════════ */
+function depositCardHtml(){
+  const a=DATA._acc; if(!a || !a.deposits) return "";
+  const d=a.deposits;
+  const openN=+d.open_n||0, openAmt=+d.open_amt||0, closedN=+d.closed_n||0;
+  const todayN=+d.today_n||0, todayAmt=+d.today_amt||0;
+  const badge = openN
+    ? '<span class="badge warn">ยังไม่ได้หัก '+openN+' ใบ · '+TH(openAmt)+' 🚩</span>'
+    : '<span class="badge ok">ไม่มีมัดจำค้าง ✓</span>';
+  return '<div class="card"><h2>⑤ มัดจำ (ใบ RA) '+badge+'</h2>'
+    + '<div class="muted" style="margin-bottom:8px">อ่านจาก ACC-BILLING โดยตรง — ไม่ต้องอัปรายงาน “รับมัดจำ” แล้ว · ใบมัดจำ 1 ใบหักได้หลายบิล</div>'
+    + '<div class="kv"><span>รับมัดจำวันนี้</span><b>'+todayN+' ใบ · '+TH(todayAmt)+'</b></div>'
+    + '<div class="kv"><span>รับแล้วยังไม่ออกบิล</span><b'+(openN?' style="color:#b91c1c"':' style="color:#15803d"')+'>'+openN+' ใบ · '+TH(openAmt)+'</b></div>'
+    + '<div class="kv"><span>ปิดใบแล้ว (คืนเงิน/ยกเลิก)</span><b>'+closedN+' ใบ</b></div>'
+    + '</div>';
 }
 async function hydrateFromDaily(date){DATA._hydratedFor=date;try{const r=await sb.from("rev_daily").select("kplus_total,bank_dep_total,bank_kplus_settle,kplus_rows,bank_rows").eq("date",date).maybeSingle();const d=r&&r.data;if(!d)return;let ch=false;if(d.kplus_total!=null&&(!DATA.kplus||DATA.kplus.map[date]==null)){if(!DATA.kplus)DATA.kplus={map:{},count:0,total:0,late:{},rowsByDate:{}};DATA.kplus.map[date]=d.kplus_total;if(!DATA.kplus.rowsByDate)DATA.kplus.rowsByDate={};DATA.kplus.rowsByDate[date]=d.kplus_rows||null;if(!DATA.kplus.late)DATA.kplus.late={};if(!(DATA.kplus.late[date]&&DATA.kplus.late[date].length))DATA.kplus.late[date]=lateItemsFromRows(d.kplus_rows||[]);DATA.kplus._fromDB=true;ch=true;}if(d.bank_dep_total!=null&&(!DATA.bank||!DATA.bank.map||DATA.bank.map[date]==null)){if(!DATA.bank)DATA.bank={map:{},rowsByDate:{}};if(!DATA.bank.map)DATA.bank.map={};DATA.bank.map[date]={dep:d.bank_dep_total,kplus:d.bank_kplus_settle||0};if(!DATA.bank.rowsByDate)DATA.bank.rowsByDate={};DATA.bank.rowsByDate[date]=d.bank_rows||null;DATA.bank._fromDB=true;ch=true;}if(ch)render();}catch(e){}}function cnRemHtml(cn,cash,bill){var credit=cn-cash;var s=TH(credit);if(bill>0){var extra=Math.round((bill-credit)*100)/100;if(extra>1)s+=' <span style="color:#b45309;font-weight:700">· บิล '+TH0(bill)+' &gt; CN → ลูกค้าเพิ่มเงิน '+TH0(extra)+'</span>';else if(extra<-1)s+=' <span style="color:#b91c1c;font-weight:700">· CN เกินบิล '+TH0(-extra)+' (คืนสด/มัดจำ)</span>';else s+=' <span style="color:#15803d">· = บิลพอดี ✓</span>';}return s;}
 function recalc(i){
@@ -1869,7 +2032,15 @@ async function matchPending(id){
 }
 
 readFile(document.getElementById("f_form"),"form",n=>{setFn("fn_form",n,"form");document.getElementById("d_form").classList.add("on");});
-readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");document.getElementById("d_pos").classList.add("on");});
+/* ไฟล์จากเครื่องไม่ต้องอัปแล้ว — ดึงจาก ACC-BILLING บนคลาวด์ตามวันที่ที่เลือก */
+(function initAccDay(){
+  try{
+    var el=document.getElementById("accDate");
+    if(el && !el.value){ var y=new Date(Date.now()-864e5);
+      el.value=y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate()); }
+    setTimeout(loadAccDay, 400);
+  }catch(e){}
+})();
 render();
 const _nd=document.getElementById("nd_date"); if(_nd) _nd.value=new Date().toISOString().slice(0,10);
 const _np=document.getElementById("np_date"); if(_np) _np.value=new Date().toISOString().slice(0,10);

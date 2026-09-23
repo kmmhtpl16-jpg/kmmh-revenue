@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.2.2</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -105,7 +105,7 @@
         <div class="drop" id="d_acc" style="cursor:default;border-style:solid">
           <div class="ic">🖥️</div><div class="nm">ยอดจากเครื่อง</div>
           <div class="hint">ACC-BILLING</div><div class="fn" id="fn_acc">กำลังโหลด…</div>
-          <label id="acc_up" style="display:none;margin-top:8px;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องแทน</span><div class="fn" id="fn_pos" style="margin-top:4px"></div></label>
+          <label id="acc_up" class="r-fin" style="display:none;margin-top:8px;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องแทน</span><div class="fn" id="fn_pos" style="margin-top:4px"></div></label>
         </div>
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
         <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
@@ -312,7 +312,7 @@ async function loadAccDay(){
         DATA.pos=null; DATA["_e_pos"]=null;
         if(box) box.classList.remove("on");
         try{ var _fp=document.getElementById("fn_pos"); if(_fp && DATA._posFile && DATA._posFileDate!==d) _fp.innerHTML="<span style='color:#78716c;font-weight:400'>ไฟล์ที่อัปไว้เป็นของ "+beDate(DATA._posFileDate)+"</span>"; }catch(_e){}
-        if(fn) fn.innerHTML = "<span style='color:#b45309'>ยังไม่มีข้อมูลของวันนี้</span><br><span style='color:#78716c;font-weight:400'>ระบบดึงให้ทุกเช้า · ตรวจวันนี้เลย = อัปไฟล์เครื่องแบบเดิม</span>";
+        if(fn) fn.innerHTML = "<span style='color:#b45309'>ยังไม่มีข้อมูลของวันนี้</span><br><span style='color:#78716c;font-weight:400'>ระบบดึงจาก ACC-BILLING ให้เอง · อัปฟอร์มแล้วบันทึกได้เลย</span>";
       }
     }
   }catch(e){
@@ -570,9 +570,12 @@ function render(){
   const msgs = [DATA._e_form&&("ไฟล์รายรับ: "+DATA._e_form), DATA._e_pos&&("ไฟล์เครื่อง: "+DATA._e_pos), DATA._e_kplus&&("รายงาน K+: "+DATA._e_kplus), DATA._e_bank&&("สเตทเมนต์: "+DATA._e_bank)].filter(Boolean);
   if(msgs.length){ err.classList.remove("hide"); err.innerHTML="⚠ "+msgs.join("<br>"); } else err.classList.add("hide");
   const out = document.getElementById("out"); out.innerHTML="";
-  const f=DATA.form, p=DATA.pos;
+  const f=DATA.form; let p=DATA.pos;
+  /* v0.3 — แคชเชียร์อัปฟอร์มแล้วบันทึกได้เลย ยอดเครื่องเป็นงานของระบบ (ดึงจาก ACC-BILLING แล้วเทียบให้เอง) */
+  const mPend = !!f && !p;
+  if(mPend){ p={pending:true, gross:0, cnTotal:0, dnTotal:0, net:0, cns:[], dns:[], codes:[], codeName:{}, custTotal:{}, custBill:{}, billCust:{}, billTotal:{}, custTotalByName:{}}; }
   if(!f || !p){
-    const need = !p ? 'ยังไม่มียอดจากเครื่องของวันที่เลือก — ระบบดึงจาก ACC-BILLING ให้ทุกเช้า<br><b>จะตรวจ/ยืนยันวันนี้เลย:</b> กด “📂 อัปไฟล์เครื่องแทน” ในช่อง 🖥️ ยอดจากเครื่อง (ไฟล์รายลูกค้าแบบเดิม)'
+    const need = !p ? 'อัปโหลด <b>ฟอร์มแคชเชียร์</b> แล้วกดบันทึกได้เลย — ยอดจากเครื่อง ระบบดึงจาก ACC-BILLING แล้วเทียบให้เอง'
                     : 'อัปโหลด <b>ฟอร์มแคชเชียร์</b> เพื่อเริ่มตรวจ (ยอดจากเครื่องดึงให้แล้ว)';
     out.innerHTML = '<div class="muted">'+need+'</div>' + pendingCardHtml();
     return;
@@ -586,21 +589,27 @@ function render(){
   const diffAdj = p.net - (sumForm - f.refund);
   const okRaw = Math.abs(diffRaw) <= 1;
   const okAdj = Math.abs(diffAdj) <= 1;
-  const ok1 = okRaw || okAdj;
+  const ok1 = mPend ? true : (okRaw || okAdj);
   const ok1detail = okRaw ? '' : (okAdj ? ' (หักคืนเงิน '+TH0(f.refund)+')' : '');
-  const ok2 = p.cns.length === 0;
+  const ok2 = mPend ? true : (p.cns.length === 0);
   const allOk = ok1 && ok2;
   const kPending = !DATA.kplus || !DATA.bank;
-  out.innerHTML += `<div class="verdict ${allOk?'v-ok':'v-warn'}">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
-  out.innerHTML += `<div style="text-align:center;margin:-4px 0 16px"><button class="btn" type="button" onclick="saveAudit()">✓ ยืนยัน & บันทึกผลตรวจวันนี้ (${f.date?beDate(f.date):'-'})</button> <span id="audit_msg" class="muted" style="margin-left:8px"></span></div>`;
+  if(mPend) out.innerHTML += `<div class="verdict v-ok" style="background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8">📄 อ่านฟอร์มแล้ว — กดบันทึกได้เลย · ยอดจากเครื่อง ระบบดึงจาก ACC-BILLING แล้วเทียบให้เอง (ผลส่งเจ้าของพรุ่งนี้เช้า)${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
+  else out.innerHTML += `<div class="verdict ${allOk?'v-ok':'v-warn'}">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
+  out.innerHTML += `<div style="text-align:center;margin:-4px 0 16px"><button class="btn" type="button" onclick="saveAudit()">✓ ${mPend?'บันทึกฟอร์มวันนี้':'ยืนยัน & บันทึกผลตรวจวันนี้'} (${f.date?beDate(f.date):'-'})</button> <span id="audit_msg" class="muted" style="margin-left:8px"></span></div>`;
   if(f && !f.date){ out.innerHTML += `<div style="text-align:center;color:#b91c1c;margin:-10px 0 16px;font-size:.92em">⚠ อ่านวันที่จากไฟล์รายรับไม่ได้ — แก้เซลล์วันที่ (D1) ของชีท "สรุปรายรับ-รายจ่าย" ให้เป็นวันที่จริง หรือพิมพ์แบบ 21/07/2569 แล้วอัปไฟล์ใหม่ (ยอดขายอ่านได้ครบ แต่ยังบันทึกไม่ได้เพราะไม่รู้ว่าเป็นของวันไหน)</div>`; }
 
-  const scenario = okRaw ? '✓ ยอดขายตรง — “คืนเงิน” เป็นรายการแยก (เช่น มัดจำฝากไว้/รอออกบิล) ไม่หักจากยอดขาย'
+  const scenario = mPend ? '⏳ รอเทียบกับยอดเครื่อง — ระบบทำให้เอง'
+                 : okRaw ? '✓ ยอดขายตรง — “คืนเงิน” เป็นรายการแยก (เช่น มัดจำฝากไว้/รอออกบิล) ไม่หักจากยอดขาย'
                  : okAdj ? '✓ ยอดขายตรง — “คืนเงิน” ถูกรวมอยู่ในยอดขายของฟอร์มแล้ว'
                  : '🚩 ยังไม่ลงตัวทั้งสองแบบ — ตรวจรายการประกอบด้านล่าง / ตาราง ②';
   const matchDep = (f.refund>0) ? (DATA._open||[]).find(d=>Math.abs((parseFloat(d.amount)||0)-f.refund)<=1) : null;
   const _mForm = okRaw ? sumForm : (sumForm - f.refund);
-  const _saleRows = ok1
+  const _saleRows = mPend
+    ? ('<div class="kv"><span>ยอดขายในฟอร์ม (4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+')</span><b>'+TH(sumForm)+'</b></div>'
+      + (f.refund>0?('<div class="kv"><span>คืนเงินในฟอร์ม</span><b>'+TH(f.refund)+'</b></div>'):'')
+      + '<div class="verdict" style="margin-top:10px;background:#f8fafc;border:1px dashed #cbd5e1;color:#475569">⏳ ยอดจากเครื่องยังไม่ขึ้น — ระบบดึงจาก ACC-BILLING แล้วเทียบกับยอดฟอร์มนี้ให้อัตโนมัติ · แคชเชียร์ไม่ต้องทำอะไรเพิ่ม</div>')
+    : ok1
     ? ('<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px;margin-bottom:4px"><span>✅ ยอดขายจากเครื่อง ('+_mLbl+')</span><b style="color:#15803d">'+TH(p.net)+' ✓</b></div>'
       + '<div class="kv"><span>ยอดขายในฟอร์ม (4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+')</span><b'+(okRaw?' style="color:#15803d"':'')+'>'+TH(sumForm)+(okRaw?' ✓':'')+'</b></div>'
       + ((okAdj&&!okRaw) ? ('<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสดที่ปนอยู่ในฟอร์ม</span><b>− '+TH(f.refund)+'</b></div>'
@@ -612,7 +621,7 @@ function render(){
       + '<div class="kv"><span>ส่วนต่าง (ถ้าหักคืนเงิน '+TH0(f.refund)+')</span><b style="color:#b91c1c">'+TH(diffAdj)+'</b></div>');
   out.innerHTML += `
   <div class="card">
-    <h2>① ยอดขายตรง <span class="badge ${ok1?'ok':'warn'}">${ok1?'ตรง'+ok1detail+' ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩'}</span></h2>
+    <h2>① ยอดขายตรง <span class="badge ${mPend?'':(ok1?'ok':'warn')}">${mPend?'⏳ รอยอดเครื่อง':(ok1?'ตรง'+ok1detail+' ✓':'ต่าง '+TH0(Math.abs(diffRaw))+' 🚩')}</span></h2>
     <div class="muted" style="margin:2px 0 10px;line-height:1.55;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px">ℹ️ <b>"ตรง" หมายถึงยอดขายจริงตรงกัน</b> — ไม่ใช่ตัวเลข 2 ช่องเท่ากันเป๊ะ เพราะระบบปรับ 2 อย่างก่อนเทียบ: ฝั่ง<b>เครื่อง</b>หัก <b>ใบลดหนี้</b> และบวก <b>ใบเพิ่มหนี้ (DN)</b> กลับคืนแล้ว · ฝั่ง<b>ฟอร์ม</b>อาจมี <b>เงินคืนสด</b>ปนอยู่ ระบบจึงหักออกให้ (ยอมคลาดได้ ±1 บ. จากปัดเศษ)</div>
     ${_saleRows}
     <div class="muted" style="margin-top:8px">📌 ${scenario}</div>
@@ -630,16 +639,16 @@ function render(){
   let rowsHtml = p.cns.map((x,i)=>`<tr data-i="${i}"><td>${x.customer}</td><td>${x.cn_no||'—'}</td><td>${x.bill_no||'—'}</td><td class="num">${TH(x.cn)}</td><td><input class="cell cash" type="number" placeholder="0" oninput="recalc(${i})"></td><td class="num left rem" id="rem${i}">${cnRemHtml(x.cn,0,x.bill_amt||0)}</td><td><input class="rsn rsninp" placeholder="พนง.กรอกเหตุผล"></td><td><input class="rsn appinp" placeholder="ผู้ขาย"></td></tr>`).join("");
   out.innerHTML += `
   <div class="card">
-    <h2>② คุมใบลดหนี้ (CN) <span class="badge ${p.cns.length?'warn':'ok'}">${p.cns.length? p.cns.length+' ใบ — ต้องมีเหตุผลกำกับ 🚩':'ไม่มีใบลดหนี้ ✓'}</span></h2>
+    <h2>② คุมใบลดหนี้ (CN) <span class="badge ${mPend?'':(p.cns.length?'warn':'ok')}">${mPend?'⏳ รอดึงจาก ACC-BILLING':(p.cns.length? p.cns.length+' ใบ — ต้องมีเหตุผลกำกับ 🚩':'ไม่มีใบลดหนี้ ✓')}</span></h2>
     <div class="muted" style="margin-bottom:10px">ใบลดหนี้ตัดยอดขายจริง — ดึงจากเครื่อง · พนักงานกรอกคืนสดจริง/เหตุผล/ผู้ขายทุกใบ · ช่อง “เหลือเป็นมูลค่าบิล” = CN ส่วนที่เอาไปเป็นมูลค่าซื้อของใหม่ · ระบบเทียบกับบิลที่ผูกอัตโนมัติ: <b>ถ้าบิลสูงกว่า CN = ลูกค้าต้องเพิ่มเงินส่วนต่าง</b> (เช่น บิล 909 − CN 720 = เพิ่มเงิน 189) · ถ้า CN เกินบิล = ส่วนเกินเป็นคืนสด/มัดจำ</div>
     <table><thead><tr><th>ลูกค้า</th><th>เลขที่ CN</th><th>บิลที่ผูก</th><th>ยอด CN</th><th>คืนสดจริง</th><th>เหลือเป็นมูลค่าบิล</th><th>เหตุผล</th><th>ผู้ขาย</th></tr></thead>
-      <tbody>${rowsHtml||'<tr><td colspan="8" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>'}</tbody>
+      <tbody>${rowsHtml||(mPend?'<tr><td colspan="8" class="muted">⏳ ใบลดหนี้ของวันนี้จะขึ้นเมื่อระบบดึงจาก ACC-BILLING</td></tr>':'<tr><td colspan="8" class="muted">วันนี้ไม่มีใบลดหนี้ 👍</td></tr>')}</tbody>
       ${p.cns.length?`<tfoot><tr class="tot"><td colspan="3">รวม</td><td class="num">${TH(p.cnTotal)}</td><td></td><td></td><td></td><td></td></tr></tfoot>`:''}
     </table>
     ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
   </div>`;
 
-  try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += '<div id="billAuditBox">'+billAuditHtml(DATA._billAudit)+'</div>'; baApplyDeposits(DATA._billAudit); }
+  if(!mPend) try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += '<div id="billAuditBox">'+billAuditHtml(DATA._billAudit)+'</div>'; baApplyDeposits(DATA._billAudit); }
   catch(e){ console.warn('billAudit', e); }
 
   const kp = DATA.kplus;
@@ -666,10 +675,10 @@ function render(){
     } else { b3 = `<div class="muted">สเตทเมนต์ที่อัปไม่มีรายการของวันที่ฟอร์ม (${f.date?beDate(f.date):'ไม่ทราบวันที่'}) — เช็กว่าตรงรอบไหม</div>`; }
   } else { b3 = `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px"><b style="color:#b45309">⏳ รอตรวจสอบ</b> — อัปสเตทเมนต์กสิกร (resultFile…csv) ในช่อง 4 เพื่อตรวจอัตโนมัติ</div>`; }
 
-  DATA._auditSnapshot = { date:f.date, machine_net:p.net, form_main:f.main, form_upk:f.upk, form_refund:f.refund, cn_total:p.cnTotal, dn_total:(+p.dnTotal||0),
+  DATA._auditSnapshot = { date:f.date, machine_net:(mPend?null:p.net), form_main:f.main, form_upk:f.upk, form_refund:f.refund, cn_total:(mPend?null:p.cnTotal), dn_total:(mPend?null:(+p.dnTotal||0)),
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
-  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, ok1detail:ok1detail, refund:f.refund, cnCount:p.cns.length, net:p.net, sumForm:sumForm, diffRaw:diffRaw, kPending:kPending };
+  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, ok1detail:ok1detail, refund:f.refund, cnCount:p.cns.length, net:(mPend?null:p.net), sumForm:sumForm, diffRaw:diffRaw, kPending:kPending, mPend:mPend };
   out.innerHTML += `
   <div class="card">
     <h2>③ ตรงธนาคาร${(kp&&bank)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>'}</h2>${((DATA.kplus&&DATA.kplus._fromDB)||(DATA.bank&&DATA.bank._fromDB))?'<div class="muted" style="margin:4px 0 8px;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:6px 8px">📌 ดึง K+/สเตทเมนต์ที่อัปไว้ก่อนหน้า (จากระบบ) มาตรวจให้อัตโนมัติ — ไม่ต้องอัปซ้ำ</div>':''}
@@ -1199,7 +1208,7 @@ async function saveAudit(){
 }
 async function sendAuditAlert(){
   const m=DATA._auditMsg; if(!sb||!m||!m.date) return;
-  const head = m.allOk ? "✅ ผ่านเบื้องต้น" : "🚩 มีจุดต้องดู";
+  const head = m.mPend ? "📄 บันทึกฟอร์มแล้ว" : (m.allOk ? "✅ ผ่านเบื้องต้น" : "🚩 มีจุดต้องดู");
   const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
   const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
   const l3 = m.kPending ? "⏳ รอตรวจ K+/สเตทเมนต์" : "ตรวจแล้ว ✓";
@@ -1218,8 +1227,8 @@ async function sendAuditAlert(){
          : "   ✓ ติดธงรับเข้าบัญชีอื่น + แนบสลิปแล้ว"));
   }
   const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+l4+"\n\n"
-    +"① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" บาท\n"+_formLine
-    +"② ใบลดหนี้: "+l2+"\n"
+    +(m.mPend ? ("① ยอดขาย: ⏳ รอเทียบกับ ACC-BILLING (ส่งผลพรุ่งนี้เช้า)\n"+_formLine+"② ใบลดหนี้: ⏳ รอดึงจากระบบ\n")
+              : ("① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" บาท\n"+_formLine+"② ใบลดหนี้: "+l2+"\n"))
     +"③ ธนาคาร: "+l3+"\n\n"
     +"<i>"+({cashier:"แคชเชียร์บันทึกแล้ว",finance:"การเงินตรวจสอบแล้ว",owner:"เจ้าของตรวจสอบแล้ว"}[ROLE]||"พนักงานยืนยันแล้ว")+"</i>";
   const msg=document.getElementById("audit_msg");

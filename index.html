@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.2.1</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.2.2</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -220,7 +220,7 @@ function isoFromExcel(v){
 const FMAP={form:["d_form","fn_form"],pos:["d_acc","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
 function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
   el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
-function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="pos"){ DATA._posFile=null; DATA._posFileDate=null; setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
+function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="pos"){ DATA._posFile=null; DATA._posFileDate=null; DATA._posFileName=null; try{ localStorage.removeItem("rev_pos_file"); }catch(e){} setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
@@ -247,8 +247,9 @@ function readFile(input, kind, onName){
     r.onload = ev=>{
       try{ const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
         DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null;
-        if(kind==="pos"){ var _ad=document.getElementById("accDate"); DATA._posFile=DATA.pos; DATA._posFileDate=(_ad&&_ad.value)||null; DATA.pos.fromFile=true; setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
-      }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null; }
+        if(kind==="pos"){ var _ad=document.getElementById("accDate"); DATA._posFile=DATA.pos; DATA._posFileDate=(DATA.form&&DATA.form.date)||(_ad&&_ad.value)||null; DATA._posFileName=file.name; DATA.pos.fromFile=true; posFileSave(); setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
+      }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null;
+        if(kind==="pos"){ try{ document.getElementById("fn_pos").innerHTML="<span style='color:#b91c1c'>อ่านไฟล์ไม่ได้: "+esc(err.message)+"</span>"; }catch(_e){} } }
       render(); matchReminder(); if(kind==="form"){ loadDeposits(); onFormLoaded(); }
     };
     r.readAsArrayBuffer(file);
@@ -299,12 +300,14 @@ async function loadAccDay(){
       if(fn) fn.innerHTML = "✓ "+TH0(data.bills_count)+" บิล · "+TH(data.net)+"<br><span style='color:#78716c;font-weight:400'>ซิงก์ "+fmtSync(data.syncedAt)+"</span>";
     }else{
       DATA._acc=data||null;
-      if(DATA._posFile && DATA._posFileDate===d){
+      if(DATA._posFile){
         /* คลาวด์ยังไม่มีวันนี้ (ตัวดึงวิ่งทุกเช้า) → ใช้ไฟล์เครื่องที่แคชเชียร์อัปแบบเดิม */
         DATA.pos=DATA._posFile; DATA["_e_pos"]=null;
-        try{ setFn("fn_pos", (DATA._files&&DATA._files.pos)||"ไฟล์เครื่อง", "pos"); }catch(_e){}
+        try{ setFn("fn_pos", DATA._posFileName||(DATA._files&&DATA._files.pos)||"ไฟล์เครื่อง", "pos"); }catch(_e){}
         if(box) box.classList.add("on");
-        if(fn) fn.innerHTML = "✓ จากไฟล์ที่อัป · "+TH(DATA.pos.net)+"<br><span style='color:#78716c;font-weight:400'>พรุ่งนี้เช้าระบบเทียบกับ ACC-BILLING ให้อีกรอบ</span>";
+        if(fn) fn.innerHTML = "✓ จากไฟล์ที่อัป · "+TH(DATA.pos.net)
+          +((DATA._posFileDate && DATA._posFileDate!==d)?"<br><span style='color:#b45309'>⚠ ไฟล์นี้อัปไว้ของวันที่ "+beDate(DATA._posFileDate)+" — ถ้าไม่ใช่ของวันนี้ กด ✕ แล้วอัปใหม่</span>":"")
+          +"<br><span style='color:#78716c;font-weight:400'>พรุ่งนี้เช้าระบบเทียบกับ ACC-BILLING ให้อีกรอบ</span>";
       }else{
         DATA.pos=null; DATA["_e_pos"]=null;
         if(box) box.classList.remove("on");
@@ -313,7 +316,7 @@ async function loadAccDay(){
       }
     }
   }catch(e){
-    DATA.pos=(DATA._posFile && DATA._posFileDate===d)?DATA._posFile:null; DATA["_e_pos"]=DATA.pos?null:((e&&e.message)||"ดึงข้อมูลจากคลาวด์ไม่สำเร็จ");
+    DATA.pos=DATA._posFile||null; DATA["_e_pos"]=DATA.pos?null:((e&&e.message)||"ดึงข้อมูลจากคลาวด์ไม่สำเร็จ");
     try{ var _up2=document.getElementById("acc_up"); if(_up2) _up2.style.display="block"; }catch(_e){}
     if(box) box.classList.remove("on");
     if(fn) fn.innerHTML = "<span style='color:#b91c1c'>ดึงข้อมูลไม่ได้</span>";
@@ -323,6 +326,7 @@ async function loadAccDay(){
 async function onFormLoaded(){
   const f=DATA.form; if(!f) return;
   if(f.date){ const el=document.getElementById("accDate"); if(el) el.value=f.date; }
+  if(f.date && DATA._posFile && DATA._posFileDate!==f.date){ DATA._posFileDate=f.date; posFileSave(); } /* อัปไฟล์เครื่องก่อนฟอร์ม → ผูกกับวันของฟอร์ม */
   await saveDeclared(f);
   await loadAccDay();
 }
@@ -2048,6 +2052,9 @@ async function matchPending(id){
 readFile(document.getElementById("f_form"),"form",n=>{setFn("fn_form",n,"form");document.getElementById("d_form").classList.add("on");});
 /* ทางสำรอง: วันไหนคลาวด์ยังไม่มี (ตัวดึงวิ่งทุกเช้า) อัปไฟล์เครื่องแบบเดิมได้ — เพิ่ม 23 ก.ย. 69 */
 readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");document.getElementById("d_acc").classList.add("on");});
+/* ไฟล์เครื่องที่อัปแทน — จำไว้ในเครื่องนี้ รีเฟรชหน้าแล้วไม่หาย (เก็บ 2 วัน) */
+function posFileSave(){ try{ localStorage.setItem("rev_pos_file", JSON.stringify({name:DATA._posFileName, date:DATA._posFileDate, at:Date.now(), pos:DATA._posFile})); }catch(e){} }
+(function posFileRestore(){ try{ var j=JSON.parse(localStorage.getItem("rev_pos_file")||"null"); if(!j||!j.pos) return; if(Date.now()-(+j.at||0)>2*864e5){ localStorage.removeItem("rev_pos_file"); return; } DATA._posFile=j.pos; DATA._posFileDate=j.date||null; DATA._posFileName=j.name||"ไฟล์เครื่อง"; DATA._posFile.fromFile=true; }catch(e){} })();
 /* ไฟล์จากเครื่องไม่ต้องอัปแล้ว — ดึงจาก ACC-BILLING บนคลาวด์ตามวันที่ที่เลือก */
 (function initAccDay(){
   try{

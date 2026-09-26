@@ -1619,7 +1619,8 @@ function renderCash(){
 let chartGross=null;
 function renderGross(){
   const el=document.getElementById("p_gross");
-  const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].sort();
+  const GROSS_FROM="2026-06"; /* เจ้าของขอ 26 ก.ย.69: เริ่มแสดงตั้งแต่ มิ.ย. 2569 (ก่อนหน้านั้นยังไม่มียอดตรวจ) */
+  const months=[...new Set([...STATE.audit.map(a=>monthKey(a.date)),...STATE.exp.map(x=>monthKey(x.exp_date))])].filter(m=>m>=GROSS_FROM).sort();
   const rev={},buy={},aud={},hol={},rngD={};
   months.forEach(m=>{rev[m]=0;buy[m]=0;aud[m]=0;hol[m]=0;rngD[m]=0;});
   STATE.audit.filter(a=>a.status==="ตรวจแล้ว").forEach(a=>{ const m=monthKey(a.date); if(rev[m]!=null){ rev[m]+=num(a.machine_net); aud[m]++; } });

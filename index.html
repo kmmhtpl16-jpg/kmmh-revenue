@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.5</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.6</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -125,12 +125,11 @@
   <div id="out"></div>
   <div id="matchbox"></div>
 
-  <div class="card" id="depcard">
+  <div class="card" id="depcard" style="display:none"><!-- v0.3.6: ซ่อนไว้ ขึ้นเองเฉพาะตอนมีมัดจำค้าง (ใบ RA ดึงจาก ACC-BILLING แล้ว) -->
     <h2>📌 ทะเบียนมัดจำค้าง <span class="badge info" id="depcount">…</span></h2>
-    <div class="muted" style="margin-bottom:10px">มัดจำที่รับไว้แต่ยังไม่ออกบิล — เก็บถาวรใน Supabase · ประกบบิลตอนออกของ กันลืมหักให้ลูกค้า · ค้างเกิน 30 วันจะเตือน ⚠</div>
-    <div class="muted" style="margin-bottom:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px">✅ ไม่ต้องอัปรายงาน “รับมัดจำ” แล้ว — ใบมัดจำ (RA) ดึงจาก ACC-BILLING อัตโนมัติทุกเช้า ดูสรุปที่การ์ด ⑤ ด้านบน · ทะเบียนข้างล่างนี้ยังใช้บันทึกมัดจำที่ยังไม่ได้ออกใบในระบบได้</div>
+    <div class="muted" style="margin-bottom:10px">มัดจำที่ลงทะเบียนจาก “เงินรอจับคู่” แต่ยังไม่ได้หักเข้าบิล — พอออกบิลแล้วกด “หักมัดจำ” · ค้างเกิน 30 วันจะเตือน ⚠</div>
     <div id="deplist" class="muted">กำลังโหลด…</div>
-    <div class="rowflex" style="margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px">
+    <div class="rowflex" style="display:none;margin-top:12px;border-top:1px dashed #e7e5e4;padding-top:12px">
       <input class="rsn" id="nd_no" placeholder="เลขที่ใบมัดจำ" style="max-width:150px">
       <input class="rsn" id="nd_cust" placeholder="ลูกค้า" style="max-width:160px">
       <input class="cell" id="nd_amt" type="number" placeholder="ยอด">
@@ -1071,6 +1070,7 @@ async function loadDeposits(){
   if(error){ list.innerHTML='<span style="color:#b91c1c">โหลดไม่ได้: '+error.message+'</span>'; return; }
   DATA._open=data; matchReminder(); if(typeof recalcEx==="function") recalcEx();
   cnt.textContent=data.length+" ใบค้าง";
+  { const _dc=document.getElementById("depcard"); if(_dc) _dc.style.display = data.length ? "" : "none"; }
   if(!data.length){ list.innerHTML='<div class="muted">ไม่มีมัดจำค้าง 👍</div>'; return; }
   const today=new Date();
   list.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>เลขที่</th><th>ลูกค้า</th><th>ยอดมัดจำ</th><th>ใช้ไป</th><th>เหลือ</th><th>ค้าง(วัน)</th><th></th></tr></thead><tbody>'+

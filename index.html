@@ -1069,7 +1069,7 @@ async function loadDepIssues(){
   if(!it.length){ box.innerHTML=""; return; }
   const Q=String.fromCharCode(39);
   box.innerHTML='<div class="card" style="border-color:#fca5a5;background:#fef2f2"><h2>⚠️ มัดจำที่ลงผิด <span class="badge warn">'+it.length+' รายการ · ต้องแก้</span></h2>'
-    + '<div class="muted" style="margin-bottom:8px">เลขใบมัดจำ (RA) ไม่มีใน ACC-BILLING — ถ้าไม่แก้ ยอดมัดจำจะนับซ้ำหรือค้างผิด</div>'
+    + '<div class="muted" style="margin-bottom:8px">เลขใบมัดจำ (RA) ไม่มีใน ACC-BILLING</div>'
     + it.map(function(x){
         const what = x.fix==='delete' ? ('ลงซ้ำกับ <b>'+esc(x.dup_of)+'</b> (บิลเดียวกัน ยอดเท่ากัน)')
                    : x.fix==='rename' ? ('เลขที่ถูกตาม ACC-BILLING คือ <b>'+esc(x.suggest_ra)+'</b>')

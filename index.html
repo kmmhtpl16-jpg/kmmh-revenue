@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.4</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.5</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -719,20 +719,32 @@ function pendingCardHtml(){
     return '<div class="card"><h2>④ รายการที่แคชเชียร์แจ้ง <span class="badge ok">ตัดชำระครบ ✓</span></h2>'
          + '<div class="muted">ทุกรายการที่แจ้งไว้ มีใบเสร็จใน ACC-BILLING แล้ว</div></div>';
   }
-  const body=rows.map(function(x){
-    const late = (+x.days>=3) ? ' <span style="color:#b91c1c;font-weight:800">⚠'+x.days+' วัน</span>' : '';
-    const note = (x.amount_status && x.amount_status!=='ตรง') ? '<div class="muted">'+x.amount_status+'</div>' : '';
+  /* v0.3.5 — เตือนเฉพาะที่จำเป็น (เจ้าของขอ 26 ก.ย.69)
+     ปกติเจ้าของตัดบิลวันถัดไป → รายการของเมื่อวานที่ยอดตรง/จ่ายบางส่วน = ปกติ ซ่อนไว้ (กดดูได้)
+     ต้องตาม = เลยวันถัดไปแล้วยังไม่ตัด (≥2 วัน) หรือ หาบิล/ยอดค้างไม่เจอ หรือ แจ้งเกินยอดในระบบ */
+  const _bad=function(x){ return /ไม่พบ|เกินยอด/.test(String(x.amount_status||'')+' '+String(x.settle_status||'')); };
+  const _need=function(x){ return (+x.days>=2) || _bad(x); };
+  const tr=function(x){
+    const late = (+x.days>=2) ? ' <span style="color:#b91c1c;font-weight:800">⚠'+x.days+' วัน</span>' : '';
+    const note = (x.amount_status && x.amount_status!=='ตรง' && !/จ่ายบางส่วน/.test(x.amount_status)) ? '<div class="muted" style="color:#b91c1c">'+x.amount_status+'</div>' : '';
     return '<tr><td>'+beDate(x.form_date)+'</td><td>'+(x.section||'')+'</td><td>'
       + (x.bill_no || x.customer || '—') + note + '</td><td class="num">'+TH(x.declared)+'</td>'
       + '<td class="num">'+(x.outstanding!=null?TH(x.outstanding):'—')+'</td>'
       + '<td style="text-align:left">'+(x.settle_status||'')+late+'</td></tr>';
-  }).join("");
+  };
+  const head='<thead><tr><th>วันที่แจ้ง</th><th>ช่อง</th><th>บิล / ลูกค้า</th><th>ยอดที่แจ้ง</th><th>ยอดค้างในระบบ</th><th>สถานะ</th></tr></thead>';
+  const need=rows.filter(_need), norm=rows.filter(function(x){ return !_need(x); });
+  const nAmt=Math.round(need.reduce(function(t,x){return t+(+x.declared||0);},0)*100)/100;
+  const oAmt=Math.round(norm.reduce(function(t,x){return t+(+x.declared||0);},0)*100)/100;
+  const normBox = norm.length ? ('<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">ปกติ — รอตัดชำระตามรอบ '+norm.length+' รายการ · '+TH(oAmt)+' (กดดู)</summary>'
+      + '<table style="margin-top:6px">'+head+'<tbody>'+norm.map(tr).join('')+'</tbody></table></details>') : '';
+  if(!need.length){
+    return '<div class="card"><h2>④ รายการที่แคชเชียร์แจ้ง <span class="badge ok">ไม่มีรายการต้องตาม ✓</span></h2>'+normBox+'</div>';
+  }
   return '<div class="card" style="border-color:#fca5a5">'
-    + '<h2>④ รายการที่แคชเชียร์แจ้ง <span class="badge warn">รอตัดชำระ '+n+' รายการ · '+TH(amt)+' 🚩</span></h2>'
-    + '<div class="muted" style="margin-bottom:10px">แคชเชียร์ลงในฟอร์มว่ารับเงินแล้ว แต่ ACC-BILLING ยังไม่มีใบเสร็จ — ตัดชำระแล้วรายการจะหายไปเอง</div>'
-    + '<table><thead><tr><th>วันที่แจ้ง</th><th>ช่อง</th><th>บิล / ลูกค้า</th><th>ยอดที่แจ้ง</th><th>ยอดค้างในระบบ</th><th>สถานะ</th></tr></thead>'
-    + '<tbody>'+body+'</tbody>'
-    + '<tfoot><tr class="tot"><td colspan="3">รวม</td><td class="num">'+TH(amt)+'</td><td></td><td></td></tr></tfoot></table></div>';
+    + '<h2>④ รายการที่แคชเชียร์แจ้ง <span class="badge warn">ต้องตาม '+need.length+' รายการ · '+TH(nAmt)+' 🚩</span></h2>'
+    + '<div class="muted" style="margin-bottom:10px">เลยวันถัดไปแล้วยังไม่ตัดชำระ หรือหาบิล/ยอดใน ACC-BILLING ไม่เจอ</div>'
+    + '<table>'+head+'<tbody>'+need.map(tr).join('')+'</tbody></table>'+normBox+'</div>';
 }
 
 /* ═══════════ ⑤ มัดจำ — อ่านจาก ACC-BILLING ไม่ต้องอัปรายงานแล้ว ═══════════ */

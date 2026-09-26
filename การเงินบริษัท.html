@@ -463,6 +463,8 @@ async function reloadAll(){
     STATE.advances=(adv&&!adv.error?(adv.data||[]):[]);
     STATE.uobLoans=(uob&&!uob.error?(uob.data||[]):[]);
     STATE.mcogs={}; (mc&&!mc.error?(mc.data||[]):[]).forEach(function(r){ STATE.mcogs[r.month]=r; });
+    /* 26 ก.ย.69 — วันขายจริง + ต้นทุนเฉลี่ยรายเดือนจาก ACC-BILLING (ตัวดึง 26a ขึ้นไป) · นับถึงเมื่อวาน (วันนี้ยังไม่ปิดร้าน) */
+    STATE.accg={}; try{ const _y=dShift(new Date().toISOString().slice(0,10),-1); const _g=await sb.rpc("acc_monthly_gross",{p_from:from,p_to:(to<_y?to:_y)}); if(_g&&!_g.error&&_g.data) STATE.accg=_g.data; }catch(_eG){}
     STATE.bellIgnore=(ign&&!ign.error?(ign.data||[]):[]);
     STATE.tripAck=(tack&&!tack.error?(tack.data||[]):[]);
     /* 💵 เงินเบิกสด: กรองเฉพาะชนิด "เบิกเงินสด" แล้วแปะชื่อเล่นไว้โชว์ในการ์ดกระทบยอด */
@@ -1528,7 +1530,7 @@ function renderMonthly(){
     + opexCats.map(c=>catRow(c,"#f87171")).join("");
   /* ---- แถวสรุปกำไร: ต้นทุนขาย (จาก rev_monthly_cogs) · กำไรขั้นต้น · ค่าใช้จ่ายดำเนินงาน · กำไรก่อนภาษี ---- */
   const MCg=STATE.mcogs||{};
-  const cogsOfM=m=>{ const r=MCg[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; };
+  const cogsOfM=m=>{ const g=(STATE.accg||{})[m]; if(g&&g.cogs!=null) return num(g.cogs); const r=MCg[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; }; /* ต้นทุนเฉลี่ยจากระบบมาก่อน (26 ก.ย.69) */
   const buyOf=m=>grid[m]&&grid[m]["ค่าซื้อสินค้า"]?grid[m]["ค่าซื้อสินค้า"]:0;
   const cogsTot=months.reduce((s2,m)=>s2+(cogsOfM(m)||0),0);
   const haveCogs=months.filter(m=>cogsOfM(m)!=null);
@@ -1641,13 +1643,19 @@ function renderGross(){
 
   /* ต้นทุนขาย = ตัวเลขที่กรอกจากรายงาน ACC-BILLING รายเดือน (ตาราง rev_monthly_cogs) — หน้านี้ไม่คิดเอง */
   const MC=STATE.mcogs||{};
-  const cogsOf=m=>{ const r=MC[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; };
+  const AG=STATE.accg||{};
+  const autoCogs=m=>{ const g=AG[m]; return (g&&g.cogs!=null)?num(g.cogs):null; };
+  const manCogs=m=>{ const r=MC[m]; return (r&&r.cogs!=null&&r.cogs!=="")?num(r.cogs):null; };
+  /* ต้นทุนเฉลี่ยจากระบบมาก่อน · ไม่มีค่อยใช้ที่กรอกจากรายงาน */
+  const cogsOf=m=>{ const a=autoCogs(m); return a!=null?a:manCogs(m); };
+  /* ครบไหม = ตรวจแล้ว ≥ วันที่มีบิลขายจริง (วันปิดร้านไม่ต้องกดวันหยุด) */
+  const isPart=m=>{ const g=AG[m]; return (g&&g.sales_days!=null) ? (aud[m] < g.sales_days) : ((aud[m]+hol[m])<rngD[m]); };
 
-  const incomplete=months.filter(m=>(aud[m]+hol[m])<rngD[m]);
+  const incomplete=months.filter(isPart);
   let warn="";
   if(incomplete.length){
     warn=`<div class="note" style="background:#fef2f2;border-color:#fca5a5">⚠️ <b>ข้อมูลยอดขายยังไม่ครบ</b> — `+
-      incomplete.map(m=>`${beMonth(m)}: ตรวจแล้ว ${aud[m]} วัน${hol[m]?" (+วันหยุด "+hol[m]+")":""} จาก ${rngD[m]} วันในช่วงที่เลือก`).join(" · ")+
+      incomplete.map(m=>`${beMonth(m)}: ตรวจแล้ว ${aud[m]} วัน จากวันที่มีขาย ${(AG[m]&&AG[m].sales_days!=null)?AG[m].sales_days:rngD[m]} วัน`).join(" · ")+
       `<br>ยอดขายที่เห็นจึงต่ำกว่าจริง อย่าเพิ่งใช้ตัดสินใจ</div>`;
   }
   const missing=months.filter(m=>cogsOf(m)==null&&rev[m]>0);
@@ -1664,11 +1672,13 @@ function renderGross(){
   let body=months.map(m=>{
     const cg=cogsOf(m);
     const gp=cg==null?null:rev[m]-cg, mg=(gp==null||rev[m]<=0)?null:(gp/rev[m]*100);
-    const part=(aud[m]+hol[m])<rngD[m];
+    const part=isPart(m);
     return `<tr><td>${beMonth(m)} ${part?'<span class="chip" style="background:#dc2626;color:#fff">ข้อมูลไม่ครบ</span>':''}</td>
       <td class="n pos">${TH0(rev[m])}</td>
       <td class="n" style="color:#a16207">${buy[m]>0?TH0(buy[m]):"—"}</td>
-      <td class="n"><input type="number" step="0.01" min="0" id="mc_${m}" value="${cg==null?'':cg}" placeholder="กรอก" title="${esc(MC_HINT)}" onchange="saveMonthlyCogs('${m}')" style="width:118px;text-align:right">${mcNoteHtml(m)}</td>
+      <td class="n">${autoCogs(m)!=null
+        ? `<b>${TH0(autoCogs(m))}</b><div class="muted" style="font-size:11px;line-height:1.35;margin-top:3px;white-space:normal;text-align:right">🤖 ต้นทุนเฉลี่ยจากระบบ${(AG[m].nocost_amt>0)?` · ไม่มีต้นทุน ${AG[m].nocost_lines} บรรทัด ขาย ${TH0(AG[m].nocost_amt)}`:''}${manCogs(m)!=null?` · รายงานที่กรอก ${TH0(manCogs(m))}`:''}</div>`
+        : `<input type="number" step="0.01" min="0" id="mc_${m}" value="${cg==null?'':cg}" placeholder="กรอก" title="${esc(MC_HINT)}" onchange="saveMonthlyCogs('${m}')" style="width:118px;text-align:right">${mcNoteHtml(m)}`}</td>
       <td class="n ${gp==null?'':(gp>=0?'pos':'neg')}">${gp==null?"—":TH0(gp)}</td>
       <td class="n">${mg==null?"—":mg.toFixed(1)+"%"}</td></tr>`;
   }).join("");

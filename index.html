@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.3</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.4</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -873,10 +873,20 @@ async function kskDepAdj(date,xfer,pend,brows){
   }catch(e){ console.warn("kskDepAdj",e); }
   out.pre=Math.round(out.pre*100)/100; out.oth=Math.round(out.oth*100)/100; return out;
 }
-function kskAdjNote(adj){ if(!adj||(!(adj.pre>1)&&!(adj.oth>1))) return ""; var s=[];
-  if(adj.pre>1) s.push('ฝั่งฟอร์ม −'+TH(adj.pre)+' (ใช้มัดจำที่เข้าบัญชีวันก่อน: '+adj.preRows.map(function(x){return esc(x.cust)+' '+TH0(x.amt)+' เข้า '+beDate(x.d)+' → บิล '+esc(x.bill);}).join(' · ')+')');
-  if(adj.oth>1) s.push('ฝั่งสเตทเมนต์ −'+TH(adj.oth)+' (เงินเข้าวันนี้ของบิลเก่า/มัดจำ: '+adj.othRows.map(function(x){return esc(x.ref)+' '+TH0(x.amt);}).join(' · ')+')');
-  return '<div class="muted" style="margin:2px 0 0">ℹ️ หักรายการข้ามวันให้แล้ว — '+s.join(' · ')+'</div>'; }
+function kskAdjNote(adj){ if(!adj||(!(adj.pre>1)&&!(adj.oth>1))) return "";
+  /* v0.3.4 — จัดเป็นรายการอ่านง่าย (เดิมเป็นย่อหน้ายาวบรรทัดเดียว) · รวมรายการที่เข้าบิลเดียวกัน */
+  var row=function(a,b,c){ return '<div style="display:flex;gap:10px;padding:1px 0 1px 14px"><span style="min-width:96px;font-family:monospace">'+a+'</span><span style="min-width:74px;text-align:right">'+b+'</span><span style="color:#78716c">'+c+'</span></div>'; };
+  var h='<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">ℹ️ หักรายการข้ามวันให้แล้ว</div>';
+  if(adj.pre>1){
+    var g={}, order=[]; (adj.preRows||[]).forEach(function(x){ var k=String(x.bill||'-'); if(!g[k]){ g[k]={amt:0,cust:[],d:[]}; order.push(k); } g[k].amt+=(+x.amt||0); if(g[k].cust.indexOf(x.cust)<0) g[k].cust.push(x.cust); var bd=beDate(x.d).slice(0,5); if(g[k].d.indexOf(bd)<0) g[k].d.push(bd); });
+    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(adj.pre)+'</b> · มัดจำที่โอนเข้าบัญชีมาก่อน</div>'
+      + order.map(function(k){ return row(esc(k), TH(g[k].amt), esc(g[k].cust.join(', '))+' · เข้า '+g[k].d.join(', ')); }).join('');
+  }
+  if(adj.oth>1){
+    h+='<div style="margin-top:3px">ฝั่งสเตทเมนต์ <b>−'+TH(adj.oth)+'</b> · เงินเข้าวันนี้ของบิลเก่า/มัดจำ</div>'
+      + (adj.othRows||[]).map(function(x){ return row('', TH(x.amt), esc(x.ref)); }).join('');
+  }
+  return h+'</div>'; }
 /* ช่องว่างของวันที่กำลังตรวจอยู่ (หน้าอัปไฟล์) — เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน */
 function currentGaps(){ var out={k:0,b:0};
   try{ var f=DATA.form, kp=DATA.kplus, bk=DATA.bank; if(!f||!f.date) return out;

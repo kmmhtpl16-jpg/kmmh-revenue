@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.2</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.3</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -293,6 +293,8 @@ async function loadAccDay(){
     const { data, error } = await sb.rpc("rev_day_from_acc", { p_date:d });
     if(error) throw error;
     DATA._acc = data;
+    /* v0.3.3 — ใบลดหนี้ของบิลหลังตัดรอบ 15:30 นับเข้าวันของบิล (acc_cn_shift) ให้ด่านบันทึก + ข้อความ Telegram ใช้ยอดเดียวกับหน้ารายละเอียด */
+    DATA._accShift=null; try{ const _sr=await sb.rpc("acc_cn_shift",{p_date:d}); if(_sr&&_sr.data) DATA._accShift={d:d, out:+_sr.data.out_amt||0, inn:+_sr.data.in_amt||0}; }catch(_eS){}
     const _up=document.getElementById("acc_up"); if(_up) _up.style.display=(data && data.has_data)?"none":"block";
     if(data && data.has_data){
       DATA.pos = posFromAcc(data); DATA["_e_pos"]=null;
@@ -585,8 +587,10 @@ function render(){
   const _dnT = +(p.dnTotal||0);
   const _mLbl = "ยอดบิล "+TH0(p.gross)+" − ใบลดหนี้ "+TH0(p.cnTotal)+(_dnT>0?(" + ใบเพิ่มหนี้ "+TH0(_dnT)):"");
   const sumForm = f.main + f.upk;
-  const diffRaw = p.net - sumForm;
-  const diffAdj = p.net - (sumForm - f.refund);
+  const _sh = (!mPend && DATA._accShift && DATA._accShift.d===f.date && (DATA._accShift.out||DATA._accShift.inn)) ? DATA._accShift : null;
+  const netCmp = _sh ? Math.round((p.net + _sh.out - _sh.inn)*100)/100 : p.net;
+  const diffRaw = netCmp - sumForm;
+  const diffAdj = netCmp - (sumForm - f.refund);
   const okRaw = Math.abs(diffRaw) <= 1;
   const okAdj = Math.abs(diffAdj) <= 1;
   const ok1 = mPend ? true : (okRaw || okAdj);
@@ -614,7 +618,8 @@ function render(){
       + '<div class="kv"><span>ยอดขายในฟอร์ม (4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+')</span><b'+(okRaw?' style="color:#15803d"':'')+'>'+TH(sumForm)+(okRaw?' ✓':'')+'</b></div>'
       + ((okAdj&&!okRaw) ? ('<div class="kv"><span>&nbsp;&nbsp;− หักเงินคืนสดที่ปนอยู่ในฟอร์ม</span><b>− '+TH(f.refund)+'</b></div>'
           + '<div class="kv" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:7px 9px"><span>✅ ยอดขายฟอร์ม (หลังหักเงินคืนสด)</span><b style="color:#15803d">'+TH(_mForm)+' ✓</b></div>') : '')
-      + '<div class="verdict v-ok" style="margin-top:10px">✓ 2 ยอดตรงกัน&nbsp;&nbsp;'+TH(p.net)+' = '+TH(_mForm)+((okAdj&&!okRaw)?(' (ฟอร์ม '+TH(sumForm)+' − คืนเงิน '+TH0(f.refund)+')'):'')+'</div>')
+      + (_sh?('<div class="kv"><span>'+(_sh.out?'↪️ ใบลดหนี้ของบิลหลังตัดรอบ ย้ายไปนับวันของบิล':'↩️ ใบลดหนี้ลงวันก่อนหน้า แต่เป็นของบิลวันนี้')+'</span><b>'+(_sh.out?'+ '+TH(_sh.out):'− '+TH(_sh.inn))+'</b></div>'):'')
+      + '<div class="verdict v-ok" style="margin-top:10px">✓ 2 ยอดตรงกัน&nbsp;&nbsp;'+TH(netCmp)+' = '+TH(_mForm)+((okAdj&&!okRaw)?(' (ฟอร์ม '+TH(sumForm)+' − คืนเงิน '+TH0(f.refund)+')'):'')+'</div>')
     : ('<div class="kv"><span>ยอดสุทธิจากเครื่อง ('+_mLbl+')</span><b>'+TH(p.net)+'</b></div>'
       + '<div class="kv"><span>ยอดขายในฟอร์ม: 4 บรรทัด '+TH0(f.main)+' + UPK '+TH0(f.upk)+'</span><b>'+TH(sumForm)+'</b></div>'
       + '<div class="kv"><span>ส่วนต่าง (เครื่อง − ฟอร์ม)</span><b style="color:#b91c1c">'+TH(diffRaw)+' 🚩</b></div>'
@@ -678,7 +683,8 @@ function render(){
   DATA._auditSnapshot = { date:f.date, machine_net:(mPend?null:p.net), form_main:f.main, form_upk:f.upk, form_refund:f.refund, cn_total:(mPend?null:p.cnTotal), dn_total:(mPend?null:(+p.dnTotal||0)),
     kplus_today:(kp&&f.date&&kp.map[f.date]!=null)?kp.map[f.date]:null,
     bank_dep_today:(bank&&f.date&&bank.map[f.date])?bank.map[f.date].dep:null };
-  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, ok1detail:ok1detail, refund:f.refund, cnCount:p.cns.length, net:(mPend?null:p.net), sumForm:sumForm, diffRaw:diffRaw, kPending:kPending, mPend:mPend };
+  DATA._auditMsg = { date:f.date, allOk:allOk, ok1:ok1, ok1detail:ok1detail, refund:f.refund, cnCount:p.cns.length, net:(mPend?null:netCmp), sumForm:sumForm, diffRaw:diffRaw, diffAdj:diffAdj, kPending:kPending, mPend:mPend,
+    fcash:(f.cash!=null?+f.cash:null), fxfer:Math.round(((+f.knv||0)+(+f.ksk||0))*100)/100, facct:(f.acc!=null?+f.acc:null), fupk:+f.upk||0 };
   out.innerHTML += `
   <div class="card">
     <h2>③ ตรงธนาคาร${(kp&&bank)?'':' <span class="badge" style="background:#fef3c7;color:#b45309">⏳ รอตรวจสอบ</span>'}</h2>${((DATA.kplus&&DATA.kplus._fromDB)||(DATA.bank&&DATA.bank._fromDB))?'<div class="muted" style="margin:4px 0 8px;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:6px 8px">📌 ดึง K+/สเตทเมนต์ที่อัปไว้ก่อนหน้า (จากระบบ) มาตรวจให้อัตโนมัติ — ไม่ต้องอัปซ้ำ</div>':''}
@@ -1208,28 +1214,23 @@ async function saveAudit(){
 }
 async function sendAuditAlert(){
   const m=DATA._auditMsg; if(!sb||!m||!m.date) return;
-  const head = m.mPend ? "📄 บันทึกฟอร์มแล้ว" : (m.allOk ? "✅ ผ่านเบื้องต้น" : "🚩 มีจุดต้องดู");
-  const l1 = m.ok1 ? "ตรง ✓" : ("ต่าง "+TH0(Math.abs(m.diffRaw))+" 🚩");
-  const l2 = m.cnCount ? (m.cnCount+" ใบ (มีเหตุผลกำกับ)") : "ไม่มี ✓";
-  const l3 = m.kPending ? "⏳ รอตรวจ K+/สเตทเมนต์" : "ตรวจแล้ว ✓";
-  const _formLine = (m.refund>0) ? ("   ฟอร์ม "+TH(m.sumForm)+" − "+TH(m.refund)+" = "+TH(Math.round((m.sumForm-m.refund)*100)/100)+" บาท\n")
-                                 : ("   ฟอร์ม "+TH(m.sumForm)+" บาท\n");
-  const _gp=m.gap||{k:0,b:0,left:0,note:null};
-  let l4="";
-  if((_gp.k||0)>1||(_gp.b||0)>1){
-    const _p=[]; if((_gp.k||0)>1) _p.push("K+ เกินรายงาน "+TH(_gp.k));
-    if((_gp.b||0)>1) _p.push("โอนกสิกรเกินสเตทเมนต์ "+TH(_gp.b));
-    l4 = _gp.partial
-      ? ("\n⏳ <b>รายงาน K+ ยังไม่ครบวัน — ยังตรวจส่วนต่างไม่ได้</b>\n   รายงานที่อัปไว้มีถึง "+_gp.partial.last+" น. ("+_gp.partial.n+" รายการ "+TH(_gp.partial.total)+")\n   "+_p.join(" · ")+"\n   👉 โหลดรายงาน K+ ให้ครบวัน อัปทับช่อง 3 แล้วกดยืนยันซ้ำ (ไม่ต้องแนบสลิป)")
-      : ("\n⚠️ <b>เงินลงฟอร์มแต่ไม่เข้าบัญชี/K+ ร้าน</b>\n   "+_p.join(" · ")+"\n"
-      + ((_gp.left||0)>1
-         ? ("   🚩 ยังไม่ติดธง "+TH(_gp.left)+" บาท"+(_gp.note?("\n   ข้ามด้วยเหตุผล: "+esc(_gp.note)):""))
-         : "   ✓ ติดธงรับเข้าบัญชีอื่น + แนบสลิปแล้ว"));
+  /* v0.3.3 — ข้อความสั้นตามที่เจ้าของขอ (26 ก.ย.69): ยอดขายตรง = X + เงินสด / เงินโอน/K+ / ลงบัญชี
+     ไม่แจ้งเรื่อง K+/สเตทเมนต์ (การเงินอัปทีหลัง) · แจ้งเฉพาะกรณีมีคนข้ามด่านเงินไม่เข้าบัญชีด้วยเหตุผล */
+  const _net = m.mPend ? null : m.net;
+  const _sales = Math.round((m.sumForm-(m.refund||0))*100)/100;
+  let line;
+  if(m.mPend) line = "⏳ ยอดฟอร์ม = "+TH(_sales)+" (รอเทียบยอดเครื่อง ผลเข้าห้องนี้พรุ่งนี้เช้า)";
+  else if(m.ok1) line = "✅ <b>ยอดขายตรง = "+TH(_net)+"</b>";
+  else line = "🚩 <b>ยอดขายไม่ตรง</b> — เครื่อง "+TH(_net)+" · ฟอร์ม "+TH(_sales)+" · ต่าง "+TH(Math.abs(m.diffAdj!=null?m.diffAdj:m.diffRaw));
+  let br = "";
+  if(m.fcash!=null || m.facct!=null){
+    br = "\n\nเงินสด = "+TH(m.fcash||0)+"\nเงินโอน/K+ = "+TH(m.fxfer||0)+"\nลงบัญชี = "+TH(m.facct||0)
+       + ((m.fupk||0)>0 ? ("\nUPK = "+TH(m.fupk)) : "")
+       + ((m.refund||0)>0 ? ("\nคืนเงินสด = −"+TH(m.refund)) : "");
   }
-  const text = "📊 <b>ตรวจรายได้ KMMH</b> — "+beDate(m.date)+"\n"+head+l4+"\n\n"
-    +(m.mPend ? ("① ยอดขาย: ⏳ รอเทียบกับ ACC-BILLING (ส่งผลพรุ่งนี้เช้า)\n"+_formLine+"② ใบลดหนี้: ⏳ รอดึงจากระบบ\n")
-              : ("① ยอดขาย: "+l1+"\n   เครื่อง "+TH(m.net)+" บาท\n"+_formLine+"② ใบลดหนี้: "+l2+"\n"))
-    +"③ ธนาคาร: "+l3+"\n\n"
+  const _gp=m.gap||{};
+  const ov = (_gp.note && (_gp.left||0)>1) ? ("\n\n⚠️ ข้ามด่านเงินไม่เข้าบัญชี "+TH(_gp.left)+" บาท — เหตุผล: "+esc(_gp.note)) : "";
+  const text = "📊 <b>ยอดขาย "+beDate(m.date)+"</b>\n"+line+br+ov+"\n\n"
     +"<i>"+({cashier:"แคชเชียร์บันทึกแล้ว",finance:"การเงินตรวจสอบแล้ว",owner:"เจ้าของตรวจสอบแล้ว"}[ROLE]||"พนักงานยืนยันแล้ว")+"</i>";
   const msg=document.getElementById("audit_msg");
   try{

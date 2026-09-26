@@ -81,7 +81,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.6</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.7</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
     <a class="on" href="index.html">🧾 ตรวจรายได้</a>
@@ -125,6 +125,7 @@
   <div id="out"></div>
   <div id="matchbox"></div>
 
+  <div id="depissues"></div>
   <div class="card" id="depcard" style="display:none"><!-- v0.3.6: ซ่อนไว้ ขึ้นเองเฉพาะตอนมีมัดจำค้าง (ใบ RA ดึงจาก ACC-BILLING แล้ว) -->
     <h2>📌 ทะเบียนมัดจำค้าง <span class="badge info" id="depcount">…</span></h2>
     <div class="muted" style="margin-bottom:10px">มัดจำที่ลงทะเบียนจาก “เงินรอจับคู่” แต่ยังไม่ได้หักเข้าบิล — พอออกบิลแล้วกด “หักมัดจำ” · ค้างเกิน 30 วันจะเตือน ⚠</div>
@@ -1061,7 +1062,35 @@ if(fbk) fbk.addEventListener("change", e=>{
   r.onload=ev=>{ try{ DATA.bank=parseBank(ev.target.result); DATA._e_bank=null; saveBankDaily(DATA.bank); }catch(err){ DATA._e_bank=err.message; DATA.bank=null; } render(); matchReminder(); };
   r.readAsText(file,"utf-8");
 });
+/* v0.3.7 — มัดจำที่ลงผิด: เลข RA ไม่มีใน ACC-BILLING / หักบิลเดียวกันซ้ำ → ขึ้นเตือนให้แคชเชียร์เห็นและกดแก้ได้ (เจ้าของขอ 26 ก.ย.69) */
+async function loadDepIssues(){
+  const box=document.getElementById("depissues"); if(!box||!sb) return;
+  let it=[]; try{ const r=await sb.rpc("rev_deposit_issues"); it=(r&&r.data)||[]; }catch(e){ return; }
+  if(!it.length){ box.innerHTML=""; return; }
+  const Q=String.fromCharCode(39);
+  box.innerHTML='<div class="card" style="border-color:#fca5a5;background:#fef2f2"><h2>⚠️ มัดจำที่ลงผิด <span class="badge warn">'+it.length+' รายการ · ต้องแก้</span></h2>'
+    + '<div class="muted" style="margin-bottom:8px">เลขใบมัดจำ (RA) ไม่มีใน ACC-BILLING — ถ้าไม่แก้ ยอดมัดจำจะนับซ้ำหรือค้างผิด</div>'
+    + it.map(function(x){
+        const what = x.fix==='delete' ? ('ลงซ้ำกับ <b>'+esc(x.dup_of)+'</b> (บิลเดียวกัน ยอดเท่ากัน)')
+                   : x.fix==='rename' ? ('เลขที่ถูกตาม ACC-BILLING คือ <b>'+esc(x.suggest_ra)+'</b>')
+                   : 'หาเลขที่ถูกไม่เจอ — ตรวจเลข RA ในใบมัดจำอีกครั้ง';
+        const btn = x.fix==='delete' ? ('<button class="btn" style="background:#b91c1c;color:#fff;border:0;padding:4px 12px" onclick="fixDepIssue('+Q+x.id+Q+','+Q+'delete'+Q+')">ลบรายการที่ลงซ้ำ</button>')
+                  : x.fix==='rename' ? ('<button class="btn" style="padding:4px 12px" onclick="fixDepIssue('+Q+x.id+Q+','+Q+'rename'+Q+')">เปลี่ยนเป็น '+esc(x.suggest_ra)+'</button>') : '';
+        return '<div style="background:#fff;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin:6px 0">'
+          + '<div><b>'+esc(x.deposit_no)+'</b> · '+esc(x.customer||'—')+' · '+TH(+x.amount)+' · รับ '+beDate(x.received_date)+(x.bill?(' · หักบิล '+esc(x.bill)):'')+'</div>'
+          + '<div style="font-size:13px;margin:3px 0 6px;color:#b91c1c">'+what+'</div>'+btn+'</div>';
+      }).join('')+'</div>';
+}
+async function fixDepIssue(id,kind){
+  if(!confirm(kind==='delete'?'ลบรายการมัดจำที่ลงซ้ำนี้?':'เปลี่ยนเลขใบมัดจำเป็นเลขที่ถูก?')) return;
+  try{ const r=await sb.rpc("rev_deposit_fix",{p_id:id,p_by:(typeof ROLE!=="undefined"&&ROLE)||null});
+    if(r.error) throw r.error;
+    alert(r.data==='deleted'?'✓ ลบรายการที่ลงซ้ำแล้ว':r.data==='renamed'?'✓ แก้เลขใบมัดจำแล้ว':'ไม่ได้แก้ ('+r.data+')');
+  }catch(e){ alert('แก้ไม่สำเร็จ: '+(e.message||e)); }
+  loadDepIssues(); loadDeposits(); if(window.refreshOpenDay) refreshOpenDay();
+}
 async function loadDeposits(){
+  loadDepIssues();
   try{ if(window.ensureOwnerSession) await ensureOwnerSession(); }catch(e){}
   const list=document.getElementById("deplist"), cnt=document.getElementById("depcount");
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }

@@ -747,6 +747,14 @@
       var parsed=parseCreditSheet(wb, null);
       var msg=document.getElementById("creditmsg");
       if(!parsed.entries.length){ if(msg) msg.textContent=""; return; }
+      /* 28 ก.ย.69 — กันดูดบิลลงบัญชี/ตัดบิลเก่าผิดวัน ใช้ด่านเดียวกับหน้าหลัก (formDateProblem ใน index.html) · DATA เป็น let ต้องอ้างชื่อตรง ไม่ใช่ window.DATA */
+      if(typeof window.formDateProblem==="function"){
+        var _D=function(){ try{ return (typeof DATA!=="undefined")?DATA:null; }catch(_e){ return null; } };
+        for(var _w=0;_w<30 && !(_D()&&_D().form);_w++) await new Promise(function(r){ setTimeout(r,100); });
+        var _fd=_D()&&_D().form, _pd=String(parsed.date||"").slice(0,10);
+        var _dp=await window.formDateProblem((_fd && String(_fd.date||"").slice(0,10)===_pd)?_fd:{date:parsed.date, xfer:[]});
+        if(_dp){ if(msg) msg.innerHTML='<span style="color:#b91c1c">⛔ ไม่ได้ดูดบิลลงบัญชี เพราะวันที่ไม่ถูกต้อง — '+esc(_dp.join(" · "))+'</span>'; return; }
+      }
       var _cm=await canonMap();   /* source_key คงเดิม (กันดูดซ้ำ) เปลี่ยนแค่ชื่อที่เก็บ */
       var payload=parsed.entries.map(function(e){
         return {source_key:e.source_key, bill_no:e.bill_no, customer:canonName(_cm,e.customer), bill_date:parsed.date||todayISO(),

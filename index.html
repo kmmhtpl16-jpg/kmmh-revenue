@@ -280,7 +280,7 @@ function fmtSync(s){ if(!s) return "—"; const d=new Date(s);
 function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.value) return;
   const t=new Date(el.value+"T00:00:00"); t.setDate(t.getDate()+n);
   el.value=t.getFullYear()+"-"+pad2(t.getMonth()+1)+"-"+pad2(t.getDate()); loadAccDay(); }
-async function loadAccDay(){
+/* v0.3.4 — ACC ซิงก์ตอนเช้าของวันนั้นเอง = มีแค่บิลช่วงเช้า (เคส 26/09/69 ยอดเครื่อง 435) → ถือว่าครบเมื่อซิงก์หลังเที่ยงคืนของวันถัดไปเท่านั้น */ function accComplete(a,d){ try{ if(!a||!a.has_data||!a.syncedAt||!d) return false; return new Date(a.syncedAt).getTime() >= new Date(String(d).slice(0,10)+"T00:00:00+07:00").getTime()+864e5; }catch(e){ return false; } } async function loadAccDay(){
   const el=document.getElementById("accDate"); if(!el) return;
   if(!el.value){ const y=new Date(Date.now()-864e5); el.value=(DATA.form&&DATA.form.date)||(y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate())); }
   const d=el.value;
@@ -295,8 +295,8 @@ async function loadAccDay(){
     DATA._acc = data;
     /* v0.3.3 — ใบลดหนี้ของบิลหลังตัดรอบ 15:30 นับเข้าวันของบิล (acc_cn_shift) ให้ด่านบันทึก + ข้อความ Telegram ใช้ยอดเดียวกับหน้ารายละเอียด */
     DATA._accShift=null; try{ const _sr=await sb.rpc("acc_cn_shift",{p_date:d}); if(_sr&&_sr.data) DATA._accShift={d:d, out:+_sr.data.out_amt||0, inn:+_sr.data.in_amt||0}; }catch(_eS){}
-    const _up=document.getElementById("acc_up"); if(_up) _up.style.display=(data && data.has_data)?"none":"block";
-    if(data && data.has_data){
+    const _up=document.getElementById("acc_up"); if(_up) _up.style.display=accComplete(data,d)?"none":"block";
+    if(accComplete(data,d)){
       DATA.pos = posFromAcc(data); DATA["_e_pos"]=null;
       if(box) box.classList.add("on");
       if(fn) fn.innerHTML = "✓ "+TH0(data.bills_count)+" บิล · "+TH(data.net)+"<br><span style='color:#78716c;font-weight:400'>ซิงก์ "+fmtSync(data.syncedAt)+"</span>";
@@ -314,7 +314,7 @@ async function loadAccDay(){
         DATA.pos=null; DATA["_e_pos"]=null;
         if(box) box.classList.remove("on");
         try{ var _fp=document.getElementById("fn_pos"); if(_fp && DATA._posFile && DATA._posFileDate!==d) _fp.innerHTML="<span style='color:#78716c;font-weight:400'>ไฟล์ที่อัปไว้เป็นของ "+beDate(DATA._posFileDate)+"</span>"; }catch(_e){}
-        if(fn) fn.innerHTML = "<span style='color:#b45309'>ยังไม่มีข้อมูลของวันนี้</span><br><span style='color:#78716c;font-weight:400'>ระบบดึงจาก ACC-BILLING ให้เอง · อัปฟอร์มแล้วบันทึกได้เลย</span>";
+        if(fn) fn.innerHTML = "<span style='color:#b45309'>"+((data&&data.has_data)?"ACC-BILLING ยังซิงก์ไม่ครบวัน (ซิงก์ "+fmtSync(data.syncedAt)+")":"ยังไม่มีข้อมูลของวันนี้")+"</span><br><span style='color:#78716c;font-weight:400'>ระบบดึงจาก ACC-BILLING ให้เอง · อัปฟอร์มแล้วบันทึกได้เลย</span>";
       }
     }
   }catch(e){
@@ -1378,7 +1378,7 @@ async function renderDay(date, edit){
     }catch(e){}
     /* v0.3.1 — วันที่บันทึกฟอร์มก่อนยอดเครื่องขึ้น rev_audit.machine_net = null
        เดิม +null = 0 → ขึ้น 🚩 ยอดต่าง = ยอดฟอร์มทั้งก้อน (ผิด) · ตอนนี้อ่านยอดเครื่องจาก ACC-BILLING มาแสดง (อ่านอย่างเดียว ไม่เขียน rev_audit) */
-    var _mAcc=null; try{ var _ra=(DATA._acc&&String(DATA._acc.d||"").slice(0,10)===String(date).slice(0,10))?DATA._acc:null; if(!_ra){ var _rr=await sb.rpc("rev_day_from_acc",{p_date:date}); _ra=_rr&&_rr.data; } if(_ra&&_ra.has_data) _mAcc=_ra; }catch(_eA){}
+    var _mAcc=null; try{ var _ra=(DATA._acc&&String(DATA._acc.d||"").slice(0,10)===String(date).slice(0,10))?DATA._acc:null; if(!_ra){ var _rr=await sb.rpc("rev_day_from_acc",{p_date:date}); _ra=_rr&&_rr.data; } if(_ra&&accComplete(_ra,date)) _mAcc=_ra; }catch(_eA){}
     var _mFromAcc=(au.machine_net==null&&_mAcc!=null);
     var _mNet=(au.machine_net!=null)?au.machine_net:(_mAcc?_mAcc.net:null);
     var _cnT=(au.cn_total!=null)?au.cn_total:(_mAcc?_mAcc.cnTotal:null);

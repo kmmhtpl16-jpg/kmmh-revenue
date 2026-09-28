@@ -521,7 +521,7 @@ function declaredRowsFromForm(f){
 }
 
 async function saveDeclared(f){
-  if(!sb || !f || !f.date) return;
+  if(!sb || !f || !f.date) return; { const _dp=await formDateProblem(f); if(_dp){ DATA._e_form=esc("⛔ วันที่ไม่ถูกต้อง — ยังไม่บันทึกอะไรเลย · "+_dp.join(" · ")); render(); return; } }
   try{
     await ensureOwnerSession();
     const rows=declaredRowsFromForm(f);
@@ -1196,10 +1196,10 @@ window.revFocus=function(id){
   },280);
   return true;
 };
-async function saveAudit(){
+/* v0.3.5 — กันเซฟไฟล์ผิดวัน (เคส 26/09/69 ฟอร์มวันที่ 26 ลืมแก้ D1 → ทับวันที่ 01/09) · ตรวจ 3 ชั้น: ชื่อไฟล์ · เลขบิลในฟอร์ม · แคชเชียร์บันทึกได้แค่วันนี้/เมื่อวาน */ function dateFromFileName(n){ var m=String(n||"").match(/(^|[^0-9])(\d{1,2})[-_. ](\d{1,2})[-_. ](\d{4}|\d{2})(?![0-9])/); if(!m) return null; var d=+m[2], mo=+m[3], y=+m[4]; if(y<100) y+=2500; if(y>2400) y-=543; if(d<1||d>31||mo<1||mo>12||y<2000||y>2100) return null; return y+"-"+pad2(mo)+"-"+pad2(d); } function bkkDay(back){ return new Date(Date.now()+7*3600e3-(back||0)*864e5).toISOString().slice(0,10); } async function formDateProblem(f){ if(!f||!f.date) return null; var d=String(f.date).slice(0,10), why=[]; var fn=(DATA._files&&DATA._files.form)||""; var fd=dateFromFileName(fn); if(fd && fd!==d) why.push("ชื่อไฟล์ \""+fn+"\" เป็นวันที่ "+beDate(fd)+" แต่วันที่ในไฟล์ (เซลล์ D1) เป็น "+beDate(d)); if(ROLE==="cashier" && d!==bkkDay(0) && d!==bkkDay(1)) why.push("วันที่ในไฟล์ "+beDate(d)+" ไม่ใช่วันนี้หรือเมื่อวาน — แคชเชียร์บันทึกย้อนหลังเกิน 1 วันไม่ได้ (ให้การเงินบันทึกแทน)"); try{ var fb=[...new Set((f.xfer||[]).map(function(x){ return String((x&&x.bill)||"").trim(); }).filter(function(b){ return /^KM\d{4}-\d+$/.test(b); }))]; if(fb.length>=3 && sb){ var ref=new Set(), src=""; var a=await sb.from("rev_audit").select("detail").eq("date",d).maybeSingle(); ((a&&a.data&&a.data.detail&&a.data.detail.xfer)||[]).forEach(function(x){ if(x&&x.bill) ref.add(String(x.bill).trim()); }); if(ref.size>=3) src="ที่ยืนยันไว้แล้วของวันที่ "+beDate(d); else { ref=new Set(); var r=await sb.rpc("rev_day_from_acc",{p_date:d}); if(r&&r.data&&accComplete(r.data,d)){ (r.data.bills||[]).forEach(function(b){ if(b&&b.no) ref.add(String(b.no).trim()); }); src="ใน ACC-BILLING ของวันที่ "+beDate(d); } } if(ref.size>=3){ var hit=fb.filter(function(b){ return ref.has(b); }).length; if(hit*2<fb.length) why.push("เลขบิลในฟอร์ม ("+fb.slice(0,3).join(", ")+"…) ตรงกับบิล"+src+" แค่ "+hit+"/"+fb.length+" ใบ — ไฟล์นี้น่าจะเป็นของวันอื่น"); } } }catch(e){} return why.length?why:null; } async function saveAudit(){
   const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
   if(!s||!s.date){ if(msg){ msg.innerHTML=(DATA.form&&!DATA.form.date)?'⚠ อ่านวันที่จากไฟล์รายรับไม่ได้ — แก้เซลล์วันที่ (D1) ชีท "สรุปรายรับ-รายจ่าย" ให้เป็นวันที่จริง หรือพิมพ์ 21/07/2569 แล้วอัปใหม่':"ยังไม่มีข้อมูลให้บันทึก"; msg.style.color="#b91c1c";} return; }
-  if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; }
+  if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; } { const _dp=await formDateProblem(DATA.form); if(_dp){ const _t="บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง"; if(msg){ msg.innerHTML="⛔ <b>"+_t+"</b><br>• "+_dp.map(esc).join("<br>• ")+"<br>👉 แก้เซลล์วันที่ (D1) หรือเลือกไฟล์ให้ถูกวัน แล้วอัปใหม่"; msg.style.color="#b91c1c"; } alert("⛔ "+_t+" \n\n• "+_dp.join(" \n• ")+" \n\nแก้เซลล์วันที่ (D1) หรือเลือกไฟล์ให้ถูกวัน แล้วอัปใหม่"); return; } }
   /* ⛔ ด่านบังคับ: ชื่อลูกค้าบิลลงบัญชีของวันนี้ ซ้ำกับชื่อที่มีอยู่แล้ว ต้องเลือกก่อน (งานจบเป็นวัน ๆ) */
   try{
     if(window.__cbDupBlockers){

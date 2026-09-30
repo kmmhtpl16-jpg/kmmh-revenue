@@ -117,6 +117,19 @@
   #roleBar{font-size:13px!important;padding:6px 12px!important;right:auto!important;left:10px}
   .mprow{padding:12px 8px}
 }
+/* v0.4.2 ยอดจากเครื่อง = แถบสถานะบรรทัดเดียว (ไม่ใช่ช่องอัป) */
+.accbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:10px 14px;border-radius:10px;border:1px solid #fcd34d;background:#fffbeb;font-size:14.5px}
+.accbar.on{border-color:#86efac;background:#f0fdf4}
+.accbar .ab-ic{font-size:20px;line-height:1}
+.accbar .ab-nm{font-weight:800}
+.accbar .ab-src{font-weight:400;color:#78716c;font-size:13px}
+.accbar .ab-fn{font-weight:700;color:#15803d}
+.accbar .ab-fn br{display:none}
+.accbar .ab-fn br+span::before{content:"· ";color:#a8a29e}
+.accbar .ab-fn>span{margin-left:4px}
+.accbar #acc_up{margin-left:auto;display:flex;align-items:center;gap:6px}
+.accbar #fn_pos{font-size:12.5px;color:#16a34a;font-weight:700}
+@media (max-width:640px){ .accbar{font-size:15px;padding:10px 12px} .accbar .ab-src,.accbar .ab-fn br+span{display:none} .accbar{gap:6px 8px} .accbar #acc_up{margin-left:0;width:100%} }
 /* v0.4.0 ใบนับเงินสด + การ์ดตัดบิล */
 #d_cashp.on{border-style:solid;border-color:#16a34a;background:#f0fdf4}
 #d_cashp.bad{border-style:solid;border-color:#fca5a5;background:#fef2f2}
@@ -146,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.1</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.2</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -165,13 +178,13 @@
       <button class="btn sec" type="button" onclick="loadAccDay(true)" style="margin-left:auto">↻ ดึงข้อมูลล่าสุด</button>
     </div>
     <div style="border-top:1px dashed #e7e5e4;margin-top:12px;padding-top:10px">
-      <div class="muted" style="margin-bottom:8px">แหล่งข้อมูลของวันนี้</div>
+      <div id="d_acc" class="accbar">
+        <span class="ab-ic">🖥️</span><span class="ab-nm">ยอดจากเครื่อง <span class="ab-src">(ACC-BILLING · ระบบดึงให้เอง)</span></span>
+        <span class="ab-fn" id="fn_acc">กำลังโหลด…</span>
+        <label id="acc_up" class="r-fin" style="display:none;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องเอง</span><span class="fn" id="fn_pos"></span></label>
+      </div>
+      <div class="muted" style="margin:12px 0 8px">สิ่งที่ต้องอัป</div>
       <div class="drops" style="margin-bottom:0">
-        <div class="drop" id="d_acc" style="cursor:default;border-style:solid">
-          <div class="ic">🖥️</div><div class="nm">ยอดจากเครื่อง</div>
-          <div class="hint">ACC-BILLING</div><div class="fn" id="fn_acc">กำลังโหลด…</div>
-          <label id="acc_up" class="r-fin" style="display:none;margin-top:8px;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องแทน</span><div class="fn" id="fn_pos" style="margin-top:4px"></div></label>
-        </div>
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
         <div class="drop" id="d_cashp" style="cursor:default"><div class="ic">📸</div><div class="nm">ใบนับเงินสด</div><div class="hint">ถ่ายรูปใบนับแบงค์/เหรียญ <span style="white-space:nowrap">+ ใส่ยอดรวม</span><br>ต้องมีก่อนกดยืนยัน</div><div class="fn" id="fn_cashp"></div><div id="cashp_form" style="margin-top:8px"><input id="cashp_amt" class="rsn" inputmode="decimal" placeholder="ยอดรวมในใบนับ" style="text-align:center;width:100%;max-width:none;display:block"><label class="btn sec" style="display:block;width:100%;text-align:center;margin-top:6px;cursor:pointer;padding:9px 12px;box-sizing:border-box"><input type="file" accept="image/*" capture="environment" id="f_cashp" class="hide">📷 ถ่าย/เลือกรูปใบนับ</label></div></div>
         <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
@@ -573,6 +586,9 @@ function parseForm(wb){
 /* ═══════════ รายการที่แคชเชียร์แจ้ง → ฐานข้อมูล ═══════════
    แปลงไฟล์ฟอร์มเป็นรายการทีละบรรทัด เก็บไว้เทียบกับ ACC-BILLING
    ว่าเงินเข้าตรงไหม และวันต่อมาตัดชำระแล้วหรือยัง */
+function isOldChannelLabel(n){ n=String(n||"").replace(/\s/g,""); return /^(โอน|เงินสด|เงินโอน|K\+|KNV|กสิกร|ลงบัญชี)/i.test(n) || /^(รวม|ยอดรวม|\(ไม่ระบุชื่อ\))$/.test(n); }
+/* เลขบิล ACC-BILLING = KMปปดด-4หลัก เสมอ (เช่น KM6909-1011) — ผิดรูปแบบ = น่าจะพิมพ์ผิด */
+function billFmtBad(b){ b=String(b||"").trim(); return !!b && !/^KM\d{4}-\d{4}$/i.test(b); }
 function declaredRowsFromForm(f){
   const rows=[];
   (f.xfer||[]).forEach(function(x){
@@ -582,7 +598,9 @@ function declaredRowsFromForm(f){
   });
   (f.acctRows||[]).forEach(function(x){ if(x.amt) rows.push({section:"account", channel:null, bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
   (f.shopCash||[]).forEach(function(x){ if(x.amt) rows.push({section:"shop_cash", channel:"cash", bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
-  (f.oldRows||[]).forEach(function(x){ if(x.amt) rows.push({section:"oldbill", channel:null, bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
+  /* v0.4.2 — บล็อก "บิลเก่า" ในชีทสรุปเป็นยอดรวมแยกตามช่องทางรับเงิน (โอนเข้าบัญชี / เงินสด (รวมมัดจำ)) ไม่ใช่ชื่อลูกค้า
+     → ไม่ส่งเข้ารายการที่แจ้ง (เคยทำให้การ์ด ④ เตือนหลอก) · รายชื่อลูกค้าบิลเก่าจริงตามจากชีท "บิลเก่า" (ข้อเสนอบิลเก่า) */
+  (f.oldRows||[]).forEach(function(x){ if(x.amt && !isOldChannelLabel(x.name)) rows.push({section:"oldbill", channel:null, bill_no:null, customer:x.name, amount:r2c(x.amt), note:null}); });
   if(f.refund) rows.push({section:"refund", channel:null, bill_no:null, customer:null, amount:r2c(f.refund), note:null});
   if(f.upk)    rows.push({section:"upk",    channel:null, bill_no:null, customer:null, amount:r2c(f.upk),    note:null});
   return rows.filter(function(r){ return r.amount && String(r.customer||"")!=="ยอดรวม"; });
@@ -670,6 +688,8 @@ function render(){
   else out.innerHTML += `<div class="verdict ${allOk?'v-ok':'v-warn'}">${allOk?'✓ ผ่านเบื้องต้น — ยอดขายตรง และไม่มีใบลดหนี้ค้างตรวจ':'⚠ มีจุดต้องดู (ดูด้านล่าง)'}${kPending?' · <span style="font-weight:800">⏳ ③ รอตรวจสอบ</span>':''}</div>`;
   out.innerHTML += `<div style="text-align:center;margin:-4px 0 16px"><button class="btn" type="button" onclick="saveAudit()">✓ ${mPend?'บันทึกฟอร์มวันนี้':'ยืนยัน & บันทึกผลตรวจวันนี้'} (${f.date?beDate(f.date):'-'})</button> <span id="audit_msg" class="muted" style="margin-left:8px"></span></div>`;
   if(f && !f.date){ out.innerHTML += `<div style="text-align:center;color:#b91c1c;margin:-10px 0 16px;font-size:.92em">⚠ อ่านวันที่จากไฟล์รายรับไม่ได้ — แก้เซลล์วันที่ (D1) ของชีท "สรุปรายรับ-รายจ่าย" ให้เป็นวันที่จริง หรือพิมพ์แบบ 21/07/2569 แล้วอัปไฟล์ใหม่ (ยอดขายอ่านได้ครบ แต่ยังบันทึกไม่ได้เพราะไม่รู้ว่าเป็นของวันไหน)</div>`; }
+
+  { const _bb=(f.xfer||[]).map(function(x){return x.bill;}).filter(billFmtBad); if(_bb.length) out.innerHTML += '<div style="text-align:center;color:#b91c1c;margin:-10px 0 16px;font-size:.92em">⚠ เลขบิลในชีท "โอน" น่าจะพิมพ์ผิด: <b>'+_bb.map(esc).join(', ')+'</b> — เลขบิลต้องเป็น KMปปดด-4 หลัก (เช่น KM6909-1011) แก้ในฟอร์มแล้วอัปใหม่</div>'; }
 
   const scenario = mPend ? '⏳ รอเทียบกับยอดเครื่อง — ระบบทำให้เอง'
                  : okRaw ? '✓ ยอดขายตรง — “คืนเงิน” เป็นรายการแยก (เช่น มัดจำฝากไว้/รอออกบิล) ไม่หักจากยอดขาย'
@@ -794,7 +814,9 @@ function pendingCardHtml(){
   const _need=function(x){ return (+x.days>=2) || _bad(x); };
   const tr=function(x){
     const late = (+x.days>=2) ? ' <span style="color:#b91c1c;font-weight:800">⚠'+x.days+' วัน</span>' : '';
-    const note = (x.amount_status && x.amount_status!=='ตรง' && !/จ่ายบางส่วน/.test(x.amount_status)) ? '<div class="muted" style="color:#b91c1c">'+x.amount_status+'</div>' : '';
+    const typo = billFmtBad(x.bill_no);
+    const note = typo ? '<div class="muted" style="color:#b91c1c">⚠ เลขบิลน่าจะพิมพ์ผิด — เลขบิลต้องเป็น KMปปดด-4 หลัก (เช่น KM6909-1011) ให้แคชเชียร์แก้ในฟอร์มแล้วอัปใหม่</div>'
+      : ((x.amount_status && x.amount_status!=='ตรง' && !/จ่ายบางส่วน/.test(x.amount_status)) ? '<div class="muted" style="color:#b91c1c">'+x.amount_status+'</div>' : '');
     return '<tr><td>'+beDate(x.form_date)+'</td><td>'+(x.section||'')+'</td><td>'
       + (x.bill_no || x.customer || '—') + note + '</td><td class="num">'+TH(x.declared)+'</td>'
       + '<td class="num">'+(x.outstanding!=null?TH(x.outstanding):'—')+'</td>'
@@ -2314,7 +2336,7 @@ async function cpFormCash(date){
 }
 async function loadCashProof(){
   const date=cpDate(), fn=document.getElementById("fn_cashp"), box=document.getElementById("d_cashp"); if(!fn||!box||!date||!sb) return;
-  box.classList.remove("on","bad"); fn.innerHTML="";
+  box.classList.remove("on","bad"); fn.innerHTML=""; { const a0=document.getElementById("cashp_amt"); if(a0) a0.placeholder="ยอดรวมในใบนับ"; }
   let p=null; try{ const r=await sb.from("rev_cash_proof").select("*").eq("date",date).maybeSingle(); p=r&&r.data; }catch(e){}
   const fc=await cpFormCash(date);
   if(!p){ fn.innerHTML='<span style="color:#b45309">ยังไม่มีรูปใบนับของ '+beDate(date)+'</span>'+(fc!=null?'<div class="muted">เงินสดในฟอร์ม '+TH(fc)+'</div>':''); return; }

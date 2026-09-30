@@ -61,11 +61,12 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .topnav .i-s .bk{fill:#fff;stroke:#fff;stroke-width:1}
 .topnav a.on .ac{color:#fff}
 .topnav .mb{display:none}
+.lo-m{display:none}
 @media (max-width:640px){
   body{padding-bottom:110px}
   .topnav{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:60;margin:0;gap:0;flex-wrap:nowrap;background:#fff;border:1px solid #eef0f3;border-radius:24px;box-shadow:0 8px 28px rgba(30,41,59,.12);padding:8px 4px}
-  .topnav a{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none!important;padding:2px;border-radius:0;color:#52677f;font-size:12.5px;font-weight:700}
-  .topnav a .ti{width:58px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:999px;margin:0}
+  .topnav a{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none!important;padding:2px 0;border-radius:0;color:#52677f;font-size:12px;letter-spacing:-.2px;font-weight:700}
+  .topnav a .ti{width:52px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:999px;margin:0}
   .topnav a .ti svg{width:25px;height:25px}
   .topnav .ac{color:#1f9d6b}
   .topnav a .tl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -74,7 +75,42 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .topnav a.on .ac{color:#15803d}
   .topnav a.on .i-n{display:none} .topnav a.on .i-s{display:block}
   .topnav a .ti{margin-right:0} .topnav .dk{display:none} .topnav .mb{display:inline}
-  .topnav a.lo{position:fixed;top:10px;right:10px;flex:none;background:#fff!important;border:1px solid #fecaca;border-radius:999px;padding:6px 12px;font-size:13px}
+  .topnav a.lo{display:none!important}
+}
+/* v0.3.9 มือถือ: ตัวใหญ่ ปุ่มกดง่าย ตารางเลื่อนในกรอบ ไม่ชนกระดิ่ง (30 ก.ย.69) */
+@media (max-width:640px){
+  body{font-size:16px}
+  h1{padding-right:56px;font-size:20px}
+  .card{overflow-x:auto;padding:14px 12px}
+  .btn,.tabs button{min-height:44px;font-size:15px}
+  .btn.sm{min-height:38px}
+  .btn{white-space:nowrap}
+  .card td:nth-child(2),.card th:nth-child(2){min-width:150px} .card td:first-child{white-space:nowrap}
+  #payCard td:nth-child(4){white-space:nowrap} #payCard td:last-child{min-width:220px}
+  input,select,textarea{font-size:16px!important}
+  input:not([type=checkbox]):not([type=radio]),select{min-height:42px}
+  table{font-size:14px} th,td{padding:8px 7px}
+  header h1{padding-right:128px}
+  .custrow td:first-child{width:14px;padding:8px 2px} .custrow td:nth-child(2){min-width:150px}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tabs button{white-space:nowrap;flex:none}
+  .lo-m{display:inline-block;position:absolute;top:14px;right:62px;z-index:40;background:#fff;color:#b91c1c;border:1px solid #fecaca;border-radius:999px;padding:7px 12px;font-size:13px;font-weight:700;text-decoration:none}
+}
+/* v0.3.9 มือถือ: การ์ดย่อไว้ + แบ่งหน้าละ 5 รายการ */
+.mhead{cursor:pointer;user-select:none}
+.mtog{display:none}
+.mpager{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px}
+.mpager button{min-width:44px;min-height:40px;border:1px solid var(--bd);background:#fff;border-radius:10px;font-size:18px;font-weight:700;color:var(--g2);cursor:pointer}
+.mpager button:disabled{opacity:.35}
+.mpager span{font-size:14px;color:var(--mut);font-weight:700}
+@media (max-width:640px){
+  .mtog{display:inline-block;margin-left:6px;color:var(--g2);font-size:14px}
+  .mcol.shut>:not(.mhead){display:none!important}
+  .mcol.shut{padding-bottom:12px}
+  #summaryCard>.row>div{width:100%;text-align:left!important}
+  #summaryCard .row .row{justify-content:flex-start!important}
+  #summaryCard #q{max-width:none!important;flex:1 1 100%;width:100%}
+  .card table table td:nth-child(2),.card table table th:nth-child(2){min-width:0} .card table table td,.card table table th{padding:6px 5px;font-size:13px}
 }
 </style>
 </head>
@@ -107,6 +143,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     <a class="r-owner" href="Dashboard-สรุปรายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M4 20v-5h4v5"/><path d="M10 20v-8h4v8"/><path d="M16 20V9h4v11"/><path class="ac" d="M5 10l5-4 4 2 6-5"/><path class="ac" d="M16 3h4v4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><path d="M4 20v-5h4v5z"/><path d="M10 20v-8h4v8z"/><path d="M16 20V9h4v11z"/><path class="ac" d="M5 10l5-4 4 2 6-5" fill="none"/><path class="ac" d="M16 3h4v4" fill="none"/></svg></span><span class="tl"><span class="dk">Dashboard</span><span class="mb">ภาพรวม</span></span></a>
     <a class="lo" href="#" onclick="revLogout();return false;" style="margin-left:auto;color:#b91c1c"><span class="tl">🚪 ออก</span></a>
   </nav>
+  <a class="lo-m" href="#" onclick="revLogout();return false;">🚪 ออก</a>
 
   <!-- สรุปยอด -->
   <div class="card" id="summaryCard">
@@ -885,7 +922,7 @@ function dupHtml(){
         h+='<tr><td>'+(k===0?'<b>'+esc(d.no)+'</b>':"")+'</td>'+
            '<td>'+esc(b.customer||"—")+' · '+beDate(b.bill_date)+' · <b>'+fmt(b.total_amount)+'</b>'+
              (num(b.paid_amount)>0?' <span class="chip">รับแล้ว '+fmt(b.paid_amount)+'</span>':"")+'</td>'+
-           '<td><button class="btn sm ghost" onclick="delDupBill(\''+b.id+'\')">🗑 ลบใบนี้</button></td></tr>';
+           '<td><button class="btn sm ghost" title="ลบใบนี้" onclick="delDupBill(\''+b.id+'\')">🗑 ลบ</button></td></tr>';
       });
     });
     h+='</tbody></table><div class="muted" style="margin-top:4px">ลบแล้วระบบสำรองใบนั้นไว้ให้ ดึงกลับได้</div>';
@@ -941,5 +978,54 @@ window.revLogout=function(){ if(confirm("ออกจากระบบ / สล
 (function(){ try{ var _r=localStorage.getItem("rev_role"); if(_r&&["cashier","finance","owner"].indexOf(_r)>=0){ ROLE=_r; var _g=document.getElementById("gate"); if(_g)_g.style.display="none"; applyGating(); boot(); } }catch(e){} })();
 </script>
 <script src="bell.js?v=20260908a"></script>
+
+<script>
+/* v0.3.9 มือถือ: การ์ดย่อไว้ทั้งหมด (ยกเว้นการ์ดยอดรวมบนสุด) กดหัวการ์ดเพื่อเปิด + ตารางแสดงทีละ 5 รายการ มีปุ่มหน้าก่อน/ถัดไป (เจ้าของขอ 30 ก.ย.69) */
+(function(){
+  var MQ=window.matchMedia("(max-width:640px)"); if(!MQ.matches) return;
+  var PER=5, PAGE={};
+  /* รับชำระล่าสุด: มือถือแสดงครบทุกครั้ง แล้วใช้การแบ่งหน้าแทนปุ่ม "ดูอีก" */
+  try{ PAY_LIM=1e9; if(typeof renderPays==="function" && PAYS && PAYS.length) renderPays(); }catch(e){}
+  var cards=[].slice.call(document.querySelectorAll(".wrap > .card")).slice(1);
+  cards.forEach(function(card,ci){
+    var h=card.querySelector("h3"); if(!h) return;
+    var head=h; while(head.parentElement && head.parentElement!==card) head=head.parentElement;
+    head.classList.add("mhead"); card.classList.add("mcol","shut");
+    var t=document.createElement("span"); t.className="mtog"; t.textContent="▸ เปิด"; h.appendChild(t);
+    head.addEventListener("click",function(e){
+      if(e.target.closest("input,select,button,a,label")) return;
+      var shut=card.classList.toggle("shut"); t.textContent=shut?"▸ เปิด":"▾ ย่อ";
+    });
+    card.dataset.mci=ci;
+    var obs=new MutationObserver(function(){ obs.disconnect(); try{ paginate(card); }finally{ obs.observe(card,{childList:true,subtree:true}); } });
+    obs.observe(card,{childList:true,subtree:true});
+    paginate(card);
+  });
+  function isSub(tr){ return tr.classList.contains("billsub") || /^pg_/.test(tr.id||""); }
+  function paginate(card){
+    [].slice.call(card.querySelectorAll("table")).forEach(function(tb,ti){
+      if(tb.parentElement.closest("table")) return;
+      var body=tb.tBodies[0]; if(!body) return;
+      var rows=[].slice.call(body.rows), groups=[], g=null;
+      rows.forEach(function(r){ if(isSub(r)&&g){ g.push(r); } else { g=[r]; groups.push(g); } });
+      var key=card.dataset.mci+"_"+ti, pg=tb.nextElementSibling&&tb.nextElementSibling.classList.contains("mpager")?tb.nextElementSibling:null;
+      if(groups.length<=PER){ if(pg) pg.remove(); rows.forEach(function(r){ r.style.display=""; }); return; }
+      var n=Math.ceil(groups.length/PER); var p=Math.min(PAGE[key]||0,n-1); PAGE[key]=p;
+      groups.forEach(function(gr,i){ var on=(i>=p*PER&&i<(p+1)*PER); gr.forEach(function(r){ if(on){ r.style.display=""; } else { r.style.display="none"; } }); });
+      if(!pg){ pg=document.createElement("div"); pg.className="mpager"; tb.after(pg); }
+      pg.innerHTML='<button type="button" data-d="-1"'+(p<=0?" disabled":"")+'>‹</button><span>หน้า '+(p+1)+' / '+n+' · '+groups.length+' รายการ</span><button type="button" data-d="1"'+(p>=n-1?" disabled":"")+'>›</button>';
+      [].forEach.call(pg.querySelectorAll("button"),function(b){ b.onclick=function(){ PAGE[key]=p+(+b.dataset.d); paginate(card); var top=tb.getBoundingClientRect().top+window.scrollY-70; window.scrollTo(0,top); }; });
+    });
+  }
+  /* พิมพ์ค้นชื่อลูกค้าด้านบน → เปิดการ์ดรายชื่อลูกหนี้ให้เอง + กลับไปหน้า 1 */
+  var q=document.getElementById("q");
+  if(q) q.addEventListener("input",function(){
+    var reg=document.getElementById("reg"); var c=reg&&reg.closest(".card"); if(!c) return;
+    Object.keys(PAGE).forEach(function(k){ if(k.indexOf(c.dataset.mci+"_")===0) PAGE[k]=0; });
+    if(c.classList.contains("shut")){ c.classList.remove("shut"); var t=c.querySelector(".mtog"); if(t) t.textContent="▾ ย่อ"; }
+    paginate(c);
+  });
+})();
+</script>
 </body>
 </html>

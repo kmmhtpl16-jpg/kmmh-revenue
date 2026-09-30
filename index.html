@@ -78,11 +78,11 @@
 /* v0.3.8 มือถือ: ตัวใหญ่ ปุ่มกดง่าย ช่องอัป K+/สเตทเมนต์ขึ้นก่อน (เจ้าของขอ 30 ก.ย.69) */
 @media (max-width:640px){
   body{padding:12px 10px 60px;font-size:16px}
-  h1{font-size:19px} .lead{font-size:13px}
+  h1{font-size:19px;padding-right:56px} .lead{font-size:13px}
   body{padding-bottom:110px}
   .topnav{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:60;margin:0;gap:0;flex-wrap:nowrap;background:#fff;border:1px solid #eef0f3;border-radius:24px;box-shadow:0 8px 28px rgba(30,41,59,.12);padding:8px 4px}
-  .topnav a{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none!important;padding:2px;border-radius:0;color:#52677f;font-size:12.5px;font-weight:700}
-  .topnav a .ti{width:58px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:999px;margin:0}
+  .topnav a{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none!important;padding:2px 0;border-radius:0;color:#52677f;font-size:12px;letter-spacing:-.2px;font-weight:700}
+  .topnav a .ti{width:52px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:999px;margin:0}
   .topnav a .ti svg{width:25px;height:25px}
   .topnav .ac{color:#1f9d6b}
   .topnav a .tl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -114,9 +114,22 @@
   #acc_up{grid-column:2} #acc_up .btn{min-height:0;display:inline-block;font-size:14px!important;padding:8px 12px!important}
   #dayBar .rowflex>button{font-size:22px} #dayBar .rowflex>button:last-child{font-size:16px}
   #d_kplus,#d_bank{order:-1;border-color:#16a34a;background:#f0fdf4}
-  #roleBar{font-size:13px!important;padding:6px 12px!important}
+  #roleBar{font-size:13px!important;padding:6px 12px!important;right:auto!important;left:10px}
   .mprow{padding:12px 8px}
 }
+/* v0.4.0 ใบนับเงินสด + การ์ดตัดบิล */
+#d_cashp.on{border-style:solid;border-color:#16a34a;background:#f0fdf4}
+#d_cashp.bad{border-style:solid;border-color:#fca5a5;background:#fef2f2}
+.cut-chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px}
+.cut-chip{font-size:13px;font-weight:800;padding:4px 10px;border-radius:999px}
+.cc-ok{background:#dcfce7;color:#15803d}.cc-hold{background:#fff7ed;color:#c2410c}.cc-skip{background:#f1f5f9;color:#475569}.cc-done{background:#e0e7ff;color:#3730a3}.cc-appr{background:#fef9c3;color:#854d0e}
+.cut-sec{margin-top:12px}.cut-sec h3{font-size:15px;margin-bottom:4px;display:flex;justify-content:space-between;gap:8px}
+.cut-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #f1f0ee}
+.cut-row:last-child{border-bottom:0}.cut-row .r{font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cut-tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 7px;border-radius:6px;margin-top:2px}
+.ct-ok{background:#ecfdf5;color:#15803d}.ct-hold{background:#fff7ed;color:#c2410c}.ct-skip{background:#f1f5f9;color:#475569}
+.cut-done{background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:10px 12px;margin-top:10px;color:#3730a3;font-size:14px}
+@media (max-width:640px){ #d_cashp>*:not(.ic){grid-column:2} #d_cashp .ic{grid-row:1/3} #cashp_amt{max-width:none!important;width:100%;text-align:center} }
 </style>
 </head>
 <body>
@@ -132,7 +145,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.3.8</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.0</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -159,11 +172,14 @@
           <label id="acc_up" class="r-fin" style="display:none;margin-top:8px;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องแทน</span><div class="fn" id="fn_pos" style="margin-top:4px"></div></label>
         </div>
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
+        <div class="drop" id="d_cashp" style="cursor:default"><div class="ic">📸</div><div class="nm">ใบนับเงินสด</div><div class="hint">ถ่ายรูปใบนับแบงค์/เหรียญ <span style="white-space:nowrap">+ ใส่ยอดรวม</span><br>ต้องมีก่อนกดยืนยัน</div><div class="fn" id="fn_cashp"></div><div id="cashp_form" style="margin-top:8px"><input id="cashp_amt" class="rsn" inputmode="decimal" placeholder="ยอดรวมในใบนับ" style="text-align:center;width:100%;max-width:none;display:block"><label class="btn sec" style="display:block;width:100%;text-align:center;margin-top:6px;cursor:pointer;padding:9px 12px;box-sizing:border-box"><input type="file" accept="image/*" capture="environment" id="f_cashp" class="hide">📷 ถ่าย/เลือกรูปใบนับ</label></div></div>
         <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
         <label class="drop r-fin" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
       </div>
     </div>
   </div>
+
+  <div class="card r-fin" id="cutCard" style="display:none"></div>
 
   <div class="card" id="statusCard">
     <h2>📅 สถานะการส่งรายงานเดือนนี้ <span class="badge info" id="statusBadge">…</span></h2>
@@ -1251,6 +1267,11 @@ window.revFocus=function(id){
   const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
   if(!s||!s.date){ if(msg){ msg.innerHTML=(DATA.form&&!DATA.form.date)?'⚠ อ่านวันที่จากไฟล์รายรับไม่ได้ — แก้เซลล์วันที่ (D1) ชีท "สรุปรายรับ-รายจ่าย" ให้เป็นวันที่จริง หรือพิมพ์ 21/07/2569 แล้วอัปใหม่':"ยังไม่มีข้อมูลให้บันทึก"; msg.style.color="#b91c1c";} return; }
   if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; } { const _dp=await formDateProblem(DATA.form); if(_dp){ const _t="บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง"; if(msg){ msg.innerHTML="⛔ <b>"+_t+"</b><br>• "+_dp.map(esc).join("<br>• ")+"<br>👉 แก้เซลล์วันที่ (D1) หรือเลือกไฟล์ให้ถูกวัน แล้วอัปใหม่"; msg.style.color="#b91c1c"; } alert("⛔ "+_t+" \n\n• "+_dp.join(" \n• ")+" \n\nแก้เซลล์วันที่ (D1) หรือเลือกไฟล์ให้ถูกวัน แล้วอัปใหม่"); return; } }
+  /* ⛔ v0.4.0 ด่านบังคับ: ต้องมีรูปใบนับเงินสด + ยอดรวม ของวันนั้นก่อนยืนยัน (เจ้าของสั่ง 30 ก.ย.69) */
+  if(s.date>=CASHP_FROM){
+    let _cp=null; try{ const _r=await sb.from("rev_cash_proof").select("amount").eq("date",s.date).maybeSingle(); _cp=_r&&_r.data; }catch(e){}
+    if(!_cp){ if(msg){ msg.innerHTML='⛔ ยังยืนยันไม่ได้ — ต้อง<b>ถ่ายรูปใบนับเงินสด</b>ของวันที่ '+beDate(s.date)+' และใส่ยอดรวมก่อน (กรอบ 📸 ใบนับเงินสด ด้านบน)'; msg.style.color="#b91c1c"; } window.revFocus("d_cashp"); return; }
+  }
   /* ⛔ ด่านบังคับ: ชื่อลูกค้าบิลลงบัญชีของวันนี้ ซ้ำกับชื่อที่มีอยู่แล้ว ต้องเลือกก่อน (งานจบเป็นวัน ๆ) */
   try{
     if(window.__cbDupBlockers){
@@ -2278,5 +2299,133 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20260928a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20260908a"></script>
+<script src="cutbill.js?v=20260930a"></script>
+<script>
+/* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
+const CASHP_FROM="2026-09-30";
+function cpDate(){ return (document.getElementById("accDate")||{}).value||""; }
+function bkkToday(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
+function bkkShift(iso,n){ const p=iso.split("-"); const d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+async function cpFormCash(date){
+  if(DATA && DATA.form && DATA.form.date===date && DATA.form.cash!=null) return +DATA.form.cash;
+  try{ const r=await sb.from("rev_audit").select("detail").eq("date",date).maybeSingle(); const v=r&&r.data&&r.data.detail&&r.data.detail.form_cash; return (v==null?null:+v); }catch(e){ return null; }
+}
+async function loadCashProof(){
+  const date=cpDate(), fn=document.getElementById("fn_cashp"), box=document.getElementById("d_cashp"); if(!fn||!box||!date||!sb) return;
+  box.classList.remove("on","bad"); fn.innerHTML="";
+  let p=null; try{ const r=await sb.from("rev_cash_proof").select("*").eq("date",date).maybeSingle(); p=r&&r.data; }catch(e){}
+  const fc=await cpFormCash(date);
+  if(!p){ fn.innerHTML='<span style="color:#b45309">ยังไม่มีรูปใบนับของ '+beDate(date)+'</span>'+(fc!=null?'<div class="muted">เงินสดในฟอร์ม '+TH(fc)+'</div>':''); return; }
+  const ok=(fc==null)||Math.abs(+p.amount-fc)<0.01;
+  box.classList.add(ok?"on":"bad");
+  fn.innerHTML=(ok?'✅ ':'🚩 ')+'นับได้ '+TH(+p.amount)+(fc!=null?(ok?' = ฟอร์ม':' · ฟอร์ม '+TH(fc)+' · ต่าง '+TH(+p.amount-fc)):'')+
+    ' · <a href="#" onclick="openSlip(\''+escAttr(p.image_path)+'\');return false;">ดูรูป</a>';
+  const a=document.getElementById("cashp_amt"); if(a&&!a.value) a.placeholder="ถ่ายใหม่เพื่อแทนรูปเดิม (ยอดเดิม "+TH(+p.amount)+")";
+}
+function cpShrink(file){ return new Promise(function(res){
+  try{ const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=function(){ const M=1600, k=Math.min(1,M/Math.max(img.width,img.height)); const c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); c.toBlob(function(b){ res(b||file); },"image/jpeg",0.8); };
+    img.onerror=function(){ URL.revokeObjectURL(url); res(file); }; img.src=url;
+  }catch(e){ res(file); } }); }
+(function(){ const inp=document.getElementById("f_cashp"); if(!inp) return;
+  inp.addEventListener("change", async function(e){
+    const file=e.target.files&&e.target.files[0]; e.target.value=""; if(!file) return;
+    const fn=document.getElementById("fn_cashp"), date=cpDate();
+    const amt=parseFloat(String((document.getElementById("cashp_amt")||{}).value||"").replace(/[, ]/g,""));
+    if(!date){ alert("เลือกวันที่ด้านบนก่อน"); return; }
+    if(!(amt>=0) || isNaN(amt)){ alert("ใส่ยอดรวมจากใบนับเงินสดก่อน แล้วค่อยถ่ายรูป"); document.getElementById("cashp_amt").focus(); return; }
+    if(ROLE==="cashier"){ const t=bkkToday(); if(date!==t && date!==bkkShift(t,-1)){ alert("บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง\nแคชเชียร์อัปใบนับได้เฉพาะของวันนี้หรือเมื่อวาน ("+beDate(date)+")"); return; } }
+    if(!confirm("บันทึกใบนับเงินสดของวันที่ "+beDate(date)+"\nยอดรวม "+TH(amt)+" บาท ใช่ไหม?")) return;
+    try{
+      fn.textContent="กำลังอัปรูป…"; await ensureOwnerSession();
+      const blob=await cpShrink(file); const path="cashproof/"+date+"/"+Date.now()+".jpg";
+      const up=await sb.storage.from("revenue-slips").upload(path,blob,{contentType:"image/jpeg",upsert:false}); if(up.error) throw up.error;
+      const r=await sb.from("rev_cash_proof").upsert([{date:date,amount:amt,image_path:path,uploaded_role:ROLE,uploaded_at:new Date().toISOString()}],{onConflict:"date"}); if(r.error) throw r.error;
+      document.getElementById("cashp_amt").value=""; await loadCashProof(); renderCut();
+    }catch(err){ fn.innerHTML='<span style="color:#b91c1c">อัปไม่สำเร็จ: '+esc((err&&err.message)||String(err))+'</span>'; }
+  });
+})();
+
+/* ---------- การ์ดตัดบิลประจำวัน ---------- */
+let CUT=null;
+function cutRow(x,kind){
+  const tag = x.src? '<span class="cut-tag ct-ok">'+esc(x.src)+'</span>' : x.why? '<span class="cut-tag '+(kind==="s"?"ct-skip":"ct-hold")+'">'+esc(x.why)+'</span>'
+            : x.ap? '<span class="cut-tag ct-ok">'+esc(x.ap.method)+(x.ap.rc_no?' · '+esc(x.ap.rc_no):'')+'</span>' : '';
+  return '<div class="cut-row"><div><b>'+esc(String(x.b.no).replace(/^KM\d{4}-/,""))+'</b> · '+esc(x.b.name)+'<div>'+tag+'</div></div><div class="r">'+TH(x.b.out||x.b.tot)+'</div></div>';
+}
+function cutList(arr,kind){
+  const rt=arr.filter(function(x){return x.b.retail;}), ot=arr.filter(function(x){return !x.b.retail;});
+  let h=ot.map(function(x){return cutRow(x,kind);}).join("");
+  if(rt.length){ const sum=rt.reduce(function(s,x){return s+(+x.b.out||+x.b.tot||0);},0);
+    h+='<div class="cut-row"><div><b>ลูกค้าปลีก (คุณ 1)</b> · '+rt.length+' บิล<div><span class="cut-tag '+(kind==="s"?"ct-skip":kind==="h"?"ct-hold":"ct-ok")+'">'+esc(rt[0].src||rt[0].why||"ตัดรวมหน้ารับชำระ")+(rt.length>1?' …':'')+'</span></div></div><div class="r">'+TH(sum)+'</div></div>'; }
+  return h||'<div class="muted">—</div>';
+}
+function cutSum(a){ return a.reduce(function(s,x){return s+(+x.b.out||0);},0); }
+async function renderCut(){
+  const card=document.getElementById("cutCard"); if(!card) return;
+  if(!(ROLE==="finance"||ROLE==="owner") || !window.RevCut || !sb){ card.style.display="none"; return; }
+  const date=cpDate(); if(!date){ card.style.display="none"; return; }
+  card.style.display=""; card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">กำลังคัดบิล…</div>';
+  let R; try{ await ensureOwnerSession(); R=await RevCut.compute(date); }catch(e){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน</h2><div class="muted" style="color:#b91c1c">โหลดไม่ได้: '+esc(e.message||e)+'</div>'; return; }
+  CUT=R; const D=R.D;
+  if(!D.bills.length){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">ยังไม่มีบิลของวันนี้จาก ACC-BILLING (ซิงก์ทุกเช้า)</div>'; return; }
+  const ready=R.t.concat(R.c), miss=[];
+  if(D.status!=="ตรวจแล้ว") miss.push("วันนี้ยังไม่ได้กดยืนยันผลตรวจ");
+  if(!D.hasK) miss.push("ยังไม่มีรายงาน K+"); if(!D.hasB) miss.push("ยังไม่มีสเตทเมนต์");
+  let h='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2>';
+  h+='<div class="cut-chips"><span class="cut-chip cc-ok">✅ พร้อมตัด '+ready.length+'</span><span class="cut-chip cc-hold">⏸ พักไว้ '+R.h.length+'</span>'+
+     (R.appr.length?'<span class="cut-chip cc-appr">🕒 อนุมัติแล้ว รอตัด '+R.appr.length+'</span>':'')+
+     '<span class="cut-chip cc-skip">➖ ไม่ต้องตัด '+R.s.length+'</span><span class="cut-chip cc-done">✔ ตัดแล้ว '+(R.done.length+R.cut.length)+'</span></div>';
+  if(miss.length) h+='<div class="muted" style="color:#b45309">⚠ '+miss.join(" · ")+' — บิลเงินโอนที่หาเงินไม่เจอจะถูกพักไว้</div>';
+  h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับฟอร์ม':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับฟอร์ม '+TH(D.cash)) : '⏳ ยังไม่มีรูปใบนับเงินสด')+'</div>';
+  h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3>'+cutList(R.t,"t")+'</div>';
+  h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินสด <span class="muted">'+R.c.length+' บิล · '+TH(cutSum(R.c))+'</span></h3>'+cutList(R.c,"c")+'</div>';
+  if(R.appr.length) h+='<div class="cut-sec"><h3>🕒 อนุมัติแล้ว รอเลขาตัด <span class="muted">'+R.appr.length+' บิล · '+TH(cutSum(R.appr))+'</span></h3>'+cutList(R.appr,"a")+'</div>';
+  h+='<div class="cut-sec"><h3>⏸ พักไว้ <span class="muted">'+R.h.length+' บิล</span></h3>'+cutList(R.h,"h")+'</div>';
+  h+='<div class="cut-sec"><h3>➖ ไม่ต้องตัดวันนี้ <span class="muted">'+R.s.length+' บิล</span></h3>'+cutList(R.s,"s")+'</div>';
+  if(R.cut.length) h+='<div class="cut-sec"><h3>✔ เลขาตัดแล้ว <span class="muted">'+R.cut.length+' บิล</span></h3>'+cutList(R.cut,"a")+'</div>';
+  if(ROLE==="owner"){
+    if(ready.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+ready.length+' บิล · '+TH(cutSum(ready))+' บาท</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>';
+    if(R.appr.length) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+R.appr.length+' บิล — พิมพ์ <b>“ตัดที่อนุมัติแล้ว”</b> ในแชท Claude ให้เลขาไปตัดใน ACC-BILLING · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px"><button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
+  }
+  card.innerHTML=h;
+  cutNotify(date,R);
+}
+async function cutApprove(){
+  if(ROLE!=="owner"||!CUT) return; const date=CUT.D.date, ready=CUT.t.concat(CUT.c);
+  if(!ready.length) return;
+  if(!confirm("อนุมัติตัด "+ready.length+" บิล ยอด "+TH(cutSum(ready))+" บาท ของวันที่ "+beDate(date)+" ?")) return;
+  const rows=ready.map(function(x){ return {bill_date:date,bill_no:x.b.no,customer:x.b.name,amount:+x.b.out,method:x.method,evidence:x.src||null,status:"approved",approved_role:ROLE}; });
+  const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
+  if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
+  renderCut();
+}
+async function cutCancel(){
+  if(ROLE!=="owner"||!CUT) return;
+  if(!confirm("ยกเลิกการอนุมัติของวันที่ "+beDate(CUT.D.date)+" (เฉพาะบิลที่ยังไม่ได้ตัด)?")) return;
+  const r=await sb.from("rev_cut_approvals").delete().eq("bill_date",CUT.D.date).eq("status","approved");
+  if(r.error){ alert("ยกเลิกไม่สำเร็จ: "+r.error.message); return; }
+  renderCut();
+}
+/* แจ้งเตือน Telegram "ยอดตรงแล้ว" วันละครั้ง (เมื่อวันนั้นยืนยันผลตรวจแล้ว + มี K+ และสเตทเมนต์ + มีบิลพร้อมตัด) */
+async function cutNotify(date,R){
+  try{
+    const D=R.D, ready=R.t.concat(R.c);
+    if(D.status!=="ตรวจแล้ว"||!D.hasK||!D.hasB||!ready.length) return;
+    const ex=await sb.from("rev_cut_notified").select("date").eq("date",date).maybeSingle(); if(ex&&ex.data) return;
+    const ins=await sb.from("rev_cut_notified").insert([{date:date,ready_n:ready.length}]); if(ins.error) return;
+    const text="✅ <b>ยอดตรงแล้ว "+beDate(date)+"</b>\nพร้อมตัด "+ready.length+" บิล · "+TH(cutSum(ready))+" บาท"+
+      "\n• เงินโอน "+R.t.length+" บิล"+"\n• เงินสด "+R.c.length+" บิล"+(R.h.length?"\n⏸ พักไว้ "+R.h.length+" บิล"+(D.proof?"":" (รอรูปใบนับเงินสด)"):"")+
+      "\n👉 เปิดหน้าตรวจรายได้ กด “อนุมัติตัด”";
+    await sb.functions.invoke("rev-alert",{body:{text:text}});
+  }catch(e){ console.warn("cutNotify",e); }
+}
+/* ผูกกับการเปลี่ยนวันที่ด้านบน */
+(function(){ if(typeof loadAccDay!=="function") return; const _o=loadAccDay;
+  loadAccDay=async function(){ const r=await _o.apply(this,arguments); try{ loadCashProof(); renderCut(); }catch(e){} return r; };
+  setTimeout(function(){ try{ loadCashProof(); renderCut(); }catch(e){} },1500);
+})();
+</script>
 </body>
 </html>

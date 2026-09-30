@@ -53,6 +53,34 @@ canvas{max-height:320px}
 .sub2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .sub2 button{font-size:13px;cursor:pointer;border:1px solid var(--bd);background:#fff;padding:6px 11px;border-radius:8px}
 .sub2 button.on{background:#111827;color:#fff;border-color:#111827}
+/* v0.3.8 แถบเมนูไอคอน (มือถือ = แถบล่าง) */
+.topnav{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 16px}
+.topnav a{font-size:13px;text-decoration:none;color:#15803d;background:#fff;border:1px solid #e7e5e4;padding:6px 12px;border-radius:999px;font-weight:700}
+.topnav a.on{background:#16a34a;color:#fff;border-color:#16a34a}
+.topnav a{display:inline-flex;align-items:center}
+.topnav a .ti{margin-right:5px;display:inline-flex}
+.topnav a .ti svg{width:17px;height:17px}
+.topnav .ac{color:#16a34a}
+.topnav .i-s{display:none}
+.topnav .i-s .in{stroke:#fff}
+.topnav .i-s .bk{fill:#fff;stroke:#fff;stroke-width:1}
+.topnav a.on .ac{color:#fff}
+.topnav .mb{display:none}
+@media (max-width:640px){
+  body{padding-bottom:110px}
+  .topnav{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:60;margin:0;gap:0;flex-wrap:nowrap;background:#fff;border:1px solid #eef0f3;border-radius:24px;box-shadow:0 8px 28px rgba(30,41,59,.12);padding:8px 4px}
+  .topnav a{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none!important;padding:2px;border-radius:0;color:#52677f;font-size:12.5px;font-weight:700}
+  .topnav a .ti{width:58px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:999px;margin:0}
+  .topnav a .ti svg{width:25px;height:25px}
+  .topnav .ac{color:#1f9d6b}
+  .topnav a .tl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .topnav a.on{color:#15803d!important}
+  .topnav a.on .ti{background:#e3f8ee;color:#15803d}
+  .topnav a.on .ac{color:#15803d}
+  .topnav a.on .i-n{display:none} .topnav a.on .i-s{display:block}
+  .topnav a .ti{margin-right:0} .topnav .dk{display:none} .topnav .mb{display:inline}
+  .topnav a.lo{position:fixed;top:10px;right:10px;flex:none;background:#fff!important;border:1px solid #fecaca;border-radius:999px;padding:6px 12px;font-size:13px}
+}
 </style>
 </head>
 <body>
@@ -74,13 +102,13 @@ canvas{max-height:320px}
   <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.11 (โอนคืนลูกค้าไม่นับเป็นรายจ่าย · เงินสดล้วน · ต้นทุนจาก ACC-BILLING · กระทบยอดใบสำคัญจ่ายรวมเงินเบิกสด · จับคู่โอนยอมต่าง ≤2 บาท)</span></div>
 </header>
 <div class="wrap">
-  <nav>
-    <a class="r-owner" href="สารบัญ-รายได้.html">📇 สารบัญ</a>
-    <a href="index.html">🧾 ตรวจรายได้</a>
-    <a href="ลูกหนี้ลงบัญชี.html">📒 ลูกหนี้</a>
-    <a class="on r-fin" href="การเงินบริษัท.html">💼 การเงินบริษัท</a>
-    <a class="r-owner" href="Dashboard-สรุปรายได้.html">📊 Dashboard</a>
-    <a href="#" onclick="revLogout();return false;" style="margin-left:auto;color:#b91c1c">🚪 ออก</a>
+  <nav class="topnav">
+    <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
+    <a href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
+    <a href="ลูกหนี้ลงบัญชี.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="7" y="3" width="13" height="18" rx="2"/><path d="M4 7h5M4 11h5M4 15h5M4 19h5"/><path class="ac" d="M12 8h5"/><path d="M12 12h5"/><path d="M12 16h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="7" y="3" width="13" height="18" rx="2"/><path d="M4 7h3M4 11h3M4 15h3M4 19h3" fill="none"/><path class="in" d="M12 8h5M12 12h5M12 16h4" fill="none"/></svg></span><span class="tl">ลูกหนี้</span></a>
+    <a class="on r-fin" href="การเงินบริษัท.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 11c3 2 6 3 9 3s6-1 9-3"/><path class="ac" d="M10.5 12.5h3v3h-3z"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none"/><path class="in" d="M4 11.5c2.8 1.7 5.5 2.5 8 2.5s5.2-.8 8-2.5" fill="none"/><path class="bk" d="M10.5 12.5h3v3h-3z"/></svg></span><span class="tl">การเงิน<span class="dk">บริษัท</span></span></a>
+    <a class="r-owner" href="Dashboard-สรุปรายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M4 20v-5h4v5"/><path d="M10 20v-8h4v8"/><path d="M16 20V9h4v11"/><path class="ac" d="M5 10l5-4 4 2 6-5"/><path class="ac" d="M16 3h4v4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><path d="M4 20v-5h4v5z"/><path d="M10 20v-8h4v8z"/><path d="M16 20V9h4v11z"/><path class="ac" d="M5 10l5-4 4 2 6-5" fill="none"/><path class="ac" d="M16 3h4v4" fill="none"/></svg></span><span class="tl"><span class="dk">Dashboard</span><span class="mb">ภาพรวม</span></span></a>
+    <a class="lo" href="#" onclick="revLogout();return false;" style="margin-left:auto;color:#b91c1c"><span class="tl">🚪 ออก</span></a>
   </nav>
 
   <!-- ช่วงเวลา -->

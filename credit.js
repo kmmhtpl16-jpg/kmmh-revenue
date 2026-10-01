@@ -219,6 +219,7 @@
       var rows=(r.data||[]), n=0;
       for(var i=0;i<rows.length;i++){
         var bn=matchBillNo(rows[i].customer, rows[i].total_amount);
+        if(bn){ /* 1 ต.ค.69 — เลขบิลนี้มีในทะเบียนแล้ว ห้ามใส่ซ้ำ (เคส มิ.ย.69: 1437/340 ถูกใส่เลข 0505 ของบิล 2239) */ var _ex=await sb.from("rev_credit_bills").select("id").eq("bill_no",bn).limit(1); if(_ex.data&&_ex.data.length) continue; }
         if(bn){ var _P=_machinePos(),_pn=(_P&&_P.billCust?String(_P.billCust[bn]||"").trim():""),_upd={bill_no:bn}; if(_pn&&_pn!==rows[i].customer)_upd.customer=_pn; var u=await sb.from("rev_credit_bills").update(_upd).eq("id",rows[i].id); if(!u.error) n++; }
       }
       if(n>0) loadCreditBills();
@@ -747,6 +748,8 @@
       var parsed=parseCreditSheet(wb, null);
       var msg=document.getElementById("creditmsg");
       if(!parsed.entries.length){ if(msg) msg.textContent=""; return; }
+      /* 1 ต.ค.69 — อ่านวันที่ในไฟล์ไม่ออก ห้ามดูด: เคยได้ source_key "#ชื่อ#ยอด" (ไม่มีวันที่) แล้วพออัปไฟล์ที่มีวันที่ซ้ำ กลายเป็นบิลซ้ำ 2 ใบ (เคส 17/09/69: 0751 · 0757 · 0785) */
+      if(!parsed.date){ if(msg) msg.innerHTML='<span style="color:#b91c1c">⛔ ไม่ได้ดูดบิลลงบัญชี เพราะอ่านวันที่ในไฟล์ฟอร์มไม่ออก — ใส่วันที่ในเซลล์ D1 แล้วอัปใหม่</span>'; return; }
       /* 28 ก.ย.69 — กันดูดบิลลงบัญชี/ตัดบิลเก่าผิดวัน ใช้ด่านเดียวกับหน้าหลัก (formDateProblem ใน index.html) · DATA เป็น let ต้องอ้างชื่อตรง ไม่ใช่ window.DATA */
       if(typeof window.formDateProblem==="function"){
         var _D=function(){ try{ return (typeof DATA!=="undefined")?DATA:null; }catch(_e){ return null; } };

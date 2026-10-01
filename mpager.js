@@ -1,4 +1,4 @@
-/* mpager.js — v0.4.1 (30 ก.ย.69) โหมดมือถือของหน้าตรวจรายได้ (จอกว้าง ≤640px เท่านั้น · บนคอมไม่เปลี่ยน)
+/* mpager.js — v0.4.3 (1 ต.ค.69: แก้การ์ดตัดบิลเป็นกล่องขาวว่าง + เปิดไว้เอง) · v0.4.1 (30 ก.ย.69) โหมดมือถือของหน้าตรวจรายได้ (จอกว้าง ≤640px เท่านั้น · บนคอมไม่เปลี่ยน)
    เจ้าของสั่ง: 1) ซ่อนทุกการ์ด กดหัวการ์ดค่อยขยาย  2) ตารางโชว์แค่คอลัมน์สำคัญ (วันที่ · ใคร/บิล · ยอด)
                3) โชว์แค่ 5 รายการ ที่เหลือให้เปิดดูในโปรแกรมบนคอม
    ใช้กับการ์ดที่ render ใหม่เรื่อยๆ (เฝ้าดูด้วย MutationObserver) · จำว่าการ์ดไหนเปิดอยู่ตามหัวการ์ด
@@ -27,17 +27,23 @@
     var head=headOf(c); if(!head) return;
     var h=c.querySelector("h2,h3"), key=cardKey(c);
     if(!c.classList.contains("mp-col")){
-      c.classList.add("mp-col"); head.classList.add("mp-head");
-      head.addEventListener("click",function(e){
+      c.classList.add("mp-col");
+      /* v0.4.3: ผูกคลิกที่ตัวการ์ด (ไม่ผูกที่หัว) เพราะการ์ดที่วาดใหม่ทั้งก้อน (เช่น ตัดบิลประจำวัน) หัวเดิมหายไป */
+      c.addEventListener("click",function(e){
+        var hd=e.target.closest(".mp-head"); if(!hd||hd.parentElement!==c) return;
         if(e.target.closest("input,select,button,a,label,textarea")) return;
-        var k=cardKey(c); OPEN[k]=!OPEN[k]; paint(c);
+        var k=cardKey(c); OPEN[k]=!isOpen(c); paint(c);
       });
     }
+    head.classList.add("mp-head"); /* v0.4.3: ใส่ทุกรอบ — ไม่งั้นการ์ดที่วาดใหม่ถูกซ่อนหมดจนเหลือกล่องขาวว่าง */
     if(!h.querySelector(".mp-tog")){ var t=document.createElement("span"); t.className="mp-tog"; h.appendChild(t); }
     paint(c);
   }
+  /* v0.4.3: การ์ดตัดบิลประจำวันเปิดไว้ตั้งแต่แรก (เจ้าของใช้กดอนุมัติบนมือถือ) */
+  var OPEN_DEFAULT={cutCard:true};
+  function isOpen(c){ var k=cardKey(c); return (k in OPEN)? !!OPEN[k] : !!OPEN_DEFAULT[c.id]; }
   function paint(c){
-    var open=!!OPEN[cardKey(c)], t=c.querySelector(".mp-tog");
+    var open=isOpen(c), t=c.querySelector(".mp-tog");
     c.classList.toggle("mp-shut",!open); if(t) t.textContent=open?"▾ ย่อ":"▸ เปิด";
   }
 

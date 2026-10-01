@@ -544,7 +544,7 @@ let _incSrc="all";     // all | bank | kplus
 function todayIso(){ const d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
 function incToday(){ _incDay=todayIso(); renderIncome(); }
 function incAllDays(){ _incDay=""; renderIncome(); }
-function setIncDay(v){ _incDay=v||""; renderIncome(); }
+async function setIncDay(v){ _incDay=v||""; /* v4.12: วันที่เลือกอยู่นอกช่วงที่โหลด (เช่น ช่วง ต.ค. แต่เลือก 30 ก.ย.) → ขยับช่วงเป็นเดือนของวันนั้นแล้วโหลดใหม่ */ if(v && (v<gFrom()||v>gTo())){ const p=v.split("-"); document.getElementById("from").value=p[0]+"-"+p[1]+"-01"; document.getElementById("to").value=p[0]+"-"+p[1]+"-"+pad2(new Date(+p[0],+p[1],0).getDate()); await reloadAll(); } renderIncome(); }
 function setIncSrc(s){ _incSrc=s; renderIncome(); }
 function renderIncome(){
   const el=document.getElementById("p_income");

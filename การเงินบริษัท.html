@@ -367,9 +367,14 @@ function buildTripCheck(){
     (STATE.trips||[]).map(t=>t.ym)).filter(m=>m>=from.slice(0,7)&&m<=to.slice(0,7)))].sort().reverse();
   /* ค่าเที่ยวที่จ่ายจริง: อ่านจาก income_items ในใบสำคัญจ่ายทุกใบ (ไม่จำกัดช่วง) จับเดือนจากวันที่ใบ */
   const paid={};
+  /* v4.13 (1 ต.ค.69): คนลาออกกลางเดือน — ค่าเที่ยวจ่ายไปกับใบลาออกแล้ว ถ้าใบสิ้นเดือนมีบรรทัดค่าเที่ยวซ้ำแต่ยอดจ่าย 0 ไม่นับซ้ำ (เคสพี ก.ย.69 410 → เคยโชว์ 820) */
+  const resignTrip={};
+  (STATE.vouchersAll||[]).forEach(v=>{ const ym=String(v.vdate||"").slice(0,7);
+    (Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{ if(ln.resign && (ln.income_items||[]).some(it=>isTripLabel(it.label))) resignTrip[ym+"|"+(ln.employee_id||ln.nickname)]=true; }); });
   (STATE.vouchersAll||[]).forEach(v=>{
     const ym=String(v.vdate||"").slice(0,7);
     (Array.isArray(v.lines)?v.lines:[]).forEach(ln=>{
+      if(!ln.resign && resignTrip[ym+"|"+(ln.employee_id||ln.nickname)] && Math.abs(num(ln.to_pay))<1) return;
       (ln.income_items||[]).filter(it=>isTripLabel(it.label)).forEach(it=>{
         paid[ym]=paid[ym]||{};
         paid[ym][ln.nickname]=(paid[ym][ln.nickname]||0)+num(it.amount);

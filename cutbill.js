@@ -1,4 +1,4 @@
-/* cutbill.js — v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
+/* cutbill.js — v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
    ตัดบิลประจำวัน: คัดบิลของวันว่าบิลไหน "ยอดตรงแล้ว พร้อมตัด" / "พักไว้" / "ไม่ต้องตัด" / "ตัดแล้ว"
    ใช้ร่วมกัน: การ์ดในหน้าตรวจรายได้ (index.html) + กระดิ่ง (bell.js)
    หลัก: ไม่มีเงินจริง ไม่ตัด · เงินโอนต้องเจอยอดใน K+/สเตทเมนต์ · เงินสดต้องมีรูปใบนับเงินสดที่ยอดตรงกับฟอร์ม
@@ -15,8 +15,10 @@
   function classify(D){
     var kp=(D.kp||[]).slice(), bk=(D.bk||[]).slice();
     var apprMap={}; (D.appr||[]).forEach(function(a){ if(a.status!=="cancelled") apprMap[a.bill_no]=a; });
-    var proofOk = !!(D.proof && D.cash!=null && Math.abs(num(D.proof.amount)-num(D.cash))<0.01);
-    var R={ t:[], c:[], h:[], s:[], done:[], appr:[], cut:[], proofOk:proofOk, proof:D.proof||null, cash:D.cash };
+    /* v0.4.5: ใบนับเทียบกับ "ยอดเงินสดที่ต้องมี" = เงินสดขาย + รายรับอื่นๆ (ลงในโปรแกรม) + บิลเก่าเงินสด − คืนเงิน */
+    var expCash = (D.cash==null)? null : r2(num(D.cash)+num(D.otherSum)+num(D.oldCash)-num(D.refund));
+    var proofOk = !!(D.proof && !D.proofPending && expCash!=null && Math.abs(num(D.proof.amount)-expCash)<0.01);
+    var R={ t:[], c:[], h:[], s:[], done:[], appr:[], cut:[], proofOk:proofOk, proof:D.proof||null, cash:D.cash, expCash:expCash };
     var cashC=[]; /* v0.4.4: ผู้สมัครเงินสด {b, part, mixed} — ตัดสินรวมทีเดียวท้ายลูป */
     function take(arr,amt){ var i=arr.findIndex(function(x){ return Math.abs(num(x)-amt)<=1; }); if(i<0) return false; arr.splice(i,1); return true; }
     (D.bills||[]).forEach(function(b){
@@ -50,10 +52,10 @@
     var sumOk=(D.cash!=null && Math.abs(cashSum-num(D.cash))<=1); R.cashSumOk=sumOk;
     cashC.forEach(function(x){
       var b=x.b;
-      if(!proofOk) R.h.push({b:b, cash:true, why: D.proof? "ยอดใบนับเงินสดไม่ตรงกับฟอร์ม" : "รอรูปใบนับเงินสด"});
+      if(!proofOk) R.h.push({b:b, cash:true, why: D.proofPending? "มีคำขอแก้ไขยอดเงินสด รออนุมัติ" : D.proof? "ยอดใบนับเงินสดไม่ตรงกับยอดที่ต้องมี "+TH(expCash) : "รอรูปใบนับเงินสด"});
       else if(!sumOk) R.h.push({b:b, cash:true, why:"บิลเงินสดรวม "+TH(cashSum)+" ไม่ตรงกับเงินสดในฟอร์ม "+TH(D.cash)+" — ต้องตรวจก่อน"});
       else if(x.mixed) R.c.push({b:b, method:"เงินโอน + เงินสด", src:x.mixed+" + เงินสด "+TH(x.part)});
-      else R.c.push({b:b, method:"เงินสด", src:"ใบนับเงินสดตรงกับฟอร์ม"});
+      else R.c.push({b:b, method:"เงินสด", src:"ใบนับเงินสดตรงกับยอดที่ต้องมี"});
     });
     return R;
   }
@@ -63,22 +65,25 @@
     var s=SB(); if(!s) throw new Error("เชื่อม Supabase ไม่ได้");
     var q=await Promise.all([
       s.rpc("rev_cut_bills",{p_date:date}),
-      s.from("rev_audit").select("status,detail").eq("date",date).maybeSingle(),
+      s.from("rev_audit").select("status,detail,form_refund").eq("date",date).maybeSingle(),
       s.from("rev_credit_bills").select("customer").eq("bill_date",date).eq("source","auto-form"),
       s.from("rev_daily").select("kplus_rows,bank_rows").eq("date",date).maybeSingle(),
       s.from("rev_cash_proof").select("amount,image_path,uploaded_at,uploaded_role").eq("date",date).maybeSingle(),
-      s.from("rev_cut_approvals").select("*").eq("bill_date",date)
+      s.from("rev_cut_approvals").select("*").eq("bill_date",date),
+      s.from("rev_cash_other").select("amount").eq("date",date).eq("channel","cash"),
+      s.from("rev_cash_proof_req").select("id").eq("date",date).eq("status","pending")
     ]);
     var au=(q[1]&&q[1].data)||null, dd=(q[3]&&q[3].data)||{}, det=(au&&au.detail)||{};
     return {
       date:date, status:au?au.status:null,
       bills:(q[0]&&q[0].data)||[],
       xfer:det.xfer||[], cash:(det.form_cash!=null?num(det.form_cash):null),
+      otherSum:((q[6]&&q[6].data)||[]).reduce(function(s2,x){ return s2+num(x.amount); },0), oldCash:num(det.form_old_cash), refund:num(det.form_refund_cash!=null?det.form_refund_cash:(au&&au.form_refund)),
       acct:((q[2]&&q[2].data)||[]).map(function(x){ return x.customer; }),
       kp:(dd.kplus_rows||[]).map(function(x){ return num(x.amt); }),
       bk:(dd.bank_rows||[]).filter(function(x){ return num(x.dep)>0; }).map(function(x){ return num(x.dep); }),
       hasK:!!(dd.kplus_rows&&dd.kplus_rows.length), hasB:!!(dd.bank_rows&&dd.bank_rows.length),
-      proof:(q[4]&&q[4].data)||null,
+      proof:(q[4]&&q[4].data)||null, proofPending:((q[7]&&q[7].data)||[]).length,
       appr:(q[5]&&q[5].data)||[]
     };
   }

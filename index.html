@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.5</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.6</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -183,8 +183,8 @@
         <span class="ab-fn" id="fn_acc">กำลังโหลด…</span>
         <label id="acc_up" class="r-fin" style="display:none;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องเอง</span><span class="fn" id="fn_pos"></span></label>
       </div>
-      <div class="muted" style="margin:12px 0 8px">สิ่งที่ต้องอัป</div>
-      <div class="drops" style="margin-bottom:0">
+      <div class="muted" id="up_lbl" style="margin:12px 0 8px">สิ่งที่ต้องอัป</div>
+      <div class="drops" id="up_drops" style="margin-bottom:0">
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
         <div class="drop" id="d_cashp" style="cursor:default"><div class="ic">📸</div><div class="nm">ใบนับเงินสด</div><div class="hint">ถ่ายรูปใบนับแบงค์/เหรียญ <span style="white-space:nowrap">+ ใส่ยอดรวม</span><br>ต้องมีก่อนกดยืนยัน</div><div class="fn" id="fn_cashp"></div><div id="cashp_other" style="margin-top:8px;text-align:left"></div><div id="cashp_form" style="margin-top:8px"><input id="cashp_amt" class="rsn" inputmode="decimal" placeholder="ยอดรวมในใบนับ" style="text-align:center;width:100%;max-width:none;display:block"><label class="btn sec" style="display:block;width:100%;text-align:center;margin-top:6px;cursor:pointer;padding:9px 12px;box-sizing:border-box"><input type="file" accept="image/*" capture="environment" id="f_cashp" class="hide"><span id="cashp_btn">📷 ถ่าย/เลือกรูปใบนับ</span></label></div><div id="cashp_req" style="margin-top:8px;text-align:left"></div></div>
         <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
@@ -2327,7 +2327,7 @@ async function taskAlertRun(){
 
 ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} });
 </script>
-<script src="credit.js?v=20261001a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+<script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20260908a"></script>
 <script src="cutbill.js?v=20261002a"></script>
 <script src="mpager.js?v=20261001a"></script>
@@ -2380,12 +2380,33 @@ async function loadCashProof(){
   const exp=fi? Math.round((fi.cash+oSum+fi.oldCash-fi.refund)*100)/100 : null;
   const br=fi? '<div class="muted" style="font-size:12px">ต้องมี = เงินสดขาย '+TH(fi.cash)+(oSum?' + รายรับอื่นๆ '+TH(oSum):'')+(fi.oldCash?' + บิลเก่าเงินสด '+TH(fi.oldCash):'')+(fi.refund?' − คืนเงิน '+TH(fi.refund):'')+' = <b>'+TH(exp)+'</b></div>' : '';
   cpReqRender(date,p,reqs);
-  if(!p){ fn.innerHTML='<span style="color:#b45309">ยังไม่มีรูปใบนับของ '+beDate(date)+'</span>'+br; return; }
+  if(!p){ fn.innerHTML='<span style="color:#b45309">ยังไม่มีรูปใบนับของ '+beDate(date)+'</span>'+br; upState(date,false,null); return; }
   const ok=(exp==null)||Math.abs(+p.amount-exp)<0.01;
   box.classList.add(ok?"on":"bad");
   fn.innerHTML=(ok?'✅ ':'🚩 ')+'นับได้ '+TH(+p.amount)+(exp!=null?(ok?' = ยอดที่ต้องมี':' · ต้องมี '+TH(exp)+' · ต่าง '+TH(+p.amount-exp)):'')+
     ' · <a href="#" onclick="openSlip(\''+escAttr(p.image_path)+'\');return false;">ดูรูป</a>'+br;
   const a=document.getElementById("cashp_amt"); if(a&&!a.value) a.placeholder=(ROLE==="owner"?"ยอดใหม่ (แทนของเดิม "+TH(+p.amount)+")":"ยอดใหม่ที่ขอแก้ (เดิม "+TH(+p.amount)+")");
+  const clean=ok && !(ob&&ob.innerHTML.indexOf("🚩")>=0) && !reqs.some(function(r){return r.status==="pending";});
+  upState(date,clean,+p.amount);
+}
+/* v0.4.6 (3 ต.ค.69) — อัปครบทุกอย่างและไม่มีปัญหา → ซ่อน 4 ช่อง "สิ่งที่ต้องอัป" เหลือหัวข้อบรรทัดเดียว มีลูกศร ▶ กดเปิดลง
+   ครบ = ยืนยันฟอร์มแล้ว (rev_audit) + ยอดเครื่องตรงฟอร์ม (recon_ok ไม่เป็น false) + ใบนับตรง ไม่มีธง/คำขอค้าง + มี K+ และสเตทเมนต์ของวันนั้น
+   มีปัญหา/ยังไม่ครบ → แสดง 4 ช่องเหมือนเดิม */
+async function upState(date,cashClean,cashAmt){
+  const lbl=document.getElementById("up_lbl"), dr=document.getElementById("up_drops"); if(!lbl||!dr) return;
+  const _t=(window._upTok=(window._upTok||0)+1);
+  let done=false;
+  if(cashClean){ try{ const q=await Promise.all([ sb.from("rev_audit").select("date,detail->recon_ok").eq("date",date).maybeSingle(), sb.from("rev_daily").select("kplus_total,bank_dep_total").eq("date",date).maybeSingle() ]);
+      const au=q[0]&&q[0].data, da=q[1]&&q[1].data;
+      done=!!au && au.recon_ok!==false && !!da && da.kplus_total!=null && da.bank_dep_total!=null;
+    }catch(e){ done=false; } }
+  if(_t!==window._upTok || cpDate()!==date) return;
+  if(!done){ window._upOpen=null; lbl.innerHTML="สิ่งที่ต้องอัป"; lbl.style.cursor=""; lbl.onclick=null; dr.style.display=""; return; }
+  const open=(window._upOpen===date);
+  lbl.innerHTML='<span style="display:inline-block;width:14px">'+(open?'▼':'▶')+'</span>สิ่งที่ต้องอัป · <span style="color:#15803d;font-weight:600">✓ อัปครบ ไม่มีปัญหา</span> <span style="font-size:12px">(ฟอร์ม · ใบนับเงินสด '+TH(cashAmt)+' · K+ · สเตทเมนต์)</span>';
+  lbl.style.cursor="pointer";
+  lbl.onclick=function(){ window._upOpen=(window._upOpen===date)?null:date; upState(date,true,cashAmt); };
+  dr.style.display=open?"":"none";
 }
 /* v0.4.5 — รูปแรกอัปได้ปกติ · รูปถัดไป = คำขอแก้ไข ต้องให้เจ้าของอนุมัติ (เจ้าของแทนเองได้ แต่ต้องใส่เหตุผล) · เก็บประวัติทุกครั้ง */
 function cpReqRender(date,p,reqs){

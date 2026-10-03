@@ -521,7 +521,17 @@
           '<button class="btn sec" style="padding:3px 9px;border-color:#fca5a5;color:#b91c1c" onclick="__obReject(\''+pr.id+'\')">✕ ยกเลิกรายการ</button>'+
         '</td></tr>');
     }
-    box.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="num">ยอดจ่าย</th><th>วิธี</th><th>จะตัดบิล</th><th>เงินจริง</th><th></th></tr></thead><tbody>'+out.join("")+'</tbody></table>'; _obC.on=false; _obC.b=null; _obC.ab=null; _obC.po=null; _obC.pm=null;
+    /* v0.4.6 (3 ต.ค.69) — โชว์ 5 รายการแรก ที่เหลือซ่อน กดปุ่มเพื่อดูทั้งหมด */
+    var OB_PER=5, _obMore=out.length-OB_PER;
+    var _obRows=out.map(function(h,i){ return i<OB_PER?h:h.replace('<tr>','<tr class="ob-more" style="display:'+(window._obShowAll?'':'none')+'">'); }).join("");
+    box.innerHTML='<table><thead><tr><th>วันที่รับ</th><th>ลูกค้า</th><th class="num">ยอดจ่าย</th><th>วิธี</th><th>จะตัดบิล</th><th>เงินจริง</th><th></th></tr></thead><tbody>'+_obRows+'</tbody></table>'+
+      (_obMore>0?'<button type="button" id="obMoreBtn" class="btn sec" style="width:100%;margin-top:8px;padding:7px 10px" onclick="__obToggleMore()">'+(window._obShowAll?'🔼 ซ่อน เหลือ '+OB_PER+' รายการ':'▼ ดูอีก '+_obMore+' รายการ')+'</button>':''); _obC.on=false; _obC.b=null; _obC.ab=null; _obC.po=null; _obC.pm=null;
+  };
+
+  window.__obToggleMore=function(){
+    window._obShowAll=!window._obShowAll;
+    var rows=document.querySelectorAll("#oblist tr.ob-more"); rows.forEach(function(r){ r.style.display=window._obShowAll?"":"none"; });
+    var b=document.getElementById("obMoreBtn"); if(b) b.textContent=window._obShowAll?"🔼 ซ่อน เหลือ 5 รายการ":"▼ ดูอีก "+rows.length+" รายการ";
   };
 
   window.__obConfirm=async function(id){

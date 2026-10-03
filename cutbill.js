@@ -1,4 +1,4 @@
-/* cutbill.js — v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
+/* cutbill.js — v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
    ตัดบิลประจำวัน: คัดบิลของวันว่าบิลไหน "ยอดตรงแล้ว พร้อมตัด" / "พักไว้" / "ไม่ต้องตัด" / "ตัดแล้ว"
    ใช้ร่วมกัน: การ์ดในหน้าตรวจรายได้ (index.html) + กระดิ่ง (bell.js)
    หลัก: ไม่มีเงินจริง ไม่ตัด · เงินโอนต้องเจอยอดใน K+/สเตทเมนต์ · เงินสดต้องมีรูปใบนับเงินสดที่ยอดตรงกับฟอร์ม
@@ -61,6 +61,7 @@
   }
   function TH(n){ return r2(n).toLocaleString("th-TH",{minimumFractionDigits:0,maximumFractionDigits:2}); }
 
+  function prevDay(iso){ var p=String(iso).split("-"); var d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().slice(0,10); }
   async function load(date){
     var s=SB(); if(!s) throw new Error("เชื่อม Supabase ไม่ได้");
     var q=await Promise.all([
@@ -71,8 +72,11 @@
       s.from("rev_cash_proof").select("amount,image_path,uploaded_at,uploaded_role").eq("date",date).maybeSingle(),
       s.from("rev_cut_approvals").select("*").eq("bill_date",date),
       s.from("rev_cash_other").select("amount").eq("date",date).eq("channel","cash"),
-      s.from("rev_cash_proof_req").select("id").eq("date",date).eq("status","pending")
+      s.from("rev_cash_proof_req").select("id").eq("date",date).eq("status","pending"),
+      s.from("rev_daily").select("kplus_rows").eq("date",prevDay(date)).maybeSingle()
     ]);
+    /* v0.4.6 (3 ต.ค.69): บิลหลังตัดรอบ 15:30 ลงวันที่วันถัดไป → K+ ที่เข้าหลัง 15:30 ของเมื่อวาน เป็นเงินของบิลวันนี้ (เคส KM6910-0054 72 บาท โอน 1/10 16:55) */
+    var kLate=(((q[8]&&q[8].data)||{}).kplus_rows||[]).filter(function(x){ var m=String(x.t||"").match(/(\d{1,2}):(\d{2})/); return m && (+m[1]*60+ +m[2])>=15*60+30; }).map(function(x){ return num(x.amt); });
     var au=(q[1]&&q[1].data)||null, dd=(q[3]&&q[3].data)||{}, det=(au&&au.detail)||{};
     return {
       date:date, status:au?au.status:null,
@@ -80,7 +84,7 @@
       xfer:det.xfer||[], cash:(det.form_cash!=null?num(det.form_cash):null),
       otherSum:((q[6]&&q[6].data)||[]).reduce(function(s2,x){ return s2+num(x.amount); },0), oldCash:num(det.form_old_cash), refund:num(det.form_refund_cash!=null?det.form_refund_cash:(au&&au.form_refund)),
       acct:((q[2]&&q[2].data)||[]).map(function(x){ return x.customer; }),
-      kp:(dd.kplus_rows||[]).map(function(x){ return num(x.amt); }),
+      kp:(dd.kplus_rows||[]).map(function(x){ return num(x.amt); }).concat(kLate),
       bk:(dd.bank_rows||[]).filter(function(x){ return num(x.dep)>0; }).map(function(x){ return num(x.dep); }),
       hasK:!!(dd.kplus_rows&&dd.kplus_rows.length), hasB:!!(dd.bank_rows&&dd.bank_rows.length),
       proof:(q[4]&&q[4].data)||null, proofPending:((q[7]&&q[7].data)||[]).length,

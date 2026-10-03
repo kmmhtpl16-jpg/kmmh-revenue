@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.7</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.8</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -301,6 +301,8 @@ function isoFromExcel(v){
 const FMAP={form:["d_form","fn_form"],pos:["d_acc","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
 function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
   el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
+function bankPartialNote(bk){ const el=document.getElementById("fn_bank"); if(!el||!bk||!bk.partial) return; const ks=Object.keys(bk.partial); if(!ks.length) return;
+  el.insertAdjacentHTML("beforeend",'<div style="color:#b45309;font-size:12px;margin-top:4px">⏳ '+ks.map(d=>beDate(d)+' มีถึง '+bk.partial[d]+' น.').join(", ")+' — ยังไม่ครบวัน (ยังไม่มียอด K+ เข้าบัญชีตอนปิดวัน) · พรุ่งนี้อัปไฟล์เต็มทับได้เลย</div>'); }
 function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="pos"){ DATA._posFile=null; DATA._posFileDate=null; DATA._posFileName=null; try{ localStorage.removeItem("rev_pos_file"); }catch(e){} setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
@@ -312,11 +314,11 @@ async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entrie
     for(const [date,total] of Object.entries(kp.map)){ if(set.has(date)) await sb.from("rev_audit").update({kplus_today:Math.round(total*100)/100}).eq("date",date); }
     loadMonthStatus(); refreshOpenDay();
   }catch(e){} }
-async function saveBankDaily(bk){ if(!sb||!bk) return; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100, bank_rows:(bk.rowsByDate&&bk.rowsByDate[date])||null})); if(!rows.length) return;
+async function saveBankDaily(bk){ if(!sb||!bk) return; const PT=bk.partial||{}; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100, bank_rows:(bk.rowsByDate&&bk.rowsByDate[date])||null, bank_asof:PT[date]||null})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("bank_dep_today",null);
     const set=new Set((au||[]).map(x=>x.date));
-    for(const [date,o] of Object.entries(bk.map)){ if(set.has(date)) await sb.from("rev_audit").update({bank_dep_today:Math.round(o.dep*100)/100}).eq("date",date); }
+    for(const [date,o] of Object.entries(bk.map)){ if(set.has(date) && !PT[date]) await sb.from("rev_audit").update({bank_dep_today:Math.round(o.dep*100)/100}).eq("date",date); }
     loadMonthStatus(); refreshOpenDay();
   }catch(e){} }
 
@@ -361,7 +363,7 @@ function fmtSync(s){ if(!s) return "—"; const d=new Date(s);
 function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.value) return;
   const t=new Date(el.value+"T00:00:00"); t.setDate(t.getDate()+n);
   el.value=t.getFullYear()+"-"+pad2(t.getMonth()+1)+"-"+pad2(t.getDate()); loadAccDay(); }
-/* v0.3.4 — ACC ซิงก์ตอนเช้าของวันนั้นเอง = มีแค่บิลช่วงเช้า (เคส 26/09/69 ยอดเครื่อง 435) → ถือว่าครบเมื่อซิงก์หลังเที่ยงคืนของวันถัดไปเท่านั้น */ function accComplete(a,d){ try{ if(!a||!a.has_data||!a.syncedAt||!d) return false; return new Date(a.syncedAt).getTime() >= new Date(String(d).slice(0,10)+"T00:00:00+07:00").getTime()+864e5; }catch(e){ return false; } } async function loadAccDay(){
+/* v0.3.4 — ACC ซิงก์ตอนเช้าของวันนั้นเอง = มีแค่บิลช่วงเช้า (เคส 26/09/69 ยอดเครื่อง 435) → ถือว่าครบเมื่อซิงก์หลังเที่ยงคืนของวันถัดไปเท่านั้น */ function accComplete(a,d){ try{ if(!a||!a.has_data||!a.syncedAt||!d) return false; /* v0.4.8: บิลหลัง 15:30 ลงวันถัดไป → ซิงก์ตั้งแต่ 16:30 ของวันนั้นถือว่าครบ (เครื่องแม่ซิงก์รอบ 16:30) */ return new Date(a.syncedAt).getTime() >= new Date(String(d).slice(0,10)+"T16:30:00+07:00").getTime(); }catch(e){ return false; } } async function loadAccDay(){
   const el=document.getElementById("accDate"); if(!el) return;
   if(!el.value){ const y=new Date(Date.now()-864e5); el.value=(DATA.form&&DATA.form.date)||(y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate())); }
   const d=el.value;
@@ -1139,10 +1141,29 @@ if(fkp) fkp.addEventListener("change", e=>{
   r.onload=ev=>{ try{ DATA.kplus=parseKPlus(ev.target.result); DATA._e_kplus=null; saveKplusDaily(DATA.kplus); }catch(err){ DATA._e_kplus=err.message; DATA.kplus=null; } render(); matchReminder(); };
   r.readAsText(file,"utf-8");
 });
-function parseBank(text){
+/* v0.4.8 (3 ต.ค.69) — ไฟล์ "recent_transaction_YYYYMMDD_HHMMSS.csv" (รายการเดินบัญชีล่าสุดจาก K BIZ) อ่านได้แล้ว
+   ดึงระหว่างวันได้ เช่น 17:00 · วันที่เดียวกับวันที่ดึงไฟล์ = ยังไม่ครบวัน (เก็บเวลาที่ดึงไว้ใน rev_daily.bank_asof) อัปไฟล์เต็มทีหลังจะทับให้เอง */
+function parseBankRecent(R,h,fileName){
+  const hdr=R[h].map(c=>String(c||"").trim());
+  const iDt=hdr.indexOf("Transaction Date"), iWd=hdr.indexOf("Withdrawal (Baht)"), iDep=hdr.indexOf("Deposit (Baht)"), iAcc=hdr.indexOf("Account/PromptPay or Biller"), iCh=hdr.indexOf("Channel"), iTx=hdr.indexOf("Transaction");
+  const fm=String(fileName||"").match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})\d{2}/);
+  const asofDate=fm?(fm[1]+"-"+fm[2]+"-"+fm[3]):null, asofTime=fm?(fm[4]+":"+fm[5]):null;
+  const map={}, rowsByDate={}, partial={}; const tmp=[];
+  for(let i=h+1;i<R.length;i++){ const r=R[i]; if(!r||!r[iDt]) continue;
+    const m=String(r[iDt]).match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2}(:\d{2})?)/); if(!m) continue;
+    tmp.push({iso:m[1]+"-"+m[2]+"-"+m[3], t:m[4], dt:m[3]+"-"+m[2]+"-"+m[1].slice(2), dep:Math.abs(num(r[iDep])), wd:Math.abs(num(r[iWd])), ch:String(r[iCh]||"").trim(), acc:String(r[iAcc]||"").trim(), tx:String(r[iTx]||"").trim()}); }
+  tmp.sort((a,b)=>(a.iso+a.t).localeCompare(b.iso+b.t));
+  tmp.forEach(x=>{ const isKplus = x.ch.indexOf("K SHOP")>=0 || x.ch.indexOf("MYQR")>=0 || x.ch.indexOf("EDC")>=0;
+    if(!map[x.iso]) map[x.iso]={dep:0,wd:0,kplus:0}; map[x.iso].dep+=x.dep; map[x.iso].wd+=x.wd; if(isKplus) map[x.iso].kplus+=x.dep;
+    (rowsByDate[x.iso]=rowsByDate[x.iso]||[]).push({ch:x.ch,dt:x.dt,t:x.t,kp:isKplus,wd:x.wd,dep:x.dep,detail:x.t.slice(0,5)+" · "+x.tx+(x.acc?" · "+x.acc:"")}); });
+  if(asofDate && map[asofDate]) partial[asofDate]=asofTime;
+  return {map, rowsByDate, partial, recent:true};
+}
+function parseBank(text,fileName){
   const R=parseCSV(text); let h=-1;
+  for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="Deposit (Baht)")){ return parseBankRecent(R,i,fileName); } }
   for(let i=0;i<R.length;i++){ if(R[i] && R[i].some(c=>String(c).trim()==="ฝากเงิน")){ h=i; break; } }
-  if(h<0) throw new Error("ไม่พบหัวตาราง (ฝากเงิน) — ใช่สเตทเมนต์กสิกรไหม?");
+  if(h<0) throw new Error("ไม่พบหัวตาราง (ฝากเงิน / Deposit) — ใช่สเตทเมนต์กสิกรไหม?");
   const map={};
   const rowsByDate={}; for(let i=h+1;i<R.length;i++){ const r=R[i]; if(!r||!r[1]) continue;
     const m=String(r[1]).match(/(\d{2})-(\d{2})-(\d{2})/); if(!m) continue;
@@ -1156,7 +1177,7 @@ const fbk=document.getElementById("f_bank");
 if(fbk) fbk.addEventListener("change", e=>{
   const file=e.target.files[0]; if(!file) return; setFn("fn_bank",file.name,"bank"); document.getElementById("d_bank").classList.add("on");
   const r=new FileReader();
-  r.onload=ev=>{ try{ DATA.bank=parseBank(ev.target.result); DATA._e_bank=null; saveBankDaily(DATA.bank); }catch(err){ DATA._e_bank=err.message; DATA.bank=null; } render(); matchReminder(); };
+  r.onload=ev=>{ try{ DATA.bank=parseBank(ev.target.result,file.name); DATA._e_bank=null; saveBankDaily(DATA.bank); bankPartialNote(DATA.bank); }catch(err){ DATA._e_bank=err.message; DATA.bank=null; } render(); matchReminder(); };
   r.readAsText(file,"utf-8");
 });
 /* v0.3.7 — มัดจำที่ลงผิด: เลข RA ไม่มีใน ACC-BILLING / หักบิลเดียวกันซ้ำ → ขึ้นเตือนให้แคชเชียร์เห็นและกดแก้ได้ (เจ้าของขอ 26 ก.ย.69) */

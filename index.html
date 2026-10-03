@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.6</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.7</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -2329,7 +2329,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20260908a"></script>
-<script src="cutbill.js?v=20261003a"></script>
+<script src="cutbill.js?v=20261003b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
@@ -2518,8 +2518,9 @@ async function renderCut(){
   const date=cpDate(); if(!date){ card.style.display="none"; return; }
   card.style.display=""; card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">กำลังคัดบิล…</div>';
   let R; try{ await ensureOwnerSession(); R=await RevCut.compute(date); if(cpDate()!==date) return; }catch(e){ if(cpDate()!==date) return; card.innerHTML='<h2>📋 ตัดบิลประจำวัน</h2><div class="muted" style="color:#b91c1c">โหลดไม่ได้: '+esc(e.message||e)+'</div>'; return; }
-  CUT=R; const D=R.D;
-  if(!D.bills.length){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">ยังไม่มีบิลของวันนี้จาก ACC-BILLING (ซิงก์ทุกเช้า)</div>'; return; }
+  let OB={ready:[],appr:[],done:[]}; try{ OB=await RevCut.old(date); if(cpDate()!==date) return; }catch(e){ console.warn("RevCut.old",e); }
+  R.ob=OB; CUT=R; const D=R.D;
+  if(!D.bills.length && !(OB.ready.length+OB.appr.length+OB.done.length)){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">ยังไม่มีบิลของวันนี้จาก ACC-BILLING (ซิงก์ทุกเช้า)</div>'; return; }
   const ready=R.t.concat(R.c), miss=[];
   if(D.status!=="ตรวจแล้ว") miss.push("วันนี้ยังไม่ได้กดยืนยันผลตรวจ");
   if(!D.hasK) miss.push("ยังไม่มีรายงาน K+"); if(!D.hasB) miss.push("ยังไม่มีสเตทเมนต์");
@@ -2535,6 +2536,15 @@ async function renderCut(){
   h+='<div class="cut-sec"><h3>⏸ พักไว้ <span class="muted">'+R.h.length+' บิล</span></h3>'+cutList(R.h,"h")+'</div>';
   h+='<div class="cut-sec"><h3>➖ ไม่ต้องตัดวันนี้ <span class="muted">'+R.s.length+' บิล</span></h3>'+cutList(R.s,"s")+'</div>';
   if(R.cut.length) h+='<div class="cut-sec"><h3>✔ เลขาตัดแล้ว <span class="muted">'+R.cut.length+' บิล</span></h3>'+cutList(R.cut,"a")+'</div>';
+  /* v0.4.7 บิลเก่าที่มีเงินจ่ายเข้ามาวันนี้ */
+  const obRow=function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-ok">'+esc(x.ap&&x.ap.rc_no?(x.ap.method+' · '+x.ap.rc_no):(x.method+' · '+x.src))+'</span></div></div><div class="r">'+TH(x.ap?+x.ap.amount:(x.amt||x.b.out))+'</div></div>'; };
+  const obSum=function(a){ return a.reduce(function(s,x){return s+(+x.amt||0);},0); };
+  if(OB.ready.length+OB.appr.length+OB.done.length){
+    h+='<div class="cut-sec" style="border-top:2px dashed #e7e5e4;padding-top:10px"><h3>🧾 บิลเก่าที่จับคู่เงินแล้ว รอตัด <span class="muted">'+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+'</span></h3>'+(OB.ready.map(obRow).join("")||'<div class="muted">—</div>')+'</div>';
+    if(OB.appr.length) h+='<div class="cut-sec"><h3>🕒 บิลเก่า อนุมัติแล้ว รอเลขาตัด <span class="muted">'+OB.appr.length+' บิล</span></h3>'+OB.appr.map(obRow).join("")+'</div>';
+    if(OB.done.length) h+='<div class="cut-sec"><h3>✔ บิลเก่า ตัดแล้ว <span class="muted">'+OB.done.length+' บิล</span></h3>'+OB.done.map(obRow).join("")+'</div>';
+    if(ROLE==="owner" && OB.ready.length) h+='<button class="btn" style="width:100%;margin-top:8px;min-height:44px" onclick="cutApproveOld()">✅ อนุมัติตัดบิลเก่า '+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+' บาท</button>';
+  }
   if(ROLE==="owner"){
     if(ready.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+ready.length+' บิล · '+TH(cutSum(ready))+' บาท</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>';
     if(R.appr.length) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+R.appr.length+' บิล — พิมพ์ <b>“ตัดที่อนุมัติแล้ว”</b> ในแชท Claude ให้เลขาไปตัดใน ACC-BILLING · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px"><button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
@@ -2547,6 +2557,16 @@ async function cutApprove(){
   if(!ready.length) return;
   if(!confirm("อนุมัติตัด "+ready.length+" บิล ยอด "+TH(cutSum(ready))+" บาท ของวันที่ "+beDate(date)+" ?")) return;
   const rows=ready.map(function(x){ return {bill_date:date,bill_no:x.b.no,customer:x.b.name,amount:+x.b.out,method:x.method,evidence:x.src||null,status:"approved",approved_role:ROLE}; });
+  const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
+  if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
+  renderCut();
+}
+async function cutApproveOld(){
+  if(ROLE!=="owner"||!CUT||!CUT.ob) return; const date=CUT.D.date, ready=CUT.ob.ready;
+  if(!ready.length) return;
+  if(!confirm("อนุมัติตัดบิลเก่า "+ready.length+" บิล ยอด "+TH(ready.reduce(function(s,x){return s+(+x.amt||0);},0))+" บาท (รายรับวันที่ "+beDate(date)+") ?")) return;
+  const tag="OB"+String(+date.slice(0,4)+543).slice(2)+date.slice(5,7)+date.slice(8,10);
+  const rows=ready.map(function(x){ return {bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,receipt_group:tag+"-"+x.grp.slice(0,9)}; });
   const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
   if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
   renderCut();

@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.3</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.4</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -381,6 +381,7 @@ function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.va
     DATA._acc = data;
     /* v0.3.3 — ใบลดหนี้ของบิลหลังตัดรอบ 15:30 นับเข้าวันของบิล (acc_cn_shift) ให้ด่านบันทึก + ข้อความ Telegram ใช้ยอดเดียวกับหน้ารายละเอียด */
     DATA._accShift=null; try{ const _sr=await sb.rpc("acc_cn_shift",{p_date:d}); if(_sr&&_sr.data) DATA._accShift={d:d, out:+_sr.data.out_amt||0, inn:+_sr.data.in_amt||0}; }catch(_eS){}
+    DATA._raReg=null; try{ const _rq=await sb.from("rev_deposits").select("deposit_no,status").eq("received_date",d); if(_rq&&!_rq.error) DATA._raReg={d:d, set:(_rq.data||[]).filter(function(x){ return x.status!=="cancelled"; }).map(function(x){ return normRA(x.deposit_no); })}; }catch(_eR){} /* v0.5.4 ใบลดหนี้ที่กลายเป็นมัดจำ */
     if(_stale()) return;
     const _up=document.getElementById("acc_up"); if(_up) _up.style.display=accComplete(data,d)?"none":"block";
     if(accComplete(data,d)){
@@ -436,7 +437,7 @@ const BA_SUMROW=/^(ยอดรวม|รวมทั้งหมด|รวม|�
 const baIsSum=n=>BA_SUMROW.test(String(n||"").trim());
 /* ฟอร์มพิมพ์ชื่อลูกค้าสั้น/ตัดคำนำหน้า → เทียบแบบหลวม */
 function baKey(s){ return String(s||"").replace(/ห้างหุ้นส่วนจำกัด|บริษัท|จำกัด|\(มหาชน\)|หจก\.?|ร้าน|คุณ|นาย|นาง(สาว)?/g,"").replace(/[\s\.\-]/g,""); }
-function baHit(a,b){ a=baKey(a); b=baKey(b); if(a.length<4||b.length<4) return false;
+function baHit(a,b){ a=baKey(a); b=baKey(b); if(a&&b&&a.toUpperCase()===b.toUpperCase()) return true; /* v0.5.4 ชื่อสั้น เช่น FFF/UPK */ if(a.length<4||b.length<4) return false;
   const n=Math.min(8,a.length,b.length); return a.slice(0,n)===b.slice(0,n)||a.indexOf(b)>=0||b.indexOf(a)>=0; }
 /* ลูกค้าปลีกใน POS (ชื่อ "คุณ 1") */
 function baRetailCust(pos){ const ns=Object.keys(pos.custTotalByName||{}); return ns.find(c=>baKey(c)==="1")||null; }
@@ -459,6 +460,7 @@ function buildBillAudit(form,pos){
   [].concat(form.acctRows||[],form.shopCash||[]).filter(r=>!baIsSum(r.name)).forEach(row=>{
     const hit=names.find(c=>baHit(row.name,c));
     if(hit) byCust[hit]=r2c((byCust[hit]||0)+(+row.amt||0)); else if(+row.amt) unknown.push(row); });
+  if(+form.upk){ const _u=names.find(c=>baKey(c).toUpperCase()==="UPK"); if(_u) byCust[_u]=r2c((byCust[_u]||0)+(+form.upk)); } /* v0.5.4 บรรทัด UPK ในฟอร์ม */
   const rc=(form.retailCash||[]).map(Number).filter(v=>!isNaN(v));
   if(retail&&rc.length) byCust[retail]=r2c((byCust[retail]||0)+rc.reduce((s,v)=>s+v,0));
 
@@ -476,13 +478,15 @@ function buildBillAudit(form,pos){
   /* เจาะรายการเงินสดลูกค้าปลีก — หาใบที่ลงยอดผิด / ไม่มีบิลคู่ */
   if(retail&&rc.length){
     const xb={}; Object.keys(paid).forEach(b=>xb[b]=1);
-    const pool=Object.keys(bt).filter(b=>bc[b]===retail&&!xb[b]).map(b=>({bill:b,amt:r2c(bt[b]),used:false}));
+    /* v0.5.4 บิลลูกค้าปลีกจ่ายผสม (โอนบางส่วน + เงินสด) → ส่วนที่เหลือหลังหักโอนต้องเจอในเงินสดลูกค้าปลีก (เคส KM6910-0192 โอน 460 + สด 2,300) */
+    const pool=Object.keys(bt).filter(b=>bc[b]===retail).map(b=>({bill:b,amt:r2c(bt[b]-(paid[b]||0)),used:false,mixed:!!xb[b]})).filter(p=>p.amt>BA_TOL);
     const orphan=[];
     rc.forEach(v=>{ v=r2c(v); const m=pool.find(p=>!p.used&&p.amt===v); if(m) m.used=true; else orphan.push(v); });
-    pool.filter(p=>!p.used).forEach(p=>{ const near=orphan.find(v=>Math.abs(p.amt-v)<=BA_TOL);
+    pool.filter(p=>p.used&&p.mixed).forEach(p=>{ out.bills=out.bills.filter(x=>normBill(x.bill)!==normBill(p.bill)); });
+    pool.filter(p=>!p.used&&!p.mixed).forEach(p=>{ const near=orphan.find(v=>Math.abs(p.amt-v)<=BA_TOL);
       if(near!=null) out.cash.push({bill:p.bill,tot:p.amt,form:near,diff:r2c(p.amt-near),kind:"wrong"});
       else out.cash.push({bill:p.bill,tot:p.amt,kind:"missing"}); });
-    orphan.filter(v=>!pool.some(p=>!p.used&&Math.abs(p.amt-v)<=BA_TOL)).forEach(v=>{
+    orphan.filter(v=>!pool.some(p=>!p.used&&!p.mixed&&Math.abs(p.amt-v)<=BA_TOL)).forEach(v=>{
       if(!out.cash.some(c=>c.form===v)) out.cash.push({amt:v,kind:"nobill"}); });
   }
   out.ok=!out.bills.length&&!out.custs.length&&!out.cash.length;
@@ -688,8 +692,11 @@ function render(){
   const diffAdj = netCmp - (sumForm - f.refund);
   const okRaw = Math.abs(diffRaw) <= 1;
   const okAdj = Math.abs(diffAdj) <= 1;
-  const _cnOldU = mPend ? 0 : Math.round(((p.cns||[]).reduce(function(t,x){ return t+(cnBillIsOld(x.bill_no,f.date,DATA._acc&&DATA._acc.bills)?(+x.cn||0):0); },0))*100)/100; const okOld = !mPend && !(okRaw||okAdj) && _cnOldU>1 && (Math.abs(netCmp+_cnOldU-sumForm)<=1 || Math.abs(netCmp+_cnOldU-(sumForm-f.refund))<=1); const ok1 = mPend ? true : (okRaw || okAdj || okOld);
-  const ok1detail = okRaw ? '' : (okAdj ? ' (หักคืนเงิน '+TH0(f.refund)+')' : (okOld ? ' (ใบลดหนี้บิลเก่า '+TH0(_cnOldU)+' ไม่มีเงินเข้าออก)' : ''));
+  const _cnOldU = mPend ? 0 : Math.round(((p.cns||[]).reduce(function(t,x){ return t+(cnBillIsOld(x.bill_no,f.date,DATA._acc&&DATA._acc.bills)?(+x.cn||0):0); },0))*100)/100; const okOld = !mPend && !(okRaw||okAdj) && _cnOldU>1 && (Math.abs(netCmp+_cnOldU-sumForm)<=1 || Math.abs(netCmp+_cnOldU-(sumForm-f.refund))<=1); /* v0.5.4 (9 ต.ค.69) ใบลดหนี้ที่กลายเป็นมัดจำ: ลูกค้าจ่ายเต็มก่อนหัก CN ส่วนเกินออก RA ไปหักอีกบิลของลูกค้าเดียวกัน + RA ลงทะเบียนมัดจำวันนี้แล้ว (เคส CN6910-0007 → RA6910-0002) */
+  let _cnRa=0; const _cnRaL=[]; if(!mPend && !(okRaw||okAdj||okOld)){ try{ const _reg=(DATA._raReg&&DATA._raReg.d===f.date)?DATA._raReg.set:[]; const _xr=(f.xfer||[]).filter(function(x){ return x&&x.ra; }); const _bc=p.billCust||{}; const _u={}; (p.cns||[]).forEach(function(c){ const ca=+c.cn||0; if(ca<=0) return; const cc=_bc[c.bill_no]; for(let i=0;i<_xr.length;i++){ const x=_xr[i], ra=normRA(x.ra); if(_u[ra]) continue; if(Math.abs((+x.knv||0)+(+x.ksk||0)-ca)>1) continue; if(!(cc && _bc[normBill(x.bill)]===cc)) continue; if(_reg.indexOf(ra)<0) continue; _u[ra]=1; _cnRa+=ca; _cnRaL.push((c.cn_no||'CN')+' → มัดจำ '+ra+' หักบิล '+normBill(x.bill)); break; } }); }catch(_eC){} _cnRa=Math.round(_cnRa*100)/100; }
+  const okCnRa = !mPend && _cnRa>1 && (Math.abs(netCmp+_cnRa-sumForm)<=1 || Math.abs(netCmp+_cnRa-(sumForm-f.refund))<=1);
+  const ok1 = mPend ? true : (okRaw || okAdj || okOld || okCnRa);
+  const ok1detail = okRaw ? '' : (okAdj ? ' (หักคืนเงิน '+TH0(f.refund)+')' : (okOld ? ' (ใบลดหนี้บิลเก่า '+TH0(_cnOldU)+' ไม่มีเงินเข้าออก)' : (okCnRa ? ' (ใบลดหนี้เป็นมัดจำ '+TH0(_cnRa)+': '+_cnRaL.join(' · ')+')' : '')));
   const ok2 = mPend ? true : (p.cns.length === 0);
   const allOk = ok1 && ok2;
   const kPending = !DATA.kplus || !DATA.bank;

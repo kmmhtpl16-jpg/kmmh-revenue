@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.0</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.1</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -2568,7 +2568,7 @@ async function renderCut(){
   }
   if(ROLE==="owner"){
     if(ready.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+ready.length+' บิล · '+TH(cutSum(ready))+' บาท</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>';
-    if(R.appr.length) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+R.appr.length+' บิล — พิมพ์ <b>“ตัดที่อนุมัติแล้ว”</b> ในแชท Claude ให้เลขาไปตัดใน ACC-BILLING · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px"><button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
+    if(R.appr.length) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+R.appr.length+' บิล — เลขาจะตัดใน ACC-BILLING ให้อัตโนมัติ<b>รอบเที่ยง</b> ไม่ต้องสั่งในแชท · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px"><button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
   }
   card.innerHTML=h;
   cutNotify(date,R);

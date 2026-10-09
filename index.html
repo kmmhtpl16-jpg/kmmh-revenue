@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.1</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.2</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -820,11 +820,14 @@ function pendingCardHtml(){
      ปกติเจ้าของตัดบิลวันถัดไป → รายการของเมื่อวานที่ยอดตรง/จ่ายบางส่วน = ปกติ ซ่อนไว้ (กดดูได้)
      ต้องตาม = เลยวันถัดไปแล้วยังไม่ตัด (≥2 วัน) หรือ หาบิล/ยอดค้างไม่เจอ หรือ แจ้งเกินยอดในระบบ */
   const _bad=function(x){ return /ไม่พบ|เกินยอด/.test(String(x.amount_status||'')+' '+String(x.settle_status||'')); };
-  const _need=function(x){ return (+x.days>=2) || _bad(x); };
+  /* v0.5.2 (9 ต.ค.69): เงินสดร้านค้าที่ยอดไม่เท่าบิลของร้านนั้น = ลงผิดช่อง → ต้องตามทันที ให้แคชเชียร์แก้ (เคส FFF 945 vs 970) */
+  const _shopDiff=function(x){ return x.section==='ร้านค้าเงินสด' && x.acc!=null && Math.abs((+x.acc||0)-(+x.declared||0))>1 ? Math.round(((+x.acc||0)-(+x.declared||0))*100)/100 : 0; };
+  const _need=function(x){ return (+x.days>=2) || _bad(x) || !!_shopDiff(x); };
   const tr=function(x){
     const late = (+x.days>=2) ? ' <span style="color:#b91c1c;font-weight:800">⚠'+x.days+' วัน</span>' : '';
     const typo = billFmtBad(x.bill_no);
-    const note = typo ? '<div class="muted" style="color:#b91c1c">⚠ เลขบิลน่าจะพิมพ์ผิด — เลขบิลต้องเป็น KMปปดด-4 หลัก (เช่น KM6909-1011) ให้แคชเชียร์แก้ในฟอร์มแล้วอัปใหม่</div>'
+    const _sd=_shopDiff(x);
+    const note = _sd ? '<div class="muted" style="color:#b91c1c;font-weight:700">⚠ เงินสดร้านค้าลง '+TH(x.declared)+' แต่บิลของร้านนี้วันนั้นรวม '+TH(x.acc)+' → '+(_sd>0?('ร้านค้าขาด '+TH(_sd)+' · เงินสดลูกค้าปลีกเกิน '+TH(_sd)):('ร้านค้าเกิน '+TH(-_sd)+' · เงินสดลูกค้าปลีกขาด '+TH(-_sd)))+' — แก้ฟอร์มแล้วอัปใหม่</div>' : typo ? '<div class="muted" style="color:#b91c1c">⚠ เลขบิลน่าจะพิมพ์ผิด — เลขบิลต้องเป็น KMปปดด-4 หลัก (เช่น KM6909-1011) ให้แคชเชียร์แก้ในฟอร์มแล้วอัปใหม่</div>'
       : ((x.amount_status && x.amount_status!=='ตรง' && !/จ่ายบางส่วน/.test(x.amount_status)) ? '<div class="muted" style="color:#b91c1c">'+x.amount_status+'</div>' : '');
     return '<tr><td>'+beDate(x.form_date)+'</td><td>'+(x.section||'')+'</td><td>'
       + (x.bill_no || x.customer || '—') + note + '</td><td class="num">'+TH(x.declared)+'</td>'
@@ -2350,7 +2353,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20260908a"></script>
-<script src="cutbill.js?v=20261009a"></script>
+<script src="cutbill.js?v=20261009b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */

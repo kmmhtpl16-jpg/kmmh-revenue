@@ -159,7 +159,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.8</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.4.9</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -312,14 +312,14 @@ async function saveKplusDaily(kp){ if(!sb||!kp) return; const rows=Object.entrie
     const {data:au}=await sb.from("rev_audit").select("date").is("kplus_today",null);
     const set=new Set((au||[]).map(x=>x.date));
     for(const [date,total] of Object.entries(kp.map)){ if(set.has(date)) await sb.from("rev_audit").update({kplus_today:Math.round(total*100)/100}).eq("date",date); }
-    loadMonthStatus(); refreshOpenDay();
+    loadMonthStatus(); refreshOpenDay(); try{ if(typeof renderCut==="function") renderCut(); }catch(e){}
   }catch(e){} }
 async function saveBankDaily(bk){ if(!sb||!bk) return; const PT=bk.partial||{}; const rows=Object.entries(bk.map).map(([date,o])=>({date, bank_dep_total:Math.round(o.dep*100)/100, bank_kplus_settle:Math.round(o.kplus*100)/100, bank_rows:(bk.rowsByDate&&bk.rowsByDate[date])||null, bank_asof:PT[date]||null})); if(!rows.length) return;
   try{ await sb.from("rev_daily").upsert(rows,{onConflict:"date"});
     const {data:au}=await sb.from("rev_audit").select("date").is("bank_dep_today",null);
     const set=new Set((au||[]).map(x=>x.date));
     for(const [date,o] of Object.entries(bk.map)){ if(set.has(date) && !PT[date]) await sb.from("rev_audit").update({bank_dep_today:Math.round(o.dep*100)/100}).eq("date",date); }
-    loadMonthStatus(); refreshOpenDay();
+    loadMonthStatus(); refreshOpenDay(); try{ if(typeof renderCut==="function") renderCut(); }catch(e){}
   }catch(e){} }
 
 function refreshOpenDay(){ try{ var b=document.getElementById("dayDetail"); if(window._openDay && b && b.innerHTML && b.innerHTML.replace(/\s/g,"").length>0 && b.innerHTML.indexOf("กำลังแก้ไข")<0){ renderDay(window._openDay,false); } }catch(e){} }

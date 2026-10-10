@@ -163,6 +163,8 @@ async function load(){
     sb.from("rev_daily").select("*").gte("date",lo).lte("date",hi).order("date"),
   ]);
   if(a.error||d.error){ st.textContent="โหลดไม่ได้: "+((a.error||d.error).message); return; }
+  /* v10ต.ค.69: ส่วนต่างที่เกิดจากใบลดหนี้ (ไม่ใช่เงินหาย) — CN บิลวันก่อน / CN ที่ส่วนเกินเป็นมัดจำ */
+  let cnx={}; try{ const r=await sb.rpc("rev_cn_explain",{p_from:lo,p_to:hi}); if(r&&r.data) cnx=r.data; }catch(_e){}
   st.textContent="";
   document.getElementById("rangeLbl").textContent="("+beDate(lo)+(lo!==hi?" – "+beDate(hi):"")+")";
   const audit=a.data||[], daily=d.data||[];
@@ -180,7 +182,7 @@ async function load(){
     kpi("ยอด K+ รวม (ช่วงนี้)", TH(kplusSum), daily.length+" วันมีข้อมูล");
 
   if(!days.length){ document.getElementById("tbl").innerHTML='<div class="muted">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
-  let totMachine=0, totForm=0, totUpk=0, totRefund=0, totDays=0;
+  let totMachine=0, totForm=0, totUpk=0, totRefund=0, totDays=0, totExp=0;
   const NUM = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
   const rows=days.map(dt=>{
     const x=aMap[dt], hasDaily=!!dMap[dt];
@@ -189,12 +191,16 @@ async function load(){
     // สูตรเดียวกับหน้าตรวจรายได้: ยอดเครื่อง = ยอดฟอร์ม + UPK - คืนเงินสด
     const diff=(x&&mn!=null&&fm!=null&&!isNaN(mn)&&!isNaN(fm))?(mn-(fm+up-rf)):null;
     if(x&&x.status==="ตรวจแล้ว"){ totMachine+=(parseFloat(x.machine_net)||0); totForm+=(parseFloat(x.form_main)||0); totUpk+=up; totRefund+=rf; totDays++; }
-    const diffHtml=(diff==null)?"—":(Math.abs(diff)<=1?'<span class="ok">'+TH(diff)+'</span>':'<span class="warn">'+TH(diff)+' 🚩</span>');
+    const _cx=cnx[dt]||{}, _o=NUM(_cx.old_cn), _dp=NUM(_cx.dep_cn);
+    let _exp=0, _why=[];
+    if(diff!=null&&Math.abs(diff)>1){ [[_o,0],[0,_dp],[_o,_dp]].some(function(c){ if((c[0]||c[1])&&Math.abs(diff+c[0]+c[1])<=1){ _exp=c[0]+c[1]; if(c[0]) _why.push('ใบลดหนี้บิลวันก่อน '+TH(c[0])+(_cx.old_list?' ('+_cx.old_list+')':'')); if(c[1]) _why.push('ใบลดหนี้ที่ส่วนเกินเป็นมัดจำ '+TH(c[1])+(_cx.dep_list?' ('+_cx.dep_list+')':'')); return true; } return false; }); }
+    if(x&&x.status==="ตรวจแล้ว") totExp+=_exp;
+    const diffHtml=(diff==null)?"—":(Math.abs(diff)<=1?'<span class="ok">'+TH(diff)+'</span>':(_exp?'<span class="ok" title="'+_why.join(' + ').replace(/"/g,'&quot;')+' — เครื่องหักแล้วแต่ไม่มีเงินคืนในฟอร์ม ไม่ใช่เงินหาย">'+TH(diff)+' ✓<br><span style="font-size:11px;font-weight:600">ใบลดหนี้ ไม่ใช่เงินหาย</span></span>':'<span class="warn">'+TH(diff)+' 🚩</span>'));
     return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily,dMap[dt])+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+(up?TH(up):'<span class="muted">—</span>')+'</td><td class="num">'+(rf?TH(rf):'<span class="muted">—</span>')+'</td><td class="num">'+diffHtml+'</td></tr>';
   }).join("");
   const totDiff=totMachine-(totForm+totUpk-totRefund);
   const totTol=Math.max(1,totDays); // เผื่อเศษปัดวันละ 1 บาท
-  const totDiffHtml=(Math.abs(totDiff)<=totTol?'<span class="ok">'+TH(totDiff)+'</span>':'<span class="warn">'+TH(totDiff)+' 🚩</span>');
+  const totDiffHtml=(Math.abs(totDiff)<=totTol?'<span class="ok">'+TH(totDiff)+'</span>':(Math.abs(totDiff+totExp)<=totTol?'<span class="ok">'+TH(totDiff)+' ✓<br><span style="font-size:11px;font-weight:600">ใบลดหนี้ '+TH(totExp)+' ไม่ใช่เงินหาย</span></span>':'<span class="warn">'+TH(totDiff)+' 🚩'+(totExp?'<br><span style="font-size:11px;font-weight:600">ใบลดหนี้ '+TH(totExp)+' · ที่เหลือต้องตรวจ '+TH(totDiff+totExp)+'</span>':'')+'</span>'));
   document.getElementById("tbl").innerHTML=
     '<div style="overflow-x:auto"><table><thead><tr><th>วันที่</th><th>สถานะ</th><th>ยอดขายเครื่อง</th><th>ยอดฟอร์ม</th><th>+ UPK</th><th>− คืนเงินสด</th><th>ส่วนต่าง</th></tr></thead><tbody>'+
     rows+

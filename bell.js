@@ -178,24 +178,37 @@
         xf.forEach(function(x){ var b=String(x.bill||"").trim(); if(!b) return; _allB[b]=1; _nb++; if((+x.ksk||0)>0) _ks[b]=(_ks[b]||0)+(+x.ksk||0); });
         var _pre=0;
         deps.forEach(function(dp){
-          var rd=String(dp.received_date||"").slice(0,10); if(!rd||rd>=dt) return;
+          if(dp.status==="cancelled") return; var rd=String(dp.received_date||"").slice(0,10); if(!rd||rd>=dt) return;
           var b=String(dp.matched_bill_no||"").trim(); if(!b||!_ks[b]) return;
           var used=(dp.used_amount!=null&&num(dp.used_amount)>0)?num(dp.used_amount):num(dp.amount);
           _pre+=Math.min(used,_ks[b]);
         });
+        /* v0.5.6 (10 ต.ค.69) สูตรเดียวกับ kskDepAdj: มัดจำ RA ในชีตโอนที่เงินไม่ได้เข้าวันนี้
+           (ก) เงินเข้าสเตทเมนต์วันถัดไป แล้วจับคู่ "มัดจำ RA..." · (ข) ส่วนเกินจากยอดโอนบิลที่มีใบลดหนี้ (ไม่ใช่เงินก้อนใหม่) */
+        (function(){ var _lat=pendAll.filter(function(pp){ return pp.status==="matched" && String(pp.date||"").slice(0,10)>dt && /สเตทเมนต์|โอนเข้าตรง/.test(String(pp.ref||"")) && !/บัญชีอื่น/.test(String(pp.ref||"")) && /^มัดจำ RA/.test(String(pp.matched_bill_no||"")); }).slice();
+          var _cn=(a.cns||[]), _cu={};
+          xf.forEach(function(x){ if(!x||!x.ra||!((+x.ksk||0)>0)) return; var ra=String(x.ra).trim(), k=r2(x.ksk);
+            var li=_lat.findIndex(function(pp){ return String(pp.matched_bill_no).trim()==="มัดจำ "+ra && Math.abs(num(pp.amount)-k)<=1; });
+            if(li>=0){ _lat.splice(li,1); _pre+=k; return; }
+            var ci=_cn.findIndex(function(c,i){ if(_cu[i]||!c||num(c.cash)>0.5||Math.abs(num(c.amt)-k)>1) return false; var pd=0; xf.forEach(function(y){ if(String(y.bill||"").trim()===String(c.bill||"").trim()&&!y.ra) pd+=num(y.ksk)+num(y.knv); }); return num(c.bill_amt)>0 && pd>=num(c.bill_amt)-1; });
+            if(ci>=0){ _cu[ci]=1; _pre+=k; } }); })();
         var _oth=0;
         if(_nb){
           pendAll.forEach(function(pp){
             if(String(pp.date||"").slice(0,10)!==dt) return;
             if(pp.status!=="matched") return;
             if(!/สเตทเมนต์|โอนเข้าตรง/.test(String(pp.ref||""))) return;
-            var mb=String(pp.matched_bill_no||"").trim(); if(!mb||/มัดจำ/.test(mb)) return;
+            var mb=String(pp.matched_bill_no||"").trim(); if(!mb) return;
+            if(/^มัดจำ RA/.test(mb)){ if(/บัญชีอื่น/.test(String(pp.ref||""))) return; var _ra=mb.replace(/^มัดจำ\s*/,"").trim(); var _dp=deps.find(function(z){ return String(z.deposit_no||"").trim()===_ra && z.status!=="cancelled"; });
+              if(_dp && String(_dp.received_date||"").slice(0,10)<dt) _oth+=num(pp.amount); return; } /* v0.5.6 มัดจำลงฟอร์มวันก่อน เงินเข้าวันนี้ */
+            if(/มัดจำ/.test(mb)) return;
             for(var b1 in _allB){ if(mb.indexOf(b1)>=0) return; }
             _oth+=num(pp.amount);
           });
           var _brs=((d&&d.bank_rows)||[]).filter(function(r){ return ((+r.dep||0)>0 && !r.kp); });
           if(_brs.length){
             deps.forEach(function(dp){
+              if(dp.status==="cancelled") return;
               if(String(dp.received_date||"").slice(0,10)!==dt) return;
               var a2=r2(num(dp.amount)); if(a2<=1) return;
               if(!_brs.some(function(r){ return Math.abs((+r.dep||0)-a2)<=1; })) return;
@@ -250,10 +263,10 @@
       S.from("rev_audit").select("date,status,kplus_today,bank_dep_today").gte("date",fromAud).lte("date",today),
       sees.exp ? S.from("rev_bell_ignore").select("kind,exp_date,amount,ref,pattern") : Promise.resolve({data:[]}),
       /* เฉพาะช่องเล็กๆ ที่ต้องใช้ ไม่ดึง detail ทั้งก้อน (กัน egress บาน) */
-      S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
+      S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,cns:detail->cns,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle,bank_rows").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_pending").select("date,amount,source,ref,status,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31))),
-      S.from("rev_deposits").select("amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61))),      /* คืนเงินสดที่ยังไม่มีที่มา — ดึงเฉพาะวันที่มีคืนเงินจริง (กัน egress บาน) */      S.from("rev_audit").select("date,status,machine_net,form_main,form_upk,form_refund,cn_total,ex:detail->ex,cns:detail->cns").gt("form_refund",0).gte("date",refFromISO(today)).lte("date",today), S.from("rev_pending").select("date,amount,status,matched_bill_no,cn_no").eq("status","matched").ilike("matched_bill_no","%คืนเงิน%").gte("date",refFromISO(today)).lte("date",today)
+      S.from("rev_deposits").select("deposit_no,customer,status,amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61))),      /* คืนเงินสดที่ยังไม่มีที่มา — ดึงเฉพาะวันที่มีคืนเงินจริง (กัน egress บาน) */      S.from("rev_audit").select("date,status,machine_net,form_main,form_upk,form_refund,cn_total,ex:detail->ex,cns:detail->cns").gt("form_refund",0).gte("date",refFromISO(today)).lte("date",today), S.from("rev_pending").select("date,amount,status,matched_bill_no,cn_no").eq("status","matched").ilike("matched_bill_no","%คืนเงิน%").gte("date",refFromISO(today)).lte("date",today)
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
     var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[], gDep=(q[8]&&q[8].data)||[];    var gRef=(q[9]&&q[9].data)||[]; var gRefP=(q[10]&&q[10].data)||[];

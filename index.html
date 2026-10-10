@@ -953,16 +953,16 @@ async function carryInK(date,xfer){
   }catch(e){ console.warn("carryInK",e); }
   out.sum=Math.round(out.sum*100)/100; return out;
 }
-async function kskDepAdj(date,xfer,pend,brows){
-  var out={pre:0,preRows:[],oth:0,othRows:[]};
+async function kskDepAdj(date,xfer,pend,brows,cns){
+  var out={pre:0,preRows:[],nxtRows:[],oth:0,othRows:[]};
   try{
     if(!sb||!date) return out;
     var xf=(xfer||[]).filter(function(x){return (+x.ksk||0)>0&&x.bill;});
     var allBills=(xfer||[]).map(function(x){return String(x.bill||"").trim();}).filter(Boolean);
     if(xf.length){
       var _bl=xf.map(function(x){return String(x.bill).trim();});
-      var dq=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no").in("matched_bill_no",_bl);
-      (((dq&&dq.data)||[])).forEach(function(d){
+      var dq=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no,status").in("matched_bill_no",_bl);
+      (((dq&&dq.data)||[])).forEach(function(d){ if(d.status==="cancelled") return;
         var rd=String(d.received_date||"").slice(0,10); if(!rd||rd>=date) return;
         var b=String(d.matched_bill_no||"").trim(), ks=0;
         xf.forEach(function(x){ if(String(x.bill).trim()===b) ks+=(+x.ksk||0); });
@@ -971,20 +971,48 @@ async function kskDepAdj(date,xfer,pend,brows){
         if(amt>0.5){ out.pre+=amt; out.preRows.push({bill:b,amt:amt,d:rd,cust:d.customer||d.deposit_no||""}); }
       });
     }
+    /* v0.5.6 (10 ต.ค.69): แถวโอนที่เป็นมัดจำ RA แต่เงินไม่ได้เข้าสเตทเมนต์วันนี้ — เคส 8/10
+       (ก) เงินมัดจำเข้าวันถัดไป: แถวสเตทเมนต์วันหลังที่จับคู่ "มัดจำ RA..." แล้ว (RA6910-0004 ประชาคมฯ 23,140 เข้า 9/10)
+       (ข) มัดจำที่มาจากส่วนเกินของยอดโอนบิลที่มีใบลดหนี้ (ลูกค้าโอนเต็มก่อนหัก CN) — เงินอยู่ในยอดโอนบิลนั้นแล้ว (RA6910-0002 รุ่งชัย 300) */
+    var xr=(xfer||[]).filter(function(x){ return x&&x.ra&&(+x.ksk||0)>0; });
+    if(xr.length){
+      var _ras=xr.map(function(x){ return String(x.ra).trim(); });
+      var pq3=await sb.from("rev_pending").select("date,amount,status,matched_bill_no,ref").eq("status","matched").gt("date",date).in("matched_bill_no",_ras.map(function(r){ return "มัดจำ "+r; }));
+      var later=((pq3&&pq3.data)||[]).filter(function(p){ return /สเตทเมนต์|โอนเข้าตรง/.test(String(p.ref||"")) && !/บัญชีอื่น/.test(String(p.ref||"")); });
+      var cnUsed={};
+      xr.forEach(function(x){
+        var ra=String(x.ra).trim(), k=Math.round((+x.ksk||0)*100)/100;
+        var li=later.findIndex(function(p){ return String(p.matched_bill_no).trim()==="มัดจำ "+ra && Math.abs((+p.amount||0)-k)<=1; });
+        if(li>=0){ var lp=later.splice(li,1)[0]; out.pre+=k; out.nxtRows.push({bill:ra,amt:k,why:"เงินเข้าสเตทเมนต์ "+beDate(String(lp.date).slice(0,10)).slice(0,5)+" (วันถัดไป)"}); return; }
+        var ci=(cns||[]).findIndex(function(c,i){ if(cnUsed[i]||!c||(+c.cash||0)>0.5) return false; if(Math.abs((+c.amt||0)-k)>1) return false;
+          var paid=0; (xfer||[]).forEach(function(y){ if(String(y.bill||"").trim()===String(c.bill||"").trim()&&!y.ra) paid+=(+y.ksk||0)+(+y.knv||0); });
+          return (+c.bill_amt||0)>0 && paid>=(+c.bill_amt||0)-1; });
+        if(ci>=0){ cnUsed[ci]=1; var c=cns[ci]; out.pre+=k; out.nxtRows.push({bill:ra,amt:k,why:"ส่วนเกินจากยอดโอนบิล "+(c.bill||"")+" ("+(c.cn_no||"CN")+") — เงินอยู่ในยอดโอนนั้นแล้ว"}); }
+      });
+    }
     /* ไม่มีชีต "โอน" ของวันนั้น = ไม่รู้ว่าบิลไหนจ่ายด้วยมัดจำ → หักฝั่งสเตทเมนต์ข้างเดียวไม่ได้ (จะเตือนบวมกว่าเดิม) */
     if(!allBills.length){ out.pre=Math.round(out.pre*100)/100; return out; }
-    var pr=pend; if(!pr){ var pq2=await sb.from("rev_pending").select("amount,status,matched_bill_no,source,ref").eq("date",date); pr=((pq2&&pq2.data)||[]); }
+    var _lateRA=[]; var pr=pend; if(!pr){ var pq2=await sb.from("rev_pending").select("amount,status,matched_bill_no,source,ref").eq("date",date); pr=((pq2&&pq2.data)||[]); }
     (pr||[]).forEach(function(p){
       if(p.status!=="matched") return;
       if(!/สเตทเมนต์|โอนเข้าตรง/.test(String(p.ref||""))) return;
-      var mb=String(p.matched_bill_no||"").trim(); if(!mb||/มัดจำ/.test(mb)) return;
+      var mb=String(p.matched_bill_no||"").trim(); if(!mb) return;
+      if(/^มัดจำ RA/.test(mb)){ if(!/บัญชีอื่น/.test(String(p.ref||""))) _lateRA.push({ra:mb.replace(/^มัดจำ\s*/,"").trim(), amt:parseFloat(p.amount)||0}); return; }
+      if(/มัดจำ/.test(mb)) return;
       if(allBills.some(function(b){return b&&mb.indexOf(b)>=0;})) return;
       var a=parseFloat(p.amount)||0; if(a>0.5){ out.oth+=a; out.othRows.push({ref:mb,amt:a}); }
     });
+    /* v0.5.6: เงินเข้าวันนี้ของมัดจำ RA ที่แคชเชียร์ลงฟอร์มไว้วันก่อน (เคส RA6910-0004 ลงฟอร์ม 8/10 เงินเข้า 9/10) */
+    if(_lateRA.length){
+      var dq4=await sb.from("rev_deposits").select("deposit_no,customer,received_date,status").in("deposit_no",_lateRA.map(function(x){ return x.ra; }));
+      var _dm={}; ((dq4&&dq4.data)||[]).forEach(function(d){ if(d.status!=="cancelled") _dm[String(d.deposit_no).trim()]=d; });
+      _lateRA.forEach(function(x){ var d=_dm[x.ra]; if(!d) return; var rd=String(d.received_date||"").slice(0,10); if(!rd||rd>=date||x.amt<=0.5) return;
+        out.oth+=x.amt; out.othRows.push({ref:"มัดจำ "+x.ra+" ("+(d.customer||"")+") ลงฟอร์ม "+beDate(rd).slice(0,5)+" เงินเข้าวันนี้",amt:x.amt}); });
+    }
     var _bd=(brows||[]).filter(function(r){return (+r.dep>0&&!r.kp);});
     if(_bd.length){
-      var dq2=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no").eq("received_date",date);
-      (((dq2&&dq2.data)||[])).forEach(function(d){
+      var dq2=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no,status").eq("received_date",date);
+      (((dq2&&dq2.data)||[])).forEach(function(d){ if(d.status==="cancelled") return;
         var a=Math.round((+d.amount||0)*100)/100; if(a<=0.5) return;
         if(!_bd.some(function(r){return Math.abs((+r.dep||0)-a)<=1;})) return;
         var mb=String(d.matched_bill_no||"").trim();
@@ -997,12 +1025,17 @@ async function kskDepAdj(date,xfer,pend,brows){
   out.pre=Math.round(out.pre*100)/100; out.oth=Math.round(out.oth*100)/100; return out;
 }
 function kskAdjNote(adj){ if(!adj||(!(adj.pre>1)&&!(adj.oth>1))) return "";
+  var _nx=(adj.nxtRows||[]), _nxs=_nx.reduce(function(s,x){ return s+(+x.amt||0); },0);
   /* v0.3.4 — จัดเป็นรายการอ่านง่าย (เดิมเป็นย่อหน้ายาวบรรทัดเดียว) · รวมรายการที่เข้าบิลเดียวกัน */
   var row=function(a,b,c){ return '<div style="display:flex;gap:10px;padding:1px 0 1px 14px"><span style="min-width:96px;font-family:monospace">'+a+'</span><span style="min-width:74px;text-align:right">'+b+'</span><span style="color:#78716c">'+c+'</span></div>'; };
   var h='<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">ℹ️ หักรายการข้ามวันให้แล้ว</div>';
-  if(adj.pre>1){
+  if(_nxs>1){
+    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(_nxs)+'</b> · มัดจำที่ลงในฟอร์มแต่เงินไม่ได้เข้าวันนี้</div>'
+      + _nx.map(function(x){ return row(esc(x.bill), TH(x.amt), esc(x.why)); }).join('');
+  }
+  if(adj.pre-_nxs>1){
     var g={}, order=[]; (adj.preRows||[]).forEach(function(x){ var k=String(x.bill||'-'); if(!g[k]){ g[k]={amt:0,cust:[],d:[]}; order.push(k); } g[k].amt+=(+x.amt||0); if(g[k].cust.indexOf(x.cust)<0) g[k].cust.push(x.cust); var bd=beDate(x.d).slice(0,5); if(g[k].d.indexOf(bd)<0) g[k].d.push(bd); });
-    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(adj.pre)+'</b> · มัดจำที่โอนเข้าบัญชีมาก่อน</div>'
+    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(adj.pre-_nxs)+'</b> · มัดจำที่โอนเข้าบัญชีมาก่อน</div>'
       + order.map(function(k){ return row(esc(k), TH(g[k].amt), esc(g[k].cust.join(', '))+' · เข้า '+g[k].d.join(', ')); }).join('');
   }
   if(adj.oth>1){
@@ -1542,7 +1575,7 @@ async function renderDay(date, edit){
       var _sd=(da&&da.bank_dep_total!=null)?Math.round((((+da.bank_dep_total)||0)-((+da.bank_kplus_settle)||0))*100)/100:((au.detail&&au.detail.stmt_direct!=null)?(+au.detail.stmt_direct):null);
       if(_sd==null) return;
       if(_fks==null){ html+='<div class="muted" style="margin:2px 0 0">— เงินโอนเข้าตรงตามสเตทเมนต์ '+TH(_sd)+' · วันนี้ไม่มีตัวเลขฝั่งฟอร์มเก็บไว้ เทียบอัตโนมัติไม่ได้ (วันใหม่จะเก็บให้เอง)</div>'; return; }
-      var _adj=await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null);
+      var _adj=await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null,(au.detail&&au.detail.cns)||[]);
       var _fa=Math.round((_fks-_adj.pre)*100)/100, _sa=Math.round((_sd-_adj.oth)*100)/100; var _note=kskAdjNote(_adj);
       var _gb=Math.round((_fa-_sa)*100)/100; var Q8=String.fromCharCode(39);
       if(_gb>1){ var _fl=_otherAcct.filter(function(x){return /สเตทเมนต์|กสิกร/.test(x.ref||"")||x.source==="รับเข้าบัญชีอื่น";});
@@ -2361,8 +2394,8 @@ async function taskAlertRun(){
 ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} });
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
-<script src="bell.js?v=20260908a"></script>
-<script src="cutbill.js?v=20261009b"></script>
+<script src="bell.js?v=20261010a"></script>
+<script src="cutbill.js?v=20261010a"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */

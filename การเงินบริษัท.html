@@ -82,6 +82,29 @@ canvas{max-height:320px}
   .topnav a .ti{margin-right:0} .topnav .dk{display:none} .topnav .mb{display:inline}
   .topnav a.lo{display:none!important}
 }
+/* v12ต.ค.69 เงินออกจากสเตทเมนต์: มือถือเป็นการ์ด ปุ่ม 2×2 (คอมเหมือนเดิม) */
+td.wdc{white-space:nowrap}
+td.wdc select{max-width:210px}
+.wdb{display:inline-flex;gap:4px;vertical-align:middle}
+.wdb .btn.wdign{font-size:12px;padding:5px 8px}
+@media (max-width:640px){
+  .wdscroll{max-height:none;overflow:visible}
+  table.wdt,table.wdt tbody{display:block}
+  table.wdt thead{display:none}
+  table.wdt tr{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:baseline;border:1px solid #e7e5e4;border-radius:14px;padding:12px;margin:0 0 10px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  table.wdt td{display:block;border:0;padding:0}
+  table.wdt td:nth-child(1){grid-column:1;font-weight:700;color:#374151}
+  table.wdt td:nth-child(2){grid-column:2;color:#6b7280;font-size:13px}
+  table.wdt td:nth-child(4){grid-column:3;grid-row:1;font-size:18px;font-weight:800;color:#b91c1c;text-align:right;white-space:nowrap}
+  table.wdt td:nth-child(3){grid-column:1/-1;margin:6px 0 2px;word-break:break-word;line-height:1.45}
+  table.wdt td.wdc{grid-column:1/-1;margin-top:8px}
+  table.wdt td.wdc select{width:100%;margin-bottom:8px}
+  table.wdt td.wdc{white-space:normal}
+  table.wdt td.wdc select{max-width:none}
+  .wdb{display:grid;grid-template-columns:1.25fr 1.1fr .85fr;gap:6px}
+  .wdb .btn.wdign{font-size:13px;padding:5px 4px}
+  .wdb .btn{width:100%;margin:0;white-space:normal;line-height:1.2;min-height:46px}
+}
 /* v0.3.9 มือถือ: ตัวใหญ่ ปุ่มกดง่าย ตารางเลื่อนในกรอบ ไม่ชนกระดิ่ง (30 ก.ย.69) */
 @media (max-width:640px){
   body{font-size:16px}
@@ -194,9 +217,13 @@ const CATS_DEFAULT=["ค่าซื้อสินค้า","ค่าแร�
 function loadCustomCats(){ try{ const a=JSON.parse(localStorage.getItem("rev_custom_cats")||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
 function saveCustomCats(a){ try{ localStorage.setItem("rev_custom_cats",JSON.stringify(a)); }catch(e){} }
 /* รวมหมวดมาตรฐาน + หมวดที่ผู้ใช้เพิ่มเอง โดยให้ "อื่นๆ" อยู่ท้ายสุดเสมอ */
+/* v12ต.ค.69: หมวดที่เคยใช้จริงในฐานข้อมูล (ลงจากสเตทเมนต์/ลงเอง + จำบัญชีปลายทาง) — ทุกเครื่องเห็นเท่ากัน */
+var DB_CATS=[];
+async function loadDbCats(){ try{ if(!sb) return; var r=await sb.from("rev_expenses").select("category").in("source",["statement","manual"]).limit(5000); var set={}; (r.data||[]).forEach(function(x){ if(x&&x.category) set[x.category]=1; }); Object.keys(PAYEE_MAP||{}).forEach(function(k){ var c=PAYEE_MAP[k]&&PAYEE_MAP[k].category; if(c) set[c]=1; }); DB_CATS=Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"th"); }); }catch(e){ console.warn("loadDbCats",e); } }
 function allCats(){
   const merged=CATS_DEFAULT.filter(c=>c!=="อื่นๆ");
   loadCustomCats().forEach(c=>{ if(!merged.includes(c)) merged.push(c); });
+  DB_CATS.forEach(c=>{ if(c!=="อื่นๆ"&&!merged.includes(c)) merged.push(c); });
   merged.push("อื่นๆ");
   return merged;
 }
@@ -528,7 +555,7 @@ async function reloadAll(){
       .filter(function(x){ return /เบิกเงินสด/.test(String(DT[x.deduction_type_id]||"")); })
       .map(function(x){ return {date:x.deduct_date, amt:num(x.amount), nick:EN[x.employee_id]||"—", cycle:x.deduct_cycle}; });
     msg.textContent="ช่วง "+beDate(from)+" – "+beDate(to)+" · โหลดแล้ว";
-    await loadPayeeMap();
+    await loadPayeeMap(); await loadDbCats();
     renderAll();
   }catch(err){ msg.textContent="ผิดพลาด: "+err.message; }
 }
@@ -738,10 +765,10 @@ function renderExpense(){
       const _sug=suggestCat(ref); const _defCat=_sug?_sug.cat:"อื่นๆ";
       if(_sug&&_defCat!=="ค่าซื้อสินค้า"){ window.WD_KNOWN.push({date:d.date,amt:amt,ref:ref,cat:_defCat}); } else if(!_sug){ _wdNew++; }
       wdHtml+=`<tr${!_sug?' style="background:#fff7ed"':''}><td>${beDate(d.date)}</td><td>${esc(r.ch||"")}</td><td>${esc(ref)}${_sug?' <span class="chip" style="background:#0ea5e9;color:#fff">💡 '+esc(_sug.cat)+'</span>':''}</td><td class="n">${TH(amt)}</td>
-        <td><select id="wc_${d.date}_${i}" class="sm">${catOptions(_defCat)}</select>
-         <button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
-         <button class="btn sm" style="background:#f59e0b;color:#fff" onclick="openMatchBill('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🔗 จ่ายบิลซื้อ</button> <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button>
-         <button class="btn sm gray" title="ไม่ใช่รายจ่าย (เช่น โอนเข้าบัญชีตัวเอง / เงินเดือนที่ลงทางอื่น) — เลิกเตือนรายการแบบนี้" onclick="ignoreWd('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🙈 ไม่ต้องเตือน</button></td></tr>`;
+        <td class="wdc"><select id="wc_${d.date}_${i}" class="sm">${catOptions(_defCat)}</select>
+         <div class="wdb"><button class="btn sm blu" onclick="addStmtExp('${d.date}',${amt},this,'wc_${d.date}_${i}',${JSON.stringify(ref).replace(/"/g,'&quot;')})">➕ ลงรายจ่าย</button>
+         <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="openUobRepay('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🏦 คืนกู้ UOB</button>
+         <button class="btn sm gray wdign" title="ไม่ใช่รายจ่าย (เช่น โอนเข้าบัญชีตัวเอง / เงินเดือนที่ลงทางอื่น) — เลิกเตือนรายการแบบนี้" onclick="ignoreWd('${d.date}',${amt},${JSON.stringify(ref).replace(/"/g,'&quot;')})">🙈 ไม่เตือน</button></div></td></tr>`;
     });
   });
 
@@ -927,8 +954,8 @@ function renderExpense(){
 
   <div class="card">
     <h3>🏦 เงินออกจากสเตทเมนต์ (จัดหมวดเป็นรายจ่าย)</h3>
-    <div class="muted" style="margin-bottom:6px">เงินออกที่เป็นรายจ่ายทั่วไป → เลือกหมวดแล้วกด “ลงรายจ่าย” · เงินออกที่จ่ายค่าซื้อของ (มีบิลใน ACC-BILLING อยู่แล้ว) → กด “🔗 จ่ายบิลซื้อ” เพื่อจับคู่ ระบบจะไม่นับซ้ำ · รายการที่จัดการแล้วจะถูกซ่อนอัตโนมัติ</div>
-    ${wdCount?`${window.WD_KNOWN.length?`<div style="margin-bottom:8px"><button class="btn sm" style="background:#16a34a;color:#fff" onclick="bookAllKnown()">➕ ลงทั้งหมดที่ระบบจำได้ (${window.WD_KNOWN.length})</button> <span class="muted">· 🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ (แถวสีส้ม)</span></div>`:(_wdNew?`<div class="muted" style="margin-bottom:8px">🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ</div>`:``)}<div class="scroll"><table>
+    <div class="muted" style="margin-bottom:6px">เงินออกที่เป็นรายจ่ายทั่วไป → เลือกหมวดแล้วกด “ลงรายจ่าย” · ค่าซื้อของ → เลือก “ค่าซื้อสินค้า” แล้วกด “ลงรายจ่าย” จากนั้นจับคู่บิลที่ช่อง “จ่ายเจ้าหนี้ไปแล้วแต่ยังไม่จับคู่บิล” · รายการที่จัดการแล้วจะถูกซ่อนอัตโนมัติ</div>
+    ${wdCount?`${window.WD_KNOWN.length?`<div style="margin-bottom:8px"><button class="btn sm" style="background:#16a34a;color:#fff" onclick="bookAllKnown()">➕ ลงทั้งหมดที่ระบบจำได้ (${window.WD_KNOWN.length})</button> <span class="muted">· 🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ (แถวสีส้ม)</span></div>`:(_wdNew?`<div class="muted" style="margin-bottom:8px">🆕 บัญชีใหม่ที่ต้องจัดเอง ${_wdNew} รายการ</div>`:``)}<div class="scroll wdscroll"><table class="wdt">
       <thead><tr><th>วันที่</th><th>ช่องทาง</th><th>รายละเอียด</th><th class="n">จำนวน</th><th>จัดหมวด</th></tr></thead>
       <tbody>${wdHtml}</tbody></table></div>`:`<div class="muted">✓ จัดหมวดครบทุกรายการแล้ว (ไม่มีเงินออกที่ยังไม่ได้ลงรายจ่าย)</div>`}
     ${(_wdHid||IGN.length)?`<div class="muted" style="margin-top:8px;border-top:1px dashed #e7e5e4;padding-top:7px">🙈 ไม่ต้องเตือน: ซ่อนอยู่ ${_wdHid} รายการในช่วงนี้${IGN.length?` · กฎที่ตั้งไว้ ${IGN.length} ข้อ — ${IGN.map(g=>`<span class="chip mn" style="margin:2px">${g.kind==="keyword"?`คำว่า “${esc(g.pattern)}”`:`${beDate(g.exp_date)} · ${TH(g.amount)}`} <a href="#" onclick="delIgnore('${g.id}');return false" style="color:#c00;text-decoration:none">✕</a></span>`).join(" ")}`:""}</div>`:""}

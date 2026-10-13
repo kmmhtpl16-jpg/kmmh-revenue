@@ -2614,20 +2614,24 @@ async function renderCut(){
     h+='<div class="cut-sec" style="border-top:2px dashed #e7e5e4;padding-top:10px"><h3>🧾 บิลเก่าที่จับคู่เงินแล้ว รอตัด <span class="muted">'+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+'</span></h3>'+(OB.ready.map(obRow).join("")||'<div class="muted">—</div>')+'</div>';
     if(OB.appr.length) h+='<div class="cut-sec"><h3>🕒 บิลเก่า อนุมัติแล้ว รอเลขาตัด <span class="muted">'+OB.appr.length+' บิล</span></h3>'+OB.appr.map(obRow).join("")+'</div>';
     if(OB.done.length) h+='<div class="cut-sec"><h3>✔ บิลเก่า ตัดแล้ว <span class="muted">'+OB.done.length+' บิล</span></h3>'+OB.done.map(obRow).join("")+'</div>';
-    if(ROLE==="owner" && OB.ready.length) h+='<button class="btn" style="width:100%;margin-top:8px;min-height:44px" onclick="cutApproveOld()">✅ อนุมัติตัดบิลเก่า '+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+' บาท</button>';
+    /* v0.6.0 (13 ต.ค.69): บิลเก่ารวมอยู่ในปุ่มอนุมัติตัดหลัก กดครั้งเดียว (เจ้าของสั่ง) */
   }
   if(ROLE==="owner"){
-    if(ready.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+ready.length+' บิล · '+TH(cutSum(ready))+' บาท</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>';
+    { const _obr=(OB&&OB.ready)||[]; if(ready.length||_obr.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+(ready.length+_obr.length)+' บิล · '+TH(cutSum(ready)+obSum(_obr))+' บาท'+(_obr.length?' <span style="font-weight:600">(รวมบิลเก่า '+_obr.length+' บิล)</span>':'')+'</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>'; }
     if(R.appr.length) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+R.appr.length+' บิล — เลขาจะตัดใน ACC-BILLING ให้อัตโนมัติ<b>รอบเที่ยง</b> ไม่ต้องสั่งในแชท · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px"><button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
   }
   card.innerHTML=h;
   cutNotify(date,R);
 }
 async function cutApprove(){
-  if(ROLE!=="owner"||!CUT) return; const date=CUT.D.date, ready=CUT.t.concat(CUT.c);
-  if(!ready.length) return;
-  if(!confirm("อนุมัติตัด "+ready.length+" บิล ยอด "+TH(cutSum(ready))+" บาท ของวันที่ "+beDate(date)+" ?")) return;
+  if(ROLE!=="owner"||!CUT) return; const date=CUT.D.date, ready=CUT.t.concat(CUT.c), _ob=(CUT.ob&&CUT.ob.ready)||[];
+  if(!ready.length && !_ob.length) return;
+  const _obAmt=_ob.reduce(function(s,x){return s+(+x.amt||0);},0);
+  if(!confirm("อนุมัติตัด "+(ready.length+_ob.length)+" บิล ยอด "+TH(cutSum(ready)+_obAmt)+" บาท ของวันที่ "+beDate(date)+(_ob.length?"\n(รวมบิลเก่า "+_ob.length+" บิล "+TH(_obAmt)+" บาท)":"")+" ?")) return;
   const rows=ready.map(function(x){ return {bill_date:date,bill_no:x.b.no,customer:x.b.name,amount:+x.b.out,method:x.method,evidence:x.src||null,status:"approved",approved_role:ROLE}; });
+  /* v0.6.0: บิลเก่าที่มีเงินเข้า/แคชเชียร์แจ้งในวันนี้ อนุมัติไปพร้อมกัน (รูปแบบแถวเดียวกับ cutApproveOld) */
+  const _tag="OB"+String(+date.slice(0,4)+543).slice(2)+date.slice(5,7)+date.slice(8,10);
+  _ob.forEach(function(x){ rows.push({bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,receipt_group:_tag+"-"+String(x.grp||"").slice(0,9)}); });
   const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
   if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
   renderCut();

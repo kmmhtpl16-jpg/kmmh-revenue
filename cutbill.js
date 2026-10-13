@@ -1,4 +1,4 @@
-/* cutbill.js — v0.5.7 (13 ต.ค.69: จ่ายเต็มบิลแล้วคืนเงินสดตามใบลดหนี้ ไม่นับเป็นเงินเกิน · เงินสดร้านค้านับส่วนเงินสดของบิลจ่ายผสม) · v0.5.6 (10 ต.ค.69: เงินเข้าบัญชีอื่นที่มีสลิป นับเป็นเงินจริง) · v0.5.1 (9 ต.ค.69: เงินสดร้านค้าในฟอร์มต้องเท่ากับบิลเงินสดของร้านนั้น ไม่งั้นพัก + บอกว่าร้านค้าขาด/ลูกค้าปลีกเกินเท่าไร เคส FFF 945 vs 970) · v0.5.0 (9 ต.ค.69: (1) ลูกค้าโอนก้อนเดียวจ่ายหลายบิล → รวมยอดบิลลูกค้าเดียวกันแล้วหาในเงินที่เหลือ เคสอ้วนกลม 0196+0198=1,290 (2) โอนเกินยอดค้าง แล้วส่วนเกินถูกออกเป็นมัดจำ RA หักบิลอื่นของลูกค้าเดียวกัน เคสรุ่งชัย 0225 โอน 29,395 ค้าง 29,095 + RA6910-0002 300 หักบิล 0226) · v0.4.9 (8 ต.ค.69: เงินโอนที่เข้าบัญชีมาก่อนวันออกบิล (ทะเบียนมัดจำจับคู่บิลแล้ว + เจอในสเตทเมนต์/K+ วันที่เงินเข้า) นับเป็นเงินของบิล — เคส KM6910-0118/0119) · v0.4.7 (3 ต.ค.69: บิลเก่าที่มีเงินจ่ายวันนี้ RevCut.old) · v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
+/* cutbill.js — v0.5.8 (13 ต.ค.69: คืนเงินตามใบลดหนี้ที่โอนคืน (รายจ่ายหมวด "โอนเงินคืนลูกค้า") ไม่หักจากเงินสดในลิ้นชัก · เคสกราเซีย 970 โอน 10/10) · v0.5.7 (13 ต.ค.69: จ่ายเต็มบิลแล้วคืนเงินสดตามใบลดหนี้ ไม่นับเป็นเงินเกิน · เงินสดร้านค้านับส่วนเงินสดของบิลจ่ายผสม) · v0.5.6 (10 ต.ค.69: เงินเข้าบัญชีอื่นที่มีสลิป นับเป็นเงินจริง) · v0.5.1 (9 ต.ค.69: เงินสดร้านค้าในฟอร์มต้องเท่ากับบิลเงินสดของร้านนั้น ไม่งั้นพัก + บอกว่าร้านค้าขาด/ลูกค้าปลีกเกินเท่าไร เคส FFF 945 vs 970) · v0.5.0 (9 ต.ค.69: (1) ลูกค้าโอนก้อนเดียวจ่ายหลายบิล → รวมยอดบิลลูกค้าเดียวกันแล้วหาในเงินที่เหลือ เคสอ้วนกลม 0196+0198=1,290 (2) โอนเกินยอดค้าง แล้วส่วนเกินถูกออกเป็นมัดจำ RA หักบิลอื่นของลูกค้าเดียวกัน เคสรุ่งชัย 0225 โอน 29,395 ค้าง 29,095 + RA6910-0002 300 หักบิล 0226) · v0.4.9 (8 ต.ค.69: เงินโอนที่เข้าบัญชีมาก่อนวันออกบิล (ทะเบียนมัดจำจับคู่บิลแล้ว + เจอในสเตทเมนต์/K+ วันที่เงินเข้า) นับเป็นเงินของบิล — เคส KM6910-0118/0119) · v0.4.7 (3 ต.ค.69: บิลเก่าที่มีเงินจ่ายวันนี้ RevCut.old) · v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
    ตัดบิลประจำวัน: คัดบิลของวันว่าบิลไหน "ยอดตรงแล้ว พร้อมตัด" / "พักไว้" / "ไม่ต้องตัด" / "ตัดแล้ว"
    ใช้ร่วมกัน: การ์ดในหน้าตรวจรายได้ (index.html) + กระดิ่ง (bell.js)
    หลัก: ไม่มีเงินจริง ไม่ตัด · เงินโอนต้องเจอยอดใน K+/สเตทเมนต์ · เงินสดต้องมีรูปใบนับเงินสดที่ยอดตรงกับฟอร์ม
@@ -17,9 +17,12 @@
     var kp=(D.kp||[]).slice(), bk=(D.bk||[]).slice();
     var apprMap={}; (D.appr||[]).forEach(function(a){ if(a.status!=="cancelled") apprMap[a.bill_no]=a; });
     /* v0.4.5: ใบนับเทียบกับ "ยอดเงินสดที่ต้องมี" = เงินสดขาย + รายรับอื่นๆ (ลงในโปรแกรม) + บิลเก่าเงินสด − คืนเงิน */
-    var expCash = (D.cash==null)? null : r2(num(D.cash)+num(D.otherSum)+num(D.oldCash)-num(D.refund));
+    var rfX=Math.min(num(D.refundXfer), num(D.refund)); /* v0.5.8 คืนเงินที่โอนคืน (มีรายจ่ายหมวดโอนเงินคืนลูกค้า) ไม่ได้ออกจากลิ้นชัก */
+    var expCash = (D.cash==null)? null : r2(num(D.cash)+num(D.otherSum)+num(D.oldCash)-(num(D.refund)-rfX));
     var proofOk = !!(D.proof && !D.proofPending && expCash!=null && Math.abs(num(D.proof.amount)-expCash)<0.01);
-    var R={ t:[], c:[], h:[], s:[], done:[], appr:[], cut:[], proofOk:proofOk, proof:D.proof||null, cash:D.cash, expCash:expCash };
+    var R={ t:[], c:[], h:[], s:[], done:[], appr:[], cut:[], proofOk:proofOk, proof:D.proof||null, cash:D.cash, expCash:expCash, refundXfer:rfX, refundXferRows:D.refundXferRows||[] };
+    /* v0.5.8 ใบนับไม่ตรง: ส่วนต่างเท่ากับคืนเงิน CN ใบไหนที่ยังหาโอนคืนไม่เจอ → บอกให้ไปลงหมวด */
+    var cpHint=""; if(D.proof && !proofOk && expCash!=null){ var dfx=r2(num(D.proof.amount)-expCash); var hit=(D.cnRefundOpen||[]).filter(function(c){ return Math.abs(num(c.cash)-dfx)<=1; })[0]; if(hit) cpHint=" · ต่าง "+TH(dfx)+" เท่ากับคืนเงิน "+(hit.cn_no||"ใบลดหนี้")+" — ถ้าโอนคืน ให้ลงรายจ่ายหมวด \"โอนเงินคืนลูกค้า\""; } R.cpHint=cpHint;
     var noMoney=[], raUsed={}; /* v0.5.0 */
     var billByNo={}; (D.bills||[]).forEach(function(z){ billByNo[z.no]=z; });
     var cashC=[]; /* v0.4.4: ผู้สมัครเงินสด {b, part, mixed} — ตัดสินรวมทีเดียวท้ายลูป */
@@ -117,7 +120,7 @@
     cashC.forEach(function(x){
       var b=x.b;
       if(shopBad[b.no]){ R.h.push({b:b, cash:true, why:shopBad[b.no]}); return; }
-      if(!proofOk) R.h.push({b:b, cash:true, why: D.proofPending? "มีคำขอแก้ไขยอดเงินสด รออนุมัติ" : D.proof? "ยอดใบนับเงินสดไม่ตรงกับยอดที่ต้องมี "+TH(expCash) : "รอรูปใบนับเงินสด"});
+      if(!proofOk) R.h.push({b:b, cash:true, why: D.proofPending? "มีคำขอแก้ไขยอดเงินสด รออนุมัติ" : D.proof? "ยอดใบนับเงินสดไม่ตรงกับยอดที่ต้องมี "+TH(expCash)+cpHint : "รอรูปใบนับเงินสด"});
       else if(!sumOk) R.h.push({b:b, cash:true, why:"บิลเงินสดรวม "+TH(cashSum)+" ไม่ตรงกับเงินสดในฟอร์ม "+TH(D.cash)+" — ต้องตรวจก่อน"});
       else if(x.mixed) R.c.push({b:b, method:"เงินโอน + เงินสด", src:x.mixed+" + เงินสด "+TH(x.part)});
       else R.c.push({b:b, method:"เงินสด", src:"ใบนับเงินสดตรงกับยอดที่ต้องมี"+(x.cnb>0?" · รับ "+TH(x.part)+" คืนตามใบลดหนี้ "+TH(x.cnb):"")});
@@ -130,6 +133,17 @@
   function TH(n){ return r2(n).toLocaleString("th-TH",{minimumFractionDigits:0,maximumFractionDigits:2}); }
 
   function prevDay(iso){ var p=String(iso).split("-"); var d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().slice(0,10); }
+  /* v0.5.8: CN ที่คืนเงิน (ช่องคืนสดจริง) ↔ รายจ่ายหมวด "โอนเงินคืนลูกค้า" ยอดเท่ากัน ±1 · ช่วง 3 วันก่อน–60 วันหลังวันใบลดหนี้ · 1 รายการต่อ 1 ใบ (ใกล้วันที่สุดก่อน)
+     หลักเดียวกับหน้ารายละเอียดวัน (กฎ 15 ก.ย.69) — ใช้ได้ทั้งหน้าตัดบิลและกรอบใบนับเงินสด */
+  function shiftISO(iso,n){ var p=String(iso).slice(0,10).split("-"); var d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+  async function refundXfer(s, date, cns){
+    var L=(cns||[]).filter(function(c){ return num(c.cash)>0.5; }); var out={amt:0, rows:[], open:[]}; if(!L.length||!s) return out;
+    var ex=[]; try{ var r=await s.from("rev_expenses").select("exp_date,amount,description,ref,category").gte("exp_date",shiftISO(date,-3)).lte("exp_date",shiftISO(date,60)).ilike("category","%คืน%ลูกค้า%"); ex=(r&&r.data)||[]; }catch(e){ out.open=L.slice(); return out; }
+    var t0=Date.parse(String(date).slice(0,10)); ex=ex.slice().sort(function(a,b){ return Math.abs(Date.parse(String(a.exp_date).slice(0,10))-t0)-Math.abs(Date.parse(String(b.exp_date).slice(0,10))-t0); });
+    var used={}; L.forEach(function(c){ var i=ex.findIndex(function(x,j){ return !used[j] && Math.abs(num(x.amount)-num(c.cash))<=1; });
+      if(i>=0){ used[i]=1; out.amt=r2(out.amt+num(c.cash)); out.rows.push({cn_no:c.cn_no||"", cust:c.cust||"", amt:num(c.cash), exp_date:String(ex[i].exp_date).slice(0,10), desc:ex[i].description||ex[i].ref||""}); } else out.open.push(c); });
+    return out;
+  }
   async function load(date){
     var s=SB(); if(!s) throw new Error("เชื่อม Supabase ไม่ได้");
     var q=await Promise.all([
@@ -148,6 +162,7 @@
     var kLate=(((q[8]&&q[8].data)||{}).kplus_rows||[]).filter(function(x){ var m=String(x.t||"").match(/(\d{1,2}):(\d{2})/); return m && (+m[1]*60+ +m[2])>=15*60+30; }).map(function(x){ return num(x.amt); });
     var au=(q[1]&&q[1].data)||null, dd=(q[3]&&q[3].data)||{}, det=(au&&au.detail)||{};
     var pre=await preMoney(s, date, det.xfer||[]);
+    var rfx=await refundXfer(s, date, det.cns||[]);
     return {
       date:date, status:au?au.status:null,
       bills:(q[0]&&q[0].data)||[],
@@ -160,7 +175,7 @@
       shop:((q[9]&&!q[9].error&&Array.isArray(q[9].data))? q[9].data : null),
       proof:(q[4]&&q[4].data)||null, proofPending:((q[7]&&q[7].data)||[]).length,
       appr:(q[5]&&q[5].data)||[],
-      pre:pre,
+      pre:pre, refundXfer:rfx.amt, refundXferRows:rfx.rows, cnRefundOpen:rfx.open,
       cnCash:(det.cns||[]).reduce(function(m,c){ var k=String(c.bill||"").trim(), v=num(c.cash); if(k&&v>0) m[k]=r2((m[k]||0)+v); return m; },{})
     };
   }
@@ -216,5 +231,5 @@
       else if(x.amt>0.01){ if(x.amt<x.b.out-0.01) x.src+=" · จ่ายบางส่วน "+TH(x.amt)+" จากค้าง "+TH(x.b.out); O.ready.push(x); } });
     return O;
   }
-  window.RevCut={ classify:classify, load:load, compute:compute, old:old, TH:TH, num:num, r2:r2, RETAIL_CUS:RETAIL_CUS };
+  window.RevCut={ classify:classify, load:load, refundXfer:refundXfer, compute:compute, old:old, TH:TH, num:num, r2:r2, RETAIL_CUS:RETAIL_CUS };
 })();

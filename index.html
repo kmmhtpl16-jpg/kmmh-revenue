@@ -2396,7 +2396,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261010a"></script>
-<script src="cutbill.js?v=20261013b"></script>
+<script src="cutbill.js?v=20261013c"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
@@ -2589,9 +2589,9 @@ async function renderCut(){
   const date=cpDate(); if(!date){ card.style.display="none"; return; }
   card.style.display=""; card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">กำลังคัดบิล…</div>';
   let R; try{ await ensureOwnerSession(); R=await RevCut.compute(date); if(cpDate()!==date) return; }catch(e){ if(cpDate()!==date) return; card.innerHTML='<h2>📋 ตัดบิลประจำวัน</h2><div class="muted" style="color:#b91c1c">โหลดไม่ได้: '+esc(e.message||e)+'</div>'; return; }
-  let OB={ready:[],appr:[],done:[]}; try{ OB=await RevCut.old(date); if(cpDate()!==date) return; }catch(e){ console.warn("RevCut.old",e); }
+  let OB={ready:[],appr:[],done:[],wait:[]}; try{ OB=await RevCut.old(date); if(cpDate()!==date) return; }catch(e){ console.warn("RevCut.old",e); } OB.wait=OB.wait||[];
   R.ob=OB; CUT=R; const D=R.D;
-  if(!D.bills.length && !(OB.ready.length+OB.appr.length+OB.done.length)){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">ยังไม่มีบิลของวันนี้จาก ACC-BILLING (ซิงก์ทุกเช้า)</div>'; return; }
+  if(!D.bills.length && !(OB.ready.length+OB.appr.length+OB.done.length+OB.wait.length)){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">ยังไม่มีบิลของวันนี้จาก ACC-BILLING (ซิงก์ทุกเช้า)</div>'; return; }
   const ready=R.t.concat(R.c), miss=[];
   if(D.status!=="ตรวจแล้ว") miss.push("วันนี้ยังไม่ได้กดยืนยันผลตรวจ");
   if(!D.hasK) miss.push("ยังไม่มีรายงาน K+"); if(!D.hasB) miss.push("ยังไม่มีสเตทเมนต์");
@@ -2610,6 +2610,7 @@ async function renderCut(){
   /* v0.4.7 บิลเก่าที่มีเงินจ่ายเข้ามาวันนี้ */
   const obRow=function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-ok">'+esc(x.ap&&x.ap.rc_no?(x.ap.method+' · '+x.ap.rc_no):(x.method+' · '+x.src))+'</span></div></div><div class="r">'+TH(x.ap?+x.ap.amount:(x.amt||x.b.out))+'</div></div>'; };
   const obSum=function(a){ return a.reduce(function(s,x){return s+(+x.amt||0);},0); };
+  if(OB.wait.length) h+='<div class="cut-sec" style="border:1px solid #fdba74;background:#fff7ed;border-radius:10px;padding:8px 10px;margin-top:10px"><h3 style="color:#c2410c">⏳ บิลเก่า เงินเข้าแล้ว — รอแคชเชียร์แจ้งในชีตบิลเก่า <span class="muted">'+OB.wait.length+' บิล · '+TH(obSum(OB.wait))+'</span></h3><div class="muted" style="color:#9a3412;margin-bottom:4px">ยังอนุมัติตัดไม่ได้ — พอแคชเชียร์ใส่ในชีตบิลเก่าแล้ว จะย้ายไป "พร้อมตัด" ในการ์ดวันที่แคชเชียร์แจ้งเอง</div>'+OB.wait.map(function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-hold">'+esc(x.method+' · '+x.src)+'</span></div></div><div class="r">'+TH(x.amt||x.b.out)+'</div></div>'; }).join("")+'</div>';
   if(OB.ready.length+OB.appr.length+OB.done.length){
     h+='<div class="cut-sec" style="border-top:2px dashed #e7e5e4;padding-top:10px"><h3>🧾 บิลเก่าที่จับคู่เงินแล้ว รอตัด <span class="muted">'+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+'</span></h3>'+(OB.ready.map(obRow).join("")||'<div class="muted">—</div>')+'</div>';
     if(OB.appr.length) h+='<div class="cut-sec"><h3>🕒 บิลเก่า อนุมัติแล้ว รอเลขาตัด <span class="muted">'+OB.appr.length+' บิล</span></h3>'+OB.appr.map(obRow).join("")+'</div>';
@@ -2634,6 +2635,10 @@ async function cutApprove(){
   _ob.forEach(function(x){ rows.push({bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,receipt_group:_tag+"-"+String(x.grp||"").slice(0,9)}); });
   const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
   if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
+  /* v0.6.1: บิลเก่าที่เคยยกเลิกอนุมัติไว้ (status=cancelled) — upsert ข้ามแถวเดิม จึงเปิดกลับเป็น approved พร้อมข้อมูลรอบนี้ */
+  for(const x of _ob){ if(!x.apc) continue; const rw=rows.filter(function(z){ return z.bill_no===x.b.no; })[0]; if(!rw) continue;
+    const u=await sb.from("rev_cut_approvals").update({bill_date:rw.bill_date,customer:rw.customer,amount:rw.amount,method:rw.method,evidence:rw.evidence,receipt_group:rw.receipt_group,status:"approved",approved_role:ROLE,approved_at:new Date().toISOString(),cut_note:null}).eq("bill_no",x.b.no).eq("status","cancelled");
+    if(u.error){ alert("อนุมัติบิล "+x.b.no+" ไม่สำเร็จ: "+u.error.message); } }
   renderCut();
 }
 async function cutApproveOld(){

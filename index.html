@@ -2396,7 +2396,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261010a"></script>
-<script src="cutbill.js?v=20261013a"></script>
+<script src="cutbill.js?v=20261013b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
@@ -2407,10 +2407,10 @@ function bkkShift(iso,n){ const p=iso.split("-"); const d=new Date(Date.UTC(+p[0
 /* v0.4.5 (2 ต.ค.69) — ยอดเงินสดที่ต้องนับได้ = เงินสดขาย(ฟอร์ม) + รายรับอื่นๆ ที่แคชเชียร์ลงในโปรแกรม + บิลเก่าเงินสด − คืนเงิน
    รายรับอื่นๆ = เงินสดที่ไม่มีบิล ลงทีละรายการใน rev_cash_other · โปรแกรมเทียบกับยอด "รายรับอื่นๆ" ในฟอร์มให้ */
 async function cpFormInfo(date){
-  if(DATA && DATA.form && DATA.form.date===date && DATA.form.cash!=null){ const f=DATA.form; return {cash:+f.cash, other:(f.otherCash==null?null:+f.otherCash), otherX:(f.otherXfer==null?null:+f.otherXfer), oldCash:+(f.oldCash||0), refund:+(f.refund||0)}; }
+  if(DATA && DATA.form && DATA.form.date===date && DATA.form.cash!=null){ const f=DATA.form; const _cn=[]; try{ ((DATA.pos&&DATA.pos.cns)||[]).forEach(function(x,i){ const tr=document.querySelector('tr[data-i="'+i+'"]'); const ce=tr&&tr.querySelector('.cash'); const v=ce?(parseFloat(ce.value)||0):0; if(v>0) _cn.push({cn_no:x.cn_no||'',cust:x.customer||'',cash:v}); }); }catch(e){} return {cash:+f.cash, other:(f.otherCash==null?null:+f.otherCash), otherX:(f.otherXfer==null?null:+f.otherXfer), oldCash:+(f.oldCash||0), refund:+(f.refund||0), cns:_cn}; }
   try{ const r=await sb.from("rev_audit").select("form_refund,detail").eq("date",date).maybeSingle(); const d=r&&r.data; const det=(d&&d.detail)||{};
     if(det.form_cash==null) return null;
-    return {cash:+det.form_cash, other:(det.form_other_cash==null?null:+det.form_other_cash), otherX:(det.form_other_xfer==null?null:+det.form_other_xfer), oldCash:+(det.form_old_cash||0), refund:+(det.form_refund_cash!=null?det.form_refund_cash:(d.form_refund||0))};
+    return {cash:+det.form_cash, other:(det.form_other_cash==null?null:+det.form_other_cash), otherX:(det.form_other_xfer==null?null:+det.form_other_xfer), oldCash:+(det.form_old_cash||0), refund:+(det.form_refund_cash!=null?det.form_refund_cash:(d.form_refund||0)), cns:(det.cns||[])};
   }catch(e){ return null; }
 }
 async function cpFormCash(date){ const i=await cpFormInfo(date); return i?i.cash:null; }
@@ -2444,8 +2444,12 @@ async function loadCashProof(){
     if(fi){ h+=cmp("เงินสด",oSum,fi.other); h+=cmp("เงินโอน",xSum,fi.otherX); }
     if(can) h+='<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><select id="cpo_ch" class="rsn" style="flex:1 1 100%;max-width:none;padding:7px 6px"><option value="cash">💵 เงินสด</option><option value="kplus">📱 เงินโอน K+</option><option value="ksk">🏦 เงินโอนกสิกร</option></select><input id="cpo_item" class="rsn" placeholder="รายละเอียด" style="flex:1 1 120px;max-width:none;min-width:0"><input id="cpo_amt" class="rsn" inputmode="decimal" placeholder="บาท" oninput="cpFmtAmt(this)" style="flex:0 1 100px;max-width:none;min-width:0;text-align:right"></div><button type="button" class="btn sec" style="width:100%;margin-top:6px;padding:7px 10px" onclick="cpOtherAdd()">➕ เพิ่มรายรับอื่นๆ</button>';
     ob.innerHTML=h; }
-  const exp=fi? Math.round((fi.cash+oSum+fi.oldCash-fi.refund)*100)/100 : null;
-  const br=fi? '<div class="muted" style="font-size:12px">ต้องมี = เงินสดขาย '+TH(fi.cash)+(oSum?' + รายรับอื่นๆ '+TH(oSum):'')+(fi.oldCash?' + บิลเก่าเงินสด '+TH(fi.oldCash):'')+(fi.refund?' − คืนเงิน '+TH(fi.refund):'')+' = <b>'+TH(exp)+'</b></div>' : '';
+  /* v0.5.8 (13 ต.ค.69): คืนเงินตาม CN ที่มีรายจ่าย "โอนเงินคืนลูกค้า" ยอดเท่ากัน = โอนคืน ไม่ได้ออกจากลิ้นชัก */
+  let _rx={amt:0,rows:[]}; try{ if(fi&&fi.refund>0&&window.RevCut&&RevCut.refundXfer) _rx=await RevCut.refundXfer(sb,date,fi.cns||[]); }catch(e){}
+  if(_cpt!==window._cpTok || cpDate()!==date) return;
+  const _rfx=fi? Math.min(_rx.amt||0, fi.refund||0) : 0;
+  const exp=fi? Math.round((fi.cash+oSum+fi.oldCash-(fi.refund-_rfx))*100)/100 : null;
+  const br=fi? '<div class="muted" style="font-size:12px">ต้องมี = เงินสดขาย '+TH(fi.cash)+(oSum?' + รายรับอื่นๆ '+TH(oSum):'')+(fi.oldCash?' + บิลเก่าเงินสด '+TH(fi.oldCash):'')+(fi.refund?(_rfx?' − คืนเงินสด '+TH(fi.refund-_rfx)+' (คืนเงิน '+TH(fi.refund)+' − โอนคืน '+TH(_rfx)+')':' − คืนเงิน '+TH(fi.refund)):'')+' = <b>'+TH(exp)+'</b></div>'+(_rx.rows||[]).map(function(r){ return '<div class="muted" style="font-size:11.5px;color:#0369a1">🏦 '+esc(r.cn_no||'CN')+' '+esc(String(r.cust||'').slice(0,24))+' '+TH(r.amt)+' โอนคืน '+beDate(r.exp_date)+'</div>'; }).join('') : '';
   cpReqRender(date,p,reqs);
   if(!p){ fn.innerHTML='<span style="color:#b45309">ยังไม่มีรูปใบนับของ '+beDate(date)+'</span>'+br; upState(date,false,null); return; }
   const ok=(exp==null)||Math.abs(+p.amount-exp)<0.01;
@@ -2596,7 +2600,7 @@ async function renderCut(){
      (R.appr.length?'<span class="cut-chip cc-appr">🕒 อนุมัติแล้ว รอตัด '+R.appr.length+'</span>':'')+
      '<span class="cut-chip cc-skip">➖ ไม่ต้องตัด '+R.s.length+'</span><span class="cut-chip cc-done">✔ ตัดแล้ว '+(R.done.length+R.cut.length)+'</span></div>';
   if(miss.length) h+='<div class="muted" style="color:#b45309">⚠ '+miss.join(" · ")+' — บิลเงินโอนที่หาเงินไม่เจอจะถูกพักไว้</div>';
-  h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)) : '⏳ ยังไม่มีรูปใบนับเงินสด')+'</div>';
+  h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืนตามใบลดหนี้ '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
   h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3>'+cutList(R.t,"t")+'</div>';
   h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินสด <span class="muted">'+R.c.length+' บิล · '+TH(cutSum(R.c))+'</span></h3>'+cutList(R.c,"c")+'</div>';
   if(R.appr.length) h+='<div class="cut-sec"><h3>🕒 อนุมัติแล้ว รอเลขาตัด <span class="muted">'+R.appr.length+' บิล · '+TH(cutSum(R.appr))+'</span></h3>'+cutList(R.appr,"a")+'</div>';

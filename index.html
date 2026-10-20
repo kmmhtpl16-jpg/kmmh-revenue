@@ -2555,72 +2555,106 @@ async function rfLoad(date, fi, xfer, rfd){
   }catch(e){ console.warn("rfLoad",e); }
   return out;
 }
+/* v0.7.2 (20 ต.ค.69): คุณหลิงขอให้กล่องคืนเงินสั้นลง — ในกรอบปิดวันเหลือบรรทัดเดียว + ปุ่มเปิด · ใน popup รายการแถวเดียว (มีปัญหา = 🚩 กดดูเหตุผล) · ฟอร์มซ่อนจนกด "เพิ่มรายการ" */
+let RF_ADD=false;
+function rfModal(open){
+  let m=document.getElementById("rf_modal");
+  if(!m){ m=document.createElement("div"); m.id="rf_modal";
+    m.style.cssText="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9000;background:rgba(15,23,42,.45);overflow-y:auto;-webkit-overflow-scrolling:touch";
+    m.innerHTML='<div style="background:#fff;width:calc(100% - 24px);max-width:460px;margin:6vh auto;border-radius:14px;padding:12px 14px 14px;box-sizing:border-box;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:left">'+
+      '<div style="display:flex;align-items:center;gap:8px"><b style="font-size:15px;white-space:nowrap">↩️ คืนเงิน <span id="rf_mdate"></span></b><span id="rf_mphoto" style="margin-left:auto"></span>'+
+      '<button type="button" onclick="rfModal(false)" aria-label="ปิด" style="border:0;background:#f1f5f9;border-radius:8px;width:34px;height:34px;font-size:17px;cursor:pointer;flex:none">✕</button></div><div id="rf_mbody"></div></div>';
+    m.addEventListener("click",function(e){ if(e.target===m) rfModal(false); });
+    document.addEventListener("keydown",function(e){ if(e.key==="Escape" && m.style.display!=="none") rfModal(false); });
+    document.body.appendChild(m); }
+  if(open!=null){ m.style.display=open?"block":"none"; document.body.style.overflow=open?"hidden":""; }
+  return m;
+}
+function rfAddToggle(on){ RF_ADD=(on==null)? !RF_ADD : !!on; const f=document.getElementById("rf_form"), b=document.getElementById("rf_addbtn"); if(f) f.style.display=RF_ADD?"":"none"; if(b) b.textContent=RF_ADD?"ยกเลิก":"＋ เพิ่มรายการ"; }
+function rfWhy(i){ const d=document.getElementById("rf_why"+i); if(d) d.style.display=(d.style.display==="none")?"":"none"; }
 function rfRender(st){
-  const el=document.getElementById("cashp_refund"); if(!el) return;
-  RF=st; if(!st){ el.innerHTML=""; return; }
-  const date=st.date, lock=(ROLE!=="owner" && !!st.dayLock), can=cpCanEdit(date) && !lock, fr=st.fi? +(st.fi.refund||0) : null; let bad=!!st.err;
+  const sumEl=document.getElementById("cashp_refund"); if(!sumEl) return;
+  RF=st; if(!st){ sumEl.innerHTML=""; if(document.getElementById("rf_modal")) rfModal(false); return; }
+  rfModal(); const el=document.getElementById("rf_mbody"), md=document.getElementById("rf_mdate"), mp=document.getElementById("rf_mphoto");
+  if(md) md.textContent=String(+st.date.slice(8,10))+"/"+String(+st.date.slice(5,7));
+  const date=st.date, lock=(ROLE!=="owner" && !!st.dayLock), can=cpCanEdit(date) && !lock, fr=st.fi? +(st.fi.refund||0) : null;
+  let bad=!!st.err, rowBad=false, exBad=false;
   const optBy={}; st.opts.forEach(function(o){ optBy[o.cn]=o; });
   const used={}; st.rows.forEach(function(x){ if(x.kind==="cn") used[x.cn_no]=1; });
   const wd=(st.wd||[]).slice(); const takeWd=function(a){ const i=wd.findIndex(function(v){ return Math.abs(v-a)<=1; }); if(i<0) return false; wd.splice(i,1); return true; };
   const sum=Math.round(st.rows.reduce(function(s,x){ return s+(+x.amount||0); },0)*100)/100;
-  let h='<div style="font-weight:600;font-size:13px">↩️ คืนเงิน <span class="muted" style="font-weight:400">(ไม่ออกบิล)</span></div>';
-  if(st.err) h+='<div style="color:#b91c1c;font-size:12px">🚩 โหลดกล่องคืนเงินไม่ได้: '+esc(st.err)+'</div>';
-  if(lock) h+='<div class="muted" style="font-size:11.5px">🔒 เจ้าของอนุมัติตัดบิลของวันนี้แล้ว แก้กล่องคืนเงินไม่ได้ — ถ้าต้องแก้ แจ้งเจ้าของ</div>';
   const quiet=!st.rows.length && !(fr>0) && !st.photo;
-  if(quiet){ h+='<div class="muted" style="font-size:12px">ฟอร์มวันนี้ไม่มีคืนเงิน</div>'; if(!can){ el.innerHTML=h; RF.ok=!bad; return; } h+='<details style="font-size:12px;margin-top:2px"><summary class="muted" style="cursor:pointer">มีคืนเงิน? กดเพื่อลง</summary>'; }
-  /* 1. รูปใบรายการจ่ายเงิน */
-  if(st.photo) h+='<div style="font-size:12px;margin-top:4px;padding:6px 8px;border-radius:8px;background:#f0fdf4;color:#15803d">✅ แนบรูปใบคืนเงินแล้ว · <a href="#" onclick="openSlip(\''+escAttr(st.photo.image_path)+'\');return false;">ดูรูป</a>'+(st.nPhoto>1?' <span class="muted">(แนบ '+st.nPhoto+' ครั้ง)</span>':'')+
-    (can?' · <label style="cursor:pointer;text-decoration:underline">แนบรูปใหม่<input type="file" accept="image/*" capture="environment" class="hide" onchange="rfPhoto(this)"></label>':'')+'</div>';
-  else h+='<div style="font-size:12px;margin-top:4px;padding:6px 8px;border-radius:8px;background:#fffbeb;border:1px dashed #f59e0b;color:#b45309">📷 <b>1. ถ่ายรูปใบรายการจ่ายเงิน</b> — ยังไม่มีรูป · บิลที่คืนเงินจะพักไว้'+
-    (can?'<label class="btn sec" style="display:block;text-align:center;margin-top:6px;cursor:pointer;padding:7px 10px"><input type="file" accept="image/*" capture="environment" class="hide" onchange="rfPhoto(this)">📷 แนบรูป</label>':'')+'</div>';
-  /* 2. รายการที่บันทึกแล้ว */
-  h+=st.rows.map(function(x){
-    const o=x.kind==="cn"? optBy[x.cn_no] : null; let chk;
-    const okRow=x.kind==="cn"? !!o && (x.bill_no===o.bill||x.bill_no===o.bill2) : null;
-    if(x.kind==="cn") chk= okRow? '<div style="font-size:11px;color:#15803d">✓ มี '+esc(x.cn_no)+' ใน ACC ผูกบิล '+esc(String(o.bill||"").slice(-4))+(o.bill2?'/'+esc(String(o.bill2).slice(-4)):'')+' · ยอดไม่เกิน '+TH(+o.amt)+'</div>' : o? '<div style="font-size:11px;color:#b91c1c">🚩 ใบลดหนี้นี้ใน ACC ผูกบิล '+esc([o.bill,o.bill2].filter(Boolean).join(" / "))+' ไม่ใช่บิลนี้</div>' : '<div style="font-size:11px;color:#b45309">⏳ รอ ACC ยืนยันใบลดหนี้ (ซิงก์ประมาณ 16:30) — บิลพักไว้ก่อน</div>';
-    if(x.kind==="cn"){ if(!okRow) bad=true; }
-    else { const b=st.bills.find(function(z){ return z.no===x.bill_no; }); const got=rfGot(x.bill_no), need=b? Math.round((+b.out||0)*100)/100 : null;
-      const okOv=(b && Math.abs(got-need-(+x.amount))<=1); if(!okOv) bad=true;
-      chk=okOv? '<div style="font-size:11px;color:#15803d">✓ ชีตโอน '+TH(got)+' − บิล '+TH(need)+' = เกิน '+TH(got-need)+'</div>' : '<div style="font-size:11px;color:#b91c1c">🚩 ยอดเงินไม่ตรงส่วนที่โอนเกิน'+(b?' (ชีตโอน '+TH(got)+' · บิล '+TH(need)+')':'')+'</div>'; }
-    const okWd=(x.pay!=="transfer") || takeWd(+x.amount); if(!okWd) bad=true;
-    if(x.pay==="transfer") chk+= okWd? '<div style="font-size:11px;color:#15803d">✓ เจอเงินโอนออก '+TH(+x.amount)+' ในสเตทเมนต์</div>' : '<div style="font-size:11px;color:#b45309">⏳ ยังไม่เจอเงินโอนคืน '+TH(+x.amount)+' ในสเตทเมนต์ — บิลพักไว้ก่อน</div>';
-    const rlock=(ROLE!=="owner" && st.appr[x.bill_no]);
-    return '<div style="font-size:13px;padding:4px 0;border-bottom:1px dashed #e5e7eb"><div style="display:flex;justify-content:space-between;gap:6px"><span><b>'+esc(x.bill_no)+'</b> · '+(x.kind==="cn"?'คืนตามใบลดหนี้':'คืนเพราะโอนเกิน')+'</span><span style="white-space:nowrap">'+TH(+x.amount)+(can&&!rlock?' <a href="#" title="ลบ" onclick="rfDel('+(+x.id)+');return false;" style="color:#b91c1c;text-decoration:none">✕</a>':'')+'</span></div>'+
-      '<div class="muted" style="font-size:11.5px">'+(x.cn_no?esc(x.cn_no)+' · ':'')+(x.pay==="transfer"?'🏦 โอนคืน':'💵 เงินสด')+(o&&o.name?' · '+esc(String(o.name).slice(0,28)):'')+'</div>'+chk+'</div>';
-  }).join("");
-  /* สรุปเทียบฟอร์ม */
-  if(st.rows.length || fr>0){ const m=(fr!=null)&&Math.abs(sum-fr)<=1; if(!(m&&st.photo)) bad=true;
-    h+=(m&&st.photo)? '<div style="font-size:12px;margin-top:4px;color:#15803d">✓ ลงคืนเงินรวม '+TH(sum)+' = คืนเงินในฟอร์ม '+TH(fr)+'</div>'
-      : '<div style="font-size:12px;margin-top:4px;color:'+(m?'#b45309':'#b91c1c')+'">'+(m?'⏳ ลงคืนเงินรวม '+TH(sum)+' ตรงฟอร์มแล้ว · รอรูปใบคืนเงิน':'🚩 ลงคืนเงินรวม '+TH(sum)+' · คืนเงินในฟอร์ม '+(fr==null?'—':TH(fr))+(fr!=null&&sum<fr?' — ยังลงไม่ครบ ขาด '+TH(fr-sum):''))+'</div>'; }
+  const n0=function(v){ return TH(v).replace(/\.00$/,""); };
+  const short=function(no){ return String(no||"").replace(/^KM\d{4}-/,"").replace(/^CN\d{4}-/,"CN-"); };
+  /* ป้ายรูปที่หัว popup */
+  if(mp) mp.innerHTML= st.photo
+    ? '<a href="#" onclick="openSlip(\''+escAttr(st.photo.image_path)+'\');return false;" style="font-size:12px;padding:4px 9px;border-radius:7px;background:#dcfce7;color:#15803d;text-decoration:none;white-space:nowrap">✅ ดูรูป</a>'+(can?' <label title="แนบรูปใหม่" style="font-size:12px;color:#64748b;cursor:pointer;text-decoration:underline">เปลี่ยน<input type="file" accept="image/*" capture="environment" class="hide" onchange="rfPhoto(this)"></label>':'')
+    : (can? '<label style="font-size:12px;padding:4px 9px;border-radius:7px;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;cursor:pointer;white-space:nowrap">📷 แนบรูป<input type="file" accept="image/*" capture="environment" class="hide" onchange="rfPhoto(this)"></label>' : '<span style="font-size:12px;color:#b45309">ยังไม่มีรูป</span>');
+  let h='';
+  if(st.err) h+='<div style="color:#b91c1c;font-size:12px;margin-top:6px">🚩 โหลดไม่ได้: '+esc(st.err)+'</div>';
+  if(lock) h+='<div class="muted" style="font-size:11.5px;margin-top:6px">🔒 เจ้าของอนุมัติตัดบิลวันนี้แล้ว แก้ไม่ได้ — แจ้งเจ้าของ</div>';
+  /* ยอดรวมเทียบฟอร์ม */
+  const mOk=(fr!=null)&&Math.abs(sum-fr)<=1;
+  if(quiet) h+='<div class="muted" style="font-size:12px;margin:6px 0 2px">ฟอร์มวันนี้ไม่มีคืนเงิน</div>';
+  else { if(!mOk) bad=true;
+    h+='<div style="font-size:12px;margin:6px 0 2px;color:'+(mOk?'#15803d':'#b91c1c')+'">'+(mOk?'✓ รวม '+n0(sum)+' = ฟอร์ม '+n0(fr):'🚩 รวม '+n0(sum)+' · ฟอร์ม '+(fr==null?'—':n0(fr))+(fr!=null&&sum<fr?' (ขาด '+n0(fr-sum)+')':''))+'</div>';
+    if(!st.photo){ bad=true; } }
   /* ช่องคืนสดในตาราง CN ของไฟล์ Excel ต้องตรงกับกล่อง (ยังกรอกทั้ง 2 ที่จนกว่าจะเลิกใช้ Excel) */
   const ex={}; ((st.fi&&st.fi.cns)||[]).forEach(function(c){ const k=String(c.cn_no||"").trim(); if(k) ex[k]=Math.round(((ex[k]||0)+(+c.cash||0))*100)/100; });
   const bx={}; st.rows.forEach(function(x){ if(x.kind==="cn") bx[x.cn_no]=Math.round(((bx[x.cn_no]||0)+(+x.amount||0))*100)/100; });
-  Object.keys(Object.assign({},ex,bx)).sort().forEach(function(k){ const a=ex[k]||0, b=bx[k]||0; if(Math.abs(a-b)>0.5){ bad=true; } if(Math.abs(a-b)>0.5) h+='<div style="font-size:11.5px;color:#b91c1c">🚩 '+esc(k)+' ไฟล์ Excel ช่องคืนสด '+TH(a)+' · กล่องคืนเงิน '+TH(b)+' — แก้ไฟล์ Excel ให้ตรงแล้วอัปใหม่</div>'; });
-  /* 3. ฟอร์มบันทึกรายการ */
+  Object.keys(Object.assign({},ex,bx)).sort().forEach(function(k){ const a=ex[k]||0, b=bx[k]||0; if(Math.abs(a-b)>0.5){ bad=true; exBad=true; h+='<div style="font-size:12px;color:#b91c1c">🚩 Excel ช่องคืนสด '+esc(short(k))+' ลง '+n0(a)+' (กล่อง '+n0(b)+') — แก้ไฟล์แล้วอัปใหม่</div>'; } });
+  /* รายการ — แถวเดียว · มีปัญหา = 🚩 กดดูเหตุผล */
+  h+=st.rows.map(function(x,i){
+    const o=x.kind==="cn"? optBy[x.cn_no] : null; let why=[];
+    if(x.kind==="cn"){ if(!o) why.push("รอ ACC ยืนยันใบลดหนี้ (ซิงก์ประมาณ 16:30)"); else if(x.bill_no!==o.bill && x.bill_no!==o.bill2) why.push("ใบลดหนี้นี้ใน ACC ผูกบิล "+[o.bill,o.bill2].filter(Boolean).join(" / ")+" ไม่ใช่บิลนี้"); }
+    else { const b=st.bills.find(function(z){ return z.no===x.bill_no; }); const got=rfGot(x.bill_no), need=b? Math.round((+b.out||0)*100)/100 : null;
+      if(!(b && Math.abs(got-need-(+x.amount))<=1)) why.push("ยอดเงินไม่ตรงส่วนที่โอนเกิน"+(b?" (ชีตโอน "+n0(got)+" · บิล "+n0(need)+")":"")); }
+    if(x.pay==="transfer" && !takeWd(+x.amount)) why.push("ยังไม่เจอเงินโอนคืน "+n0(+x.amount)+" ในสเตทเมนต์");
+    if(why.length){ bad=true; rowBad=true; }
+    const rlock=(ROLE!=="owner" && st.appr[x.bill_no]);
+    return '<div style="border-bottom:1px solid #f1f5f9"><div '+(why.length?'onclick="rfWhy('+i+')" ':'')+'style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px'+(why.length?';cursor:pointer':'')+'">'+
+      '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b>'+esc(short(x.bill_no))+'</b> <span class="muted" style="font-size:12px">'+(x.kind==="cn"?esc(short(x.cn_no)):'โอนเกิน')+' · '+(x.pay==="transfer"?'โอนคืน':'สด')+'</span></span>'+
+      '<span style="white-space:nowrap">'+n0(+x.amount)+'</span><span style="width:18px;text-align:center">'+(why.length?'🚩':'<span style="color:#16a34a">✓</span>')+'</span>'+
+      (can&&!rlock?'<a href="#" title="ลบ" onclick="event.stopPropagation();rfDel('+(+x.id)+');return false;" style="color:#94a3b8;text-decoration:none;font-size:15px">🗑</a>':'')+'</div>'+
+      (why.length?'<div id="rf_why'+i+'" style="display:none;font-size:12px;color:#b91c1c;padding:0 0 8px">'+why.map(esc).join('<br>')+'</div>':'')+'</div>';
+  }).join("");
+  /* ฟอร์ม — ซ่อนจนกด "เพิ่มรายการ" */
   if(can){
-    const left=st.opts.filter(function(o){ return !used[o.cn]; }).length;
     const pairs=[]; st.opts.forEach(function(o){ pairs.push({o:o, bill:o.bill, two:false}); if(o.bill2) pairs.push({o:o, bill:o.bill2, two:true}); });
-    h+='<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:8px;margin-top:6px"><div style="font-size:12px;font-weight:600;margin-bottom:4px">2. บันทึกรายการตามใบ</div>'+
-      '<div class="muted" style="font-size:11px">ประเภท</div><select id="rf_kind" class="rsn" style="width:100%;max-width:none;padding:7px 6px" onchange="rfKind()"><option value="cn">คืนตามใบลดหนี้</option><option value="overpay">คืนเพราะโอนเกิน</option></select>'+
-      '<div id="rf_cnw"><div class="muted" style="font-size:11px;margin-top:4px">ใบลดหนี้ (จาก ACC)</div><select id="rf_cn" class="rsn" style="width:100%;max-width:none;padding:7px 6px" onchange="rfPick()"><option value="">เลือกใบลดหนี้ ('+left+' ใบ)</option>'+
-      pairs.map(function(p){ const o=p.o; return '<option value="'+escAttr(o.cn+"|"+p.bill)+'"'+(used[o.cn]?' disabled':'')+'>'+esc(o.cn)+' · '+esc(p.bill||"")+(p.two?' (บิลที่ใช้เครดิต)':'')+' · '+TH(+o.amt)+' · '+esc(String(o.name||"").slice(0,20))+(used[o.cn]?' · บันทึกแล้ว':'')+'</option>'; }).join("")+
-      '<option value="__m">✏️ พิมพ์เลข CN เอง (ยังไม่ซิงก์จาก ACC)</option></select><input id="rf_cnm" class="rsn" placeholder="CN6910-0024" style="width:100%;max-width:none;box-sizing:border-box;margin-top:4px;display:none"></div>'+
-      '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap"><div style="flex:1 1 120px;min-width:0"><div class="muted" style="font-size:11px">เลขบิล</div><input id="rf_bill" class="rsn" placeholder="KM6910-0770" style="width:100%;max-width:none;box-sizing:border-box"></div>'+
-      '<div style="flex:1 1 100px;min-width:0"><div class="muted" style="font-size:11px">ยอดเงิน</div><input id="rf_amt" class="rsn" inputmode="decimal" oninput="cpFmtAmt(this)" placeholder="บาท" style="width:100%;max-width:none;box-sizing:border-box;text-align:right"></div></div>'+
-      '<div class="muted" style="font-size:11px;margin-top:4px">คืนเป็น</div><select id="rf_pay" class="rsn" style="width:100%;max-width:none;padding:7px 6px"><option value="cash">💵 เงินสด</option><option value="transfer">🏦 โอนคืน</option></select>'+
-      '<button type="button" class="btn sec" style="width:100%;margin-top:6px;padding:7px 10px" onclick="rfAdd()">💾 บันทึกรายการ</button></div>';
+    const left=st.opts.filter(function(o){ return !used[o.cn]; }).length;
+    const sel='class="rsn" style="width:100%;max-width:none;box-sizing:border-box;padding:7px 6px;margin:0"';
+    h+='<div id="rf_form" style="display:'+(RF_ADD?'':'none')+';border:1px dashed #cbd5e1;border-radius:8px;padding:8px;margin-top:8px">'+
+      '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px">'+
+      '<select id="rf_kind" '+sel+' onchange="rfKind()"><option value="cn">ใบลดหนี้</option><option value="overpay">โอนเกิน</option></select>'+
+      '<div><select id="rf_cn" '+sel+' onchange="rfPick()"><option value="">เลือก CN ('+left+' ใบ)</option>'+
+      pairs.map(function(p){ const o=p.o; return '<option value="'+escAttr(o.cn+"|"+p.bill)+'"'+(used[o.cn]?' disabled':'')+'>'+esc(o.cn)+' · '+esc(p.bill||"")+(p.two?' (ใช้เครดิต)':'')+' · '+TH(+o.amt)+(used[o.cn]?' · บันทึกแล้ว':'')+'</option>'; }).join("")+
+      '<option value="__m">✏️ พิมพ์เลข CN เอง</option></select>'+
+      '<input id="rf_bill" class="rsn" placeholder="เลขบิล 0770" style="width:100%;max-width:none;box-sizing:border-box;margin:0;display:none"></div>'+
+      '<input id="rf_amt" class="rsn" inputmode="decimal" oninput="cpFmtAmt(this)" placeholder="ยอดเงิน" style="width:100%;max-width:none;box-sizing:border-box;text-align:right;margin:0">'+
+      '<select id="rf_pay" '+sel+'><option value="cash">💵 สด</option><option value="transfer">🏦 โอนคืน</option></select></div>'+
+      '<div id="rf_manual" style="display:none;margin-top:6px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px"><input id="rf_cnm" class="rsn" placeholder="CN6910-0024" style="width:100%;max-width:none;box-sizing:border-box;margin:0"><input id="rf_mbill" class="rsn" placeholder="เลขบิลของใบนี้" style="width:100%;max-width:none;box-sizing:border-box;margin:0"></div>'+
+      '<button type="button" class="btn" style="width:100%;margin-top:6px;padding:8px 10px" onclick="rfAdd()">💾 บันทึก</button></div>'+
+      '<button type="button" id="rf_addbtn" class="btn sec" style="width:100%;margin-top:8px;padding:8px 10px" onclick="rfAddToggle()">'+(RF_ADD?'ยกเลิก':'＋ เพิ่มรายการ')+'</button>';
   }
-  if(quiet) h+='</details>';
   el.innerHTML=h; RF.ok=!bad;
   if(can) rfKind();
+  /* บรรทัดสรุปในกรอบปิดวัน */
+  const n=st.rows.length; let line, col;
+  if(quiet){ line='ไม่มีคืนเงิน'; col='#64748b'; }
+  else if(RF.ok){ line='✓ '+n+' รายการ · '+n0(sum)+' ตรงฟอร์ม · มีรูปแล้ว'; col='#15803d'; }
+  else { const why=[]; if(st.err) why.push('โหลดไม่ได้'); if(!mOk) why.push(n? 'ลง '+n0(sum)+' · ฟอร์ม '+(fr==null?'—':n0(fr)) : 'ฟอร์มคืนเงิน '+n0(fr)+' ยังไม่ได้ลง'); else why.unshift(n+' รายการ · '+n0(sum));
+    if(!st.photo) why.push('รอรูปใบคืนเงิน'); if(rowBad) why.push('มีรายการต้องตรวจ'); if(exBad) why.push('Excel ช่องคืนสดไม่ตรง');
+    const red=(!mOk&&n>0)||rowBad||exBad||!!st.err; line=(red?'🚩 ':'⏳ ')+why.join(' · '); col=red?'#b91c1c':'#b45309'; }
+  sumEl.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">↩️ คืนเงิน</div>'+
+    '<div style="font-size:12px;color:'+col+'">'+esc(line)+'</div></div>'+
+    ((can||!quiet)?'<button type="button" class="btn sec" style="padding:6px 12px;font-size:13px;flex:none" onclick="rfModal(true)">'+(quiet?'＋ ลง':'เปิด')+'</button>':'')+'</div>';
 }
-function rfKind(){ const k=(document.getElementById("rf_kind")||{}).value, w=document.getElementById("rf_cnw"), b=document.getElementById("rf_bill"); if(!w||!b) return;
-  w.style.display=k==="cn"?"":"none"; b.value=""; const a=document.getElementById("rf_amt"); if(a) a.value=""; const c=document.getElementById("rf_cn"); if(c) c.value="";
-  const m=document.getElementById("rf_cnm"); if(m){ m.style.display="none"; m.value=""; }
-  b.readOnly=(k==="cn"); b.style.background=(k==="cn")?"#f1f5f9":""; b.placeholder=(k==="cn")?"เลือกใบลดหนี้ก่อน":"KM6910-0770"; }
-function rfPick(){ const v=(document.getElementById("rf_cn")||{}).value, b=document.getElementById("rf_bill"), a=document.getElementById("rf_amt"), m=document.getElementById("rf_cnm"); if(!b||!RF) return;
-  if(v==="__m"){ m.style.display=""; b.readOnly=false; b.style.background=""; b.value=""; b.placeholder="KM6910-0770"; if(a) a.value=""; m.focus(); return; }
-  m.style.display="none"; m.value=""; b.readOnly=true; b.style.background="#f1f5f9";
+function rfKind(){ const k=(document.getElementById("rf_kind")||{}).value, c=document.getElementById("rf_cn"), b=document.getElementById("rf_bill"), m=document.getElementById("rf_manual"), a=document.getElementById("rf_amt"); if(!c||!b) return;
+  c.value=""; b.value=""; if(a) a.value=""; if(m){ m.style.display="none"; document.getElementById("rf_cnm").value=""; document.getElementById("rf_mbill").value=""; }
+  c.style.display=(k==="cn")?"":"none"; b.style.display=(k==="cn")?"none":""; }
+function rfPick(){ const v=(document.getElementById("rf_cn")||{}).value, b=document.getElementById("rf_bill"), a=document.getElementById("rf_amt"), m=document.getElementById("rf_manual"); if(!b||!RF) return;
+  if(v==="__m"){ m.style.display="grid"; b.value=""; if(a) a.value=""; document.getElementById("rf_cnm").focus(); return; }
+  m.style.display="none";
   const pv=String(v||"").split("|"); const o=RF.opts.find(function(z){ return z.cn===pv[0]; }); b.value=o?(pv[1]||o.bill||""):""; if(a){ a.value=o?String(+o.amt):""; cpFmtAmt(a); } }
 async function rfAdd(){
   const st=RF; if(!st) return; const date=st.date;
@@ -2637,6 +2671,7 @@ async function rfAdd(){
     if(v==="__m"){ cn=String((document.getElementById("rf_cnm")||{}).value||"").trim().toUpperCase().replace(/\s/g,"");
       if(!/^CN\d{4}-\d{4}$/.test(cn)){ alert("เลข CN ไม่ถูกต้อง (เช่น CN6910-0024)"); return; }
       if(st.opts.some(function(o){ return o.cn===cn; })){ alert(cn+" มีในรายการแล้ว ให้เลือกจากรายการแทน"); return; }
+      bill=rfBillNo((document.getElementById("rf_mbill")||{}).value,date);
       if(!/^KM\d{4}-\d{4}$/.test(bill)){ alert("ใส่เลขบิลของใบลดหนี้นี้ (เช่น KM6910-0738)"); return; }
       manual=true; why="\n⏳ ใบลดหนี้นี้ยังไม่มีใน ACC — บิลจะพักไว้จนรอบซิงก์ถัดไปเจอ";
     }else{ const pv=String(v).split("|"); const o=st.opts.find(function(z){ return z.cn===pv[0]; }); if(!o){ alert("ไม่พบใบลดหนี้นี้"); return; }

@@ -186,7 +186,7 @@
       <div class="muted" id="up_lbl" style="margin:12px 0 8px">สิ่งที่ต้องอัป</div>
       <div class="drops" id="up_drops" style="margin-bottom:0">
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
-        <div class="drop" id="d_cashp" style="cursor:default"><div class="ic">📸</div><div class="nm">ใบนับเงินสด</div><div class="hint">ถ่ายรูปใบนับแบงค์/เหรียญ <span style="white-space:nowrap">+ ใส่ยอดรวม</span><br>ต้องมีก่อนกดยืนยัน</div><div class="fn" id="fn_cashp"></div><div id="cashp_other" style="margin-top:8px;text-align:left"></div><div id="cashp_form" style="margin-top:8px"><input id="cashp_amt" class="rsn" inputmode="decimal" placeholder="ยอดรวมในใบนับ" style="text-align:center;width:100%;max-width:none;display:block"><label class="btn sec" style="display:block;width:100%;text-align:center;margin-top:6px;cursor:pointer;padding:9px 12px;box-sizing:border-box"><input type="file" accept="image/*" capture="environment" id="f_cashp" class="hide"><span id="cashp_btn">📷 ถ่าย/เลือกรูปใบนับ</span></label></div><div id="cashp_req" style="margin-top:8px;text-align:left"></div></div>
+        <div class="drop" id="d_cashp" style="cursor:default"><div class="ic">📸</div><div class="nm">ใบนับเงินสด</div><div class="hint">ถ่ายรูปใบนับแบงค์/เหรียญ <span style="white-space:nowrap">+ ใส่ยอดรวม</span><br>ต้องมีก่อนกดยืนยัน</div><div class="fn" id="fn_cashp"></div><div id="cashp_other" style="margin-top:8px;text-align:left"></div><div id="cashp_refund" style="margin-top:8px;text-align:left"></div><div id="cashp_form" style="margin-top:8px"><input id="cashp_amt" class="rsn" inputmode="decimal" placeholder="ยอดรวมในใบนับ" style="text-align:center;width:100%;max-width:none;display:block"><label class="btn sec" style="display:block;width:100%;text-align:center;margin-top:6px;cursor:pointer;padding:9px 12px;box-sizing:border-box"><input type="file" accept="image/*" capture="environment" id="f_cashp" class="hide"><span id="cashp_btn">📷 ถ่าย/เลือกรูปใบนับ</span></label></div><div id="cashp_req" style="margin-top:8px;text-align:left"></div></div>
         <label class="drop r-fin" id="d_kplus"><input type="file" accept=".csv" class="hide" id="f_kplus"><div class="ic">📱</div><div class="nm">รายงาน K+ (QR)</div><div class="hint">ไฟล์ KPSR…csv จาก K+shop</div><div class="fn" id="fn_kplus"></div></label>
         <label class="drop r-fin" id="d_bank"><input type="file" accept=".csv" class="hide" id="f_bank"><div class="ic">🏦</div><div class="nm">สเตทเมนต์กสิกร</div><div class="hint">รายการเดินบัญชี (resultFile…csv)</div><div class="fn" id="fn_bank"></div></label>
       </div>
@@ -2396,7 +2396,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261010a"></script>
-<script src="cutbill.js?v=20261013c"></script>
+<script src="cutbill.js?v=20261020a"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
@@ -2445,8 +2445,15 @@ async function loadCashProof(){
     if(can) h+='<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><select id="cpo_ch" class="rsn" style="flex:1 1 100%;max-width:none;padding:7px 6px"><option value="cash">💵 เงินสด</option><option value="kplus">📱 เงินโอน K+</option><option value="ksk">🏦 เงินโอนกสิกร</option></select><input id="cpo_item" class="rsn" placeholder="รายละเอียด" style="flex:1 1 120px;max-width:none;min-width:0"><input id="cpo_amt" class="rsn" inputmode="decimal" placeholder="บาท" oninput="cpFmtAmt(this)" style="flex:0 1 100px;max-width:none;min-width:0;text-align:right"></div><button type="button" class="btn sec" style="width:100%;margin-top:6px;padding:7px 10px" onclick="cpOtherAdd()">➕ เพิ่มรายรับอื่นๆ</button>';
     ob.innerHTML=h; }
   /* v0.5.8 (13 ต.ค.69): คืนเงินตาม CN ที่มีรายจ่าย "โอนเงินคืนลูกค้า" ยอดเท่ากัน = โอนคืน ไม่ได้ออกจากลิ้นชัก */
-  let _rx={amt:0,rows:[]}; try{ if(fi&&fi.refund>0&&window.RevCut&&RevCut.refundXfer) _rx=await RevCut.refundXfer(sb,date,fi.cns||[]); }catch(e){}
+  let _rx={amt:0,rows:[]}, _rst=null;
+  if(rfOn(date)){ /* v0.7.0 กล่องคืนเงิน: โอนคืนอ่านจากกล่อง (แทนรายจ่ายหมวดโอนเงินคืนลูกค้า) */
+    try{ const _rfd=await RevCut.refundData(sb,date); _rst=await rfLoad(date,fi,xf,_rfd);
+      _rx={amt:Math.round(_rst.rows.filter(function(x){ return x.pay==="transfer"; }).reduce(function(s,x){ return s+(+x.amount||0); },0)*100)/100,
+           rows:_rst.rows.filter(function(x){ return x.pay==="transfer"; }).map(function(x){ return {cn_no:x.cn_no||x.bill_no, cust:"", amt:+x.amount, exp_date:date}; })};
+    }catch(e){ console.warn("refund box",e); _rst={date:date,fi:fi,xfer:xf,rows:[],photo:null,err:(e&&e.message)||String(e),wd:[],opts:[],bills:[],appr:{},nPhoto:0}; }
+  }else{ try{ if(fi&&fi.refund>0&&window.RevCut&&RevCut.refundXfer) _rx=await RevCut.refundXfer(sb,date,fi.cns||[]); }catch(e){} }
   if(_cpt!==window._cpTok || cpDate()!==date) return;
+  rfRender(_rst);
   const _rfx=fi? Math.min(_rx.amt||0, fi.refund||0) : 0;
   const exp=fi? Math.round((fi.cash+oSum+fi.oldCash-(fi.refund-_rfx))*100)/100 : null;
   const br=fi? '<div class="muted" style="font-size:12px">ต้องมี = เงินสดขาย '+TH(fi.cash)+(oSum?' + รายรับอื่นๆ '+TH(oSum):'')+(fi.oldCash?' + บิลเก่าเงินสด '+TH(fi.oldCash):'')+(fi.refund?(_rfx?' − คืนเงินสด '+TH(fi.refund-_rfx)+' (คืนเงิน '+TH(fi.refund)+' − โอนคืน '+TH(_rfx)+')':' − คืนเงิน '+TH(fi.refund)):'')+' = <b>'+TH(exp)+'</b></div>'+(_rx.rows||[]).map(function(r){ return '<div class="muted" style="font-size:11.5px;color:#0369a1">🏦 '+esc(r.cn_no||'CN')+' '+esc(String(r.cust||'').slice(0,24))+' '+TH(r.amt)+' โอนคืน '+beDate(r.exp_date)+'</div>'; }).join('') : '';
@@ -2457,7 +2464,7 @@ async function loadCashProof(){
   fn.innerHTML=(ok?'✅ ':'🚩 ')+'นับได้ '+TH(+p.amount)+(exp!=null?(ok?' = ยอดที่ต้องมี':' · ต้องมี '+TH(exp)+' · ต่าง '+TH(+p.amount-exp)):'')+
     ' · <a href="#" onclick="openSlip(\''+escAttr(p.image_path)+'\');return false;">ดูรูป</a>'+br;
   const a=document.getElementById("cashp_amt"); if(a&&!a.value) a.placeholder=(ROLE==="owner"?"ยอดใหม่ (แทนของเดิม "+TH(+p.amount)+")":"ยอดใหม่ที่ขอแก้ (เดิม "+TH(+p.amount)+")");
-  const clean=ok && !(ob&&ob.innerHTML.indexOf("🚩")>=0) && !reqs.some(function(r){return r.status==="pending";});
+  const clean=ok && !(ob&&ob.innerHTML.indexOf("🚩")>=0) && !(_rst && !(RF&&RF.ok)) && !reqs.some(function(r){return r.status==="pending";});
   upState(date,clean,+p.amount);
 }
 /* v0.4.6 (3 ต.ค.69) — อัปครบทุกอย่างและไม่มีปัญหา → ซ่อน 4 ช่อง "สิ่งที่ต้องอัป" เหลือหัวข้อบรรทัดเดียว มีลูกศร ▶ กดเปิดลง
@@ -2530,6 +2537,149 @@ async function cpOtherDel(id){
   catch(err){ alert("ลบไม่สำเร็จ: "+((err&&err.message)||err)); return; }
   await loadCashProof(); try{ renderCut(); }catch(e){}
 }
+/* ===== v0.7.0 (20 ต.ค.69) กล่อง "คืนเงิน (ไม่ออกบิล)" — แคชเชียร์ลงตามใบรายการจ่ายเงิน + แนบรูป 1 รูปต่อวัน
+   คืนตามใบลดหนี้ = เลือกจากใบลดหนี้ใน ACC · คืนเพราะโอนเกิน = ยอดเงินต้องเท่าส่วนที่โอนเกินพอดี · คืนเป็น เงินสด / โอนคืน
+   ตัวเลขที่กรอกใช้ตัดสิน · ACC/ชีตโอน/สเตทเมนต์ใช้ตรวจ · รูปเป็นหลักฐาน · การ์ดตัดบิลใช้ข้อมูลนี้ (cutbill.js v0.7.0) */
+let RF=null;
+function rfOn(date){ return !!(window.RevCut && RevCut.REFUND_FROM && date>=RevCut.REFUND_FROM); }
+function rfBillNo(v,date){ v=String(v||"").trim().toUpperCase().replace(/\s/g,""); if(/^KM\d{4}-\d{4}$/.test(v)) return v; const m=v.match(/^(\d{1,4})$/); if(!m) return v; return "KM"+String(+date.slice(0,4)+543).slice(2)+date.slice(5,7)+"-"+m[1].padStart(4,"0"); }
+function rfGot(bill){ return Math.round(((RF&&RF.xfer)||[]).filter(function(x){ return x.bill===bill && !x.ra; }).reduce(function(s,x){ return s+(+x.knv||0)+(+x.ksk||0); },0)*100)/100; }
+async function rfLoad(date, fi, xfer, rfd){
+  const out={date:date, fi:fi, xfer:xfer||[], rows:(rfd&&rfd.rows)||[], photo:(rfd&&rfd.photo)||null, err:(rfd&&rfd.err)||null, wd:(rfd&&rfd.wd)||[], opts:[], bills:[], appr:{}, nPhoto:0, dayLock:false};
+  try{ const q=await Promise.all([ sb.rpc("rev_refund_cn_options",{p_date:date}), sb.rpc("rev_cut_bills",{p_date:date}), sb.from("rev_cash_refund_proof").select("id").eq("date",date) ]);
+    out.opts=(q[0]&&q[0].data)||[]; out.bills=(q[1]&&q[1].data)||[]; out.nPhoto=((q[2]&&q[2].data)||[]).length;
+    /* เจ้าของอนุมัติบิลของวันนี้ไปแล้ว (หรือบิลที่ผูกแถวคืนเงิน) → แคชเชียร์แก้กล่องคืนเงินไม่ได้ เพราะยอดเงินสดทั้งวันถูกใช้ตัดสินไปแล้ว */
+    const nos=out.rows.map(function(x){ return x.bill_no; });
+    const a=await sb.from("rev_cut_approvals").select("bill_no,status,bill_date").or("bill_date.eq."+date+(nos.length?",bill_no.in.("+nos.join(",")+")":""));
+    ((a&&a.data)||[]).forEach(function(z){ if(z.status!=="cancelled"){ out.appr[z.bill_no]=z.status; if(z.bill_date===date) out.dayLock=true; } });
+  }catch(e){ console.warn("rfLoad",e); }
+  return out;
+}
+function rfRender(st){
+  const el=document.getElementById("cashp_refund"); if(!el) return;
+  RF=st; if(!st){ el.innerHTML=""; return; }
+  const date=st.date, lock=(ROLE!=="owner" && !!st.dayLock), can=cpCanEdit(date) && !lock, fr=st.fi? +(st.fi.refund||0) : null; let bad=!!st.err;
+  const optBy={}; st.opts.forEach(function(o){ optBy[o.cn]=o; });
+  const used={}; st.rows.forEach(function(x){ if(x.kind==="cn") used[x.cn_no]=1; });
+  const wd=(st.wd||[]).slice(); const takeWd=function(a){ const i=wd.findIndex(function(v){ return Math.abs(v-a)<=1; }); if(i<0) return false; wd.splice(i,1); return true; };
+  const sum=Math.round(st.rows.reduce(function(s,x){ return s+(+x.amount||0); },0)*100)/100;
+  let h='<div style="font-weight:600;font-size:13px">↩️ คืนเงิน <span class="muted" style="font-weight:400">(ไม่ออกบิล)</span></div>';
+  if(st.err) h+='<div style="color:#b91c1c;font-size:12px">🚩 โหลดกล่องคืนเงินไม่ได้: '+esc(st.err)+'</div>';
+  if(lock) h+='<div class="muted" style="font-size:11.5px">🔒 เจ้าของอนุมัติตัดบิลของวันนี้แล้ว แก้กล่องคืนเงินไม่ได้ — ถ้าต้องแก้ แจ้งเจ้าของ</div>';
+  const quiet=!st.rows.length && !(fr>0) && !st.photo;
+  if(quiet){ h+='<div class="muted" style="font-size:12px">ฟอร์มวันนี้ไม่มีคืนเงิน</div>'; if(!can){ el.innerHTML=h; RF.ok=!bad; return; } h+='<details style="font-size:12px;margin-top:2px"><summary class="muted" style="cursor:pointer">มีคืนเงิน? กดเพื่อลง</summary>'; }
+  /* 1. รูปใบรายการจ่ายเงิน */
+  if(st.photo) h+='<div style="font-size:12px;margin-top:4px;padding:6px 8px;border-radius:8px;background:#f0fdf4;color:#15803d">✅ แนบรูปใบคืนเงินแล้ว · <a href="#" onclick="openSlip(\''+escAttr(st.photo.image_path)+'\');return false;">ดูรูป</a>'+(st.nPhoto>1?' <span class="muted">(แนบ '+st.nPhoto+' ครั้ง)</span>':'')+
+    (can?' · <label style="cursor:pointer;text-decoration:underline">แนบรูปใหม่<input type="file" accept="image/*" capture="environment" class="hide" onchange="rfPhoto(this)"></label>':'')+'</div>';
+  else h+='<div style="font-size:12px;margin-top:4px;padding:6px 8px;border-radius:8px;background:#fffbeb;border:1px dashed #f59e0b;color:#b45309">📷 <b>1. ถ่ายรูปใบรายการจ่ายเงิน</b> — ยังไม่มีรูป · บิลที่คืนเงินจะพักไว้'+
+    (can?'<label class="btn sec" style="display:block;text-align:center;margin-top:6px;cursor:pointer;padding:7px 10px"><input type="file" accept="image/*" capture="environment" class="hide" onchange="rfPhoto(this)">📷 แนบรูป</label>':'')+'</div>';
+  /* 2. รายการที่บันทึกแล้ว */
+  h+=st.rows.map(function(x){
+    const o=x.kind==="cn"? optBy[x.cn_no] : null; let chk;
+    const okRow=x.kind==="cn"? !!o && (x.bill_no===o.bill||x.bill_no===o.bill2) : null;
+    if(x.kind==="cn") chk= okRow? '<div style="font-size:11px;color:#15803d">✓ มี '+esc(x.cn_no)+' ใน ACC ผูกบิล '+esc(String(o.bill||"").slice(-4))+(o.bill2?'/'+esc(String(o.bill2).slice(-4)):'')+' · ยอดไม่เกิน '+TH(+o.amt)+'</div>' : o? '<div style="font-size:11px;color:#b91c1c">🚩 ใบลดหนี้นี้ใน ACC ผูกบิล '+esc([o.bill,o.bill2].filter(Boolean).join(" / "))+' ไม่ใช่บิลนี้</div>' : '<div style="font-size:11px;color:#b45309">⏳ รอ ACC ยืนยันใบลดหนี้ (ซิงก์ประมาณ 16:30) — บิลพักไว้ก่อน</div>';
+    if(x.kind==="cn"){ if(!okRow) bad=true; }
+    else { const b=st.bills.find(function(z){ return z.no===x.bill_no; }); const got=rfGot(x.bill_no), need=b? Math.round((+b.out||0)*100)/100 : null;
+      const okOv=(b && Math.abs(got-need-(+x.amount))<=1); if(!okOv) bad=true;
+      chk=okOv? '<div style="font-size:11px;color:#15803d">✓ ชีตโอน '+TH(got)+' − บิล '+TH(need)+' = เกิน '+TH(got-need)+'</div>' : '<div style="font-size:11px;color:#b91c1c">🚩 ยอดเงินไม่ตรงส่วนที่โอนเกิน'+(b?' (ชีตโอน '+TH(got)+' · บิล '+TH(need)+')':'')+'</div>'; }
+    const okWd=(x.pay!=="transfer") || takeWd(+x.amount); if(!okWd) bad=true;
+    if(x.pay==="transfer") chk+= okWd? '<div style="font-size:11px;color:#15803d">✓ เจอเงินโอนออก '+TH(+x.amount)+' ในสเตทเมนต์</div>' : '<div style="font-size:11px;color:#b45309">⏳ ยังไม่เจอเงินโอนคืน '+TH(+x.amount)+' ในสเตทเมนต์ — บิลพักไว้ก่อน</div>';
+    const rlock=(ROLE!=="owner" && st.appr[x.bill_no]);
+    return '<div style="font-size:13px;padding:4px 0;border-bottom:1px dashed #e5e7eb"><div style="display:flex;justify-content:space-between;gap:6px"><span><b>'+esc(x.bill_no)+'</b> · '+(x.kind==="cn"?'คืนตามใบลดหนี้':'คืนเพราะโอนเกิน')+'</span><span style="white-space:nowrap">'+TH(+x.amount)+(can&&!rlock?' <a href="#" title="ลบ" onclick="rfDel('+(+x.id)+');return false;" style="color:#b91c1c;text-decoration:none">✕</a>':'')+'</span></div>'+
+      '<div class="muted" style="font-size:11.5px">'+(x.cn_no?esc(x.cn_no)+' · ':'')+(x.pay==="transfer"?'🏦 โอนคืน':'💵 เงินสด')+(o&&o.name?' · '+esc(String(o.name).slice(0,28)):'')+'</div>'+chk+'</div>';
+  }).join("");
+  /* สรุปเทียบฟอร์ม */
+  if(st.rows.length || fr>0){ const m=(fr!=null)&&Math.abs(sum-fr)<=1; if(!(m&&st.photo)) bad=true;
+    h+=(m&&st.photo)? '<div style="font-size:12px;margin-top:4px;color:#15803d">✓ ลงคืนเงินรวม '+TH(sum)+' = คืนเงินในฟอร์ม '+TH(fr)+'</div>'
+      : '<div style="font-size:12px;margin-top:4px;color:'+(m?'#b45309':'#b91c1c')+'">'+(m?'⏳ ลงคืนเงินรวม '+TH(sum)+' ตรงฟอร์มแล้ว · รอรูปใบคืนเงิน':'🚩 ลงคืนเงินรวม '+TH(sum)+' · คืนเงินในฟอร์ม '+(fr==null?'—':TH(fr))+(fr!=null&&sum<fr?' — ยังลงไม่ครบ ขาด '+TH(fr-sum):''))+'</div>'; }
+  /* ช่องคืนสดในตาราง CN ของไฟล์ Excel ต้องตรงกับกล่อง (ยังกรอกทั้ง 2 ที่จนกว่าจะเลิกใช้ Excel) */
+  const ex={}; ((st.fi&&st.fi.cns)||[]).forEach(function(c){ const k=String(c.cn_no||"").trim(); if(k) ex[k]=Math.round(((ex[k]||0)+(+c.cash||0))*100)/100; });
+  const bx={}; st.rows.forEach(function(x){ if(x.kind==="cn") bx[x.cn_no]=Math.round(((bx[x.cn_no]||0)+(+x.amount||0))*100)/100; });
+  Object.keys(Object.assign({},ex,bx)).sort().forEach(function(k){ const a=ex[k]||0, b=bx[k]||0; if(Math.abs(a-b)>0.5){ bad=true; } if(Math.abs(a-b)>0.5) h+='<div style="font-size:11.5px;color:#b91c1c">🚩 '+esc(k)+' ไฟล์ Excel ช่องคืนสด '+TH(a)+' · กล่องคืนเงิน '+TH(b)+' — แก้ไฟล์ Excel ให้ตรงแล้วอัปใหม่</div>'; });
+  /* 3. ฟอร์มบันทึกรายการ */
+  if(can){
+    const left=st.opts.filter(function(o){ return !used[o.cn]; }).length;
+    const pairs=[]; st.opts.forEach(function(o){ pairs.push({o:o, bill:o.bill, two:false}); if(o.bill2) pairs.push({o:o, bill:o.bill2, two:true}); });
+    h+='<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:8px;margin-top:6px"><div style="font-size:12px;font-weight:600;margin-bottom:4px">2. บันทึกรายการตามใบ</div>'+
+      '<div class="muted" style="font-size:11px">ประเภท</div><select id="rf_kind" class="rsn" style="width:100%;max-width:none;padding:7px 6px" onchange="rfKind()"><option value="cn">คืนตามใบลดหนี้</option><option value="overpay">คืนเพราะโอนเกิน</option></select>'+
+      '<div id="rf_cnw"><div class="muted" style="font-size:11px;margin-top:4px">ใบลดหนี้ (จาก ACC)</div><select id="rf_cn" class="rsn" style="width:100%;max-width:none;padding:7px 6px" onchange="rfPick()"><option value="">เลือกใบลดหนี้ ('+left+' ใบ)</option>'+
+      pairs.map(function(p){ const o=p.o; return '<option value="'+escAttr(o.cn+"|"+p.bill)+'"'+(used[o.cn]?' disabled':'')+'>'+esc(o.cn)+' · '+esc(p.bill||"")+(p.two?' (บิลที่ใช้เครดิต)':'')+' · '+TH(+o.amt)+' · '+esc(String(o.name||"").slice(0,20))+(used[o.cn]?' · บันทึกแล้ว':'')+'</option>'; }).join("")+
+      '<option value="__m">✏️ พิมพ์เลข CN เอง (ยังไม่ซิงก์จาก ACC)</option></select><input id="rf_cnm" class="rsn" placeholder="CN6910-0024" style="width:100%;max-width:none;box-sizing:border-box;margin-top:4px;display:none"></div>'+
+      '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap"><div style="flex:1 1 120px;min-width:0"><div class="muted" style="font-size:11px">เลขบิล</div><input id="rf_bill" class="rsn" placeholder="KM6910-0770" style="width:100%;max-width:none;box-sizing:border-box"></div>'+
+      '<div style="flex:1 1 100px;min-width:0"><div class="muted" style="font-size:11px">ยอดเงิน</div><input id="rf_amt" class="rsn" inputmode="decimal" oninput="cpFmtAmt(this)" placeholder="บาท" style="width:100%;max-width:none;box-sizing:border-box;text-align:right"></div></div>'+
+      '<div class="muted" style="font-size:11px;margin-top:4px">คืนเป็น</div><select id="rf_pay" class="rsn" style="width:100%;max-width:none;padding:7px 6px"><option value="cash">💵 เงินสด</option><option value="transfer">🏦 โอนคืน</option></select>'+
+      '<button type="button" class="btn sec" style="width:100%;margin-top:6px;padding:7px 10px" onclick="rfAdd()">💾 บันทึกรายการ</button></div>';
+  }
+  if(quiet) h+='</details>';
+  el.innerHTML=h; RF.ok=!bad;
+  if(can) rfKind();
+}
+function rfKind(){ const k=(document.getElementById("rf_kind")||{}).value, w=document.getElementById("rf_cnw"), b=document.getElementById("rf_bill"); if(!w||!b) return;
+  w.style.display=k==="cn"?"":"none"; b.value=""; const a=document.getElementById("rf_amt"); if(a) a.value=""; const c=document.getElementById("rf_cn"); if(c) c.value="";
+  const m=document.getElementById("rf_cnm"); if(m){ m.style.display="none"; m.value=""; }
+  b.readOnly=(k==="cn"); b.style.background=(k==="cn")?"#f1f5f9":""; b.placeholder=(k==="cn")?"เลือกใบลดหนี้ก่อน":"KM6910-0770"; }
+function rfPick(){ const v=(document.getElementById("rf_cn")||{}).value, b=document.getElementById("rf_bill"), a=document.getElementById("rf_amt"), m=document.getElementById("rf_cnm"); if(!b||!RF) return;
+  if(v==="__m"){ m.style.display=""; b.readOnly=false; b.style.background=""; b.value=""; b.placeholder="KM6910-0770"; if(a) a.value=""; m.focus(); return; }
+  m.style.display="none"; m.value=""; b.readOnly=true; b.style.background="#f1f5f9";
+  const pv=String(v||"").split("|"); const o=RF.opts.find(function(z){ return z.cn===pv[0]; }); b.value=o?(pv[1]||o.bill||""):""; if(a){ a.value=o?String(+o.amt):""; cpFmtAmt(a); } }
+async function rfAdd(){
+  const st=RF; if(!st) return; const date=st.date;
+  if(date!==cpDate()){ alert("วันที่เปลี่ยนไปแล้ว กดใหม่อีกครั้ง"); await loadCashProof(); return; }
+  if(!cpCanEdit(date)){ alert("บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง\nแคชเชียร์ลงคืนเงินได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
+  if(ROLE!=="owner" && st.dayLock){ alert("เจ้าของอนุมัติตัดบิลของวันนี้แล้ว แก้กล่องคืนเงินไม่ได้ — แจ้งเจ้าของ"); return; }
+  const kind=(document.getElementById("rf_kind")||{}).value==="overpay"?"overpay":"cn";
+  const pay=(document.getElementById("rf_pay")||{}).value==="transfer"?"transfer":"cash";
+  const amt=parseFloat(String((document.getElementById("rf_amt")||{}).value||"").replace(/[, ]/g,""));
+  let bill=rfBillNo((document.getElementById("rf_bill")||{}).value,date), cn=null, manual=false, why="";
+  if(kind==="cn"){
+    const v=(document.getElementById("rf_cn")||{}).value;
+    if(!v){ alert("เลือกใบลดหนี้ก่อน"); return; }
+    if(v==="__m"){ cn=String((document.getElementById("rf_cnm")||{}).value||"").trim().toUpperCase().replace(/\s/g,"");
+      if(!/^CN\d{4}-\d{4}$/.test(cn)){ alert("เลข CN ไม่ถูกต้อง (เช่น CN6910-0024)"); return; }
+      if(st.opts.some(function(o){ return o.cn===cn; })){ alert(cn+" มีในรายการแล้ว ให้เลือกจากรายการแทน"); return; }
+      if(!/^KM\d{4}-\d{4}$/.test(bill)){ alert("ใส่เลขบิลของใบลดหนี้นี้ (เช่น KM6910-0738)"); return; }
+      manual=true; why="\n⏳ ใบลดหนี้นี้ยังไม่มีใน ACC — บิลจะพักไว้จนรอบซิงก์ถัดไปเจอ";
+    }else{ const pv=String(v).split("|"); const o=st.opts.find(function(z){ return z.cn===pv[0]; }); if(!o){ alert("ไม่พบใบลดหนี้นี้"); return; }
+      cn=o.cn; bill=(pv[1]===o.bill2&&o.bill2)? o.bill2 : o.bill;
+      if(!(amt>0)){ alert("ใส่ยอดเงิน"); return; }
+      if(amt>(+o.amt)+0.01){ alert("ยอดเงินเกินใบลดหนี้ "+cn+" ("+TH(+o.amt)+")"); return; } }
+  }else{
+    if(!/^KM\d{4}-\d{4}$/.test(bill)){ alert("ใส่เลขบิลที่ลูกค้าโอนเกิน (เช่น KM6910-0770)"); return; }
+    const b=st.bills.find(function(z){ return z.no===bill; });
+    if(!b){ alert("ไม่พบบิล "+bill+" ในบิลของวันที่ "+beDate(date)); return; }
+    const got=rfGot(bill), need=Math.round((+b.out||0)*100)/100, exc=Math.round((got-need)*100)/100;
+    if(!(got>0)){ alert("บิล "+bill+" ไม่มีในชีตโอนของวันนี้ — คืนเพราะโอนเกินได้เฉพาะบิลที่ลูกค้าโอน"); return; }
+    if(exc<=0.5){ alert("บิล "+bill+" ไม่ได้โอนเกิน\nชีตโอน "+TH(got)+" · ยอดบิล "+TH(need)); return; }
+    if(!(amt>0)){ alert("ใส่ยอดเงิน"); return; }
+    if(Math.abs(amt-exc)>1){ alert("ลูกค้าโอนเกินแค่ "+TH(exc)+"\n(ชีตโอน "+TH(got)+" − ยอดบิล "+TH(need)+")\nกรอก "+TH(amt)+" ไม่ได้"); return; }
+  }
+  if(!(amt>0)){ alert("ใส่ยอดเงิน"); return; }
+  if(!confirm("บันทึกคืนเงินของวันที่ "+beDate(date)+"\n"+bill+(cn?" · "+cn:"")+"\n"+(kind==="cn"?"คืนตามใบลดหนี้":"คืนเพราะโอนเกิน")+" "+TH(amt)+" บาท · "+(pay==="transfer"?"โอนคืน":"เงินสด")+why+"\nใช่ไหม?")) return;
+  try{ await ensureOwnerSession(); const r=await sb.from("rev_cash_refund").insert([{date:date,bill_no:bill,kind:kind,cn_no:cn,amount:amt,pay:pay,cn_manual:manual,created_role:ROLE}]);
+    if(r.error){ if(String(r.error.code)==="23505") throw new Error(kind==="cn"? cn+" บันทึกไปแล้ว" : "บิล "+bill+" บันทึกคืนเงินโอนเกินไปแล้ว"); throw r.error; } }
+  catch(err){ alert("บันทึกไม่สำเร็จ: "+((err&&err.message)||err)); return; }
+  await loadCashProof(); try{ renderCut(); }catch(e){}
+}
+async function rfDel(id){
+  const st=RF; if(!st) return; const date=st.date; const x=st.rows.find(function(z){ return +z.id===+id; }); if(!x) return;
+  if(!cpCanEdit(date)){ alert("แคชเชียร์ลบได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
+  if(ROLE!=="owner" && (st.appr[x.bill_no]||st.dayLock)){ alert("เจ้าของอนุมัติตัดบิลแล้ว ลบไม่ได้ — แจ้งเจ้าของ"); return; }
+  if(!confirm("ลบรายการคืนเงิน "+x.bill_no+(x.cn_no?" · "+x.cn_no:"")+" "+TH(+x.amount)+" ?")) return;
+  try{ await ensureOwnerSession(); const r=await sb.from("rev_cash_refund").delete().eq("id",id); if(r.error) throw r.error; }
+  catch(err){ alert("ลบไม่สำเร็จ: "+((err&&err.message)||err)); return; }
+  await loadCashProof(); try{ renderCut(); }catch(e){}
+}
+async function rfPhoto(inp){
+  const file=inp.files&&inp.files[0]; inp.value=""; if(!file||!RF) return; const date=RF.date;
+  if(date!==cpDate()){ alert("วันที่เปลี่ยนไปแล้ว ลองใหม่"); return; }
+  if(!cpCanEdit(date)){ alert("แคชเชียร์แนบรูปได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
+  if(!confirm("แนบรูปใบรายการจ่ายเงิน (คืนเงิน) ของวันที่ "+beDate(date)+(RF.photo?"\n(แทนรูปเดิม — รูปเดิมยังเก็บไว้)":"")+" ?")) return;
+  try{ await ensureOwnerSession(); const blob=await cpShrink(file); const path="refundslip/"+date+"/"+Date.now()+".jpg";
+    const up=await sb.storage.from("revenue-slips").upload(path,blob,{contentType:"image/jpeg",upsert:false}); if(up.error) throw up.error;
+    const r=await sb.from("rev_cash_refund_proof").insert([{date:date,image_path:path,uploaded_role:ROLE}]); if(r.error) throw r.error; }
+  catch(err){ alert("แนบรูปไม่สำเร็จ: "+((err&&err.message)||err)); return; }
+  await loadCashProof(); try{ renderCut(); }catch(e){}
+}
 function cpShrink(file){ return new Promise(function(res){
   try{ const img=new Image(), url=URL.createObjectURL(file);
     img.onload=function(){ const M=1600, k=Math.min(1,M/Math.max(img.width,img.height)); const c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
@@ -2594,13 +2744,14 @@ async function renderCut(){
   if(!D.bills.length && !(OB.ready.length+OB.appr.length+OB.done.length+OB.wait.length)){ card.innerHTML='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2><div class="muted">ยังไม่มีบิลของวันนี้จาก ACC-BILLING (ซิงก์ทุกเช้า)</div>'; return; }
   const ready=R.t.concat(R.c), miss=[];
   if(D.status!=="ตรวจแล้ว") miss.push("วันนี้ยังไม่ได้กดยืนยันผลตรวจ");
-  if(!D.hasK) miss.push("ยังไม่มีรายงาน K+"); if(!D.hasB) miss.push("ยังไม่มีสเตทเมนต์");
+  if(!D.hasK) miss.push("ยังไม่มีรายงาน K+"); if(D.kLateWarn) miss.push(D.kLateWarn); if(!D.hasB) miss.push("ยังไม่มีสเตทเมนต์");
   let h='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2>';
   h+='<div class="cut-chips"><span class="cut-chip cc-ok">✅ พร้อมตัด '+ready.length+'</span><span class="cut-chip cc-hold">⏸ พักไว้ '+R.h.length+'</span>'+
      (R.appr.length?'<span class="cut-chip cc-appr">🕒 อนุมัติแล้ว รอตัด '+R.appr.length+'</span>':'')+
      '<span class="cut-chip cc-skip">➖ ไม่ต้องตัด '+R.s.length+'</span><span class="cut-chip cc-done">✔ ตัดแล้ว '+(R.done.length+R.cut.length)+'</span></div>';
   if(miss.length) h+='<div class="muted" style="color:#b45309">⚠ '+miss.join(" · ")+' — บิลเงินโอนที่หาเงินไม่เจอจะถูกพักไว้</div>';
-  h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืนตามใบลดหนี้ '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
+  h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืน'+(R.refund&&R.refund.on?'':'ตามใบลดหนี้')+' '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
+  if(R.refund&&R.refund.on&&(R.refund.rows.length||R.refund.gate)) h+='<div class="muted">↩️ คืนเงิน: '+(R.refund.gate?'🚩 '+esc(R.refund.gate):'✅ ใบคืนเงิน '+R.refund.rows.length+' รายการ '+TH(R.refund.sum)+' ตรงกับฟอร์ม')+'</div>';
   h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3>'+cutList(R.t,"t")+'</div>';
   h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินสด <span class="muted">'+R.c.length+' บิล · '+TH(cutSum(R.c))+'</span></h3>'+cutList(R.c,"c")+'</div>';
   if(R.appr.length) h+='<div class="cut-sec"><h3>🕒 อนุมัติแล้ว รอเลขาตัด <span class="muted">'+R.appr.length+' บิล · '+TH(cutSum(R.appr))+'</span></h3>'+cutList(R.appr,"a")+'</div>';

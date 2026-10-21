@@ -119,11 +119,11 @@
 }
 /* v0.4.2 ยอดจากเครื่อง = แถบสถานะบรรทัดเดียว (ไม่ใช่ช่องอัป) */
 .accbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:10px 14px;border-radius:10px;border:1px solid #fcd34d;background:#fffbeb;font-size:14.5px}
-.accbar.on{border-color:#86efac;background:#f0fdf4}
+.accbar.on{border-color:#cbd5e1;background:#f8fafc} /* v0.5.5 เทา = ดึงข้อมูลครบ (ไม่ได้แปลว่ายอดตรง) */
 .accbar .ab-ic{font-size:20px;line-height:1}
 .accbar .ab-nm{font-weight:800}
 .accbar .ab-src{font-weight:400;color:#78716c;font-size:13px}
-.accbar .ab-fn{font-weight:700;color:#15803d}
+.accbar .ab-fn{font-weight:700;color:#334155}
 .accbar .ab-fn br{display:none}
 .accbar .ab-fn br+span::before{content:"· ";color:#a8a29e}
 .accbar .ab-fn>span{margin-left:4px}
@@ -142,6 +142,22 @@
 .cut-tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 7px;border-radius:6px;margin-top:2px}
 .ct-ok{background:#ecfdf5;color:#15803d}.ct-hold{background:#fff7ed;color:#c2410c}.ct-skip{background:#f1f5f9;color:#475569}
 .cut-done{background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:10px 12px;margin-top:10px;color:#3730a3;font-size:14px}
+/* v0.5.5 (21 ต.ค.69) — การ์ดตัดบิลแบบย่อ + popup รายละเอียด · แถบเตือนยอดเครื่องเปลี่ยนหลังยืนยัน */
+.cut-chip.click{cursor:pointer;border:0;font-family:inherit}
+.cut-sum{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid #f1f0ee;font-size:14.5px}
+.cut-sum .r{font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cut-link{color:#c2410c;font-weight:700;text-decoration:underline;cursor:pointer;background:none;border:0;padding:0;font:inherit;font-weight:700}
+.cut-grp{border-radius:10px;padding:2px 10px;border:1px solid #f1f0ee;background:#fafaf9}
+.cut-grp.h{border-color:#fed7aa;background:#fff7ed}.cut-grp.t{border-color:#bbf7d0;background:#f0fdf4}
+.acc-drift{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;border-radius:10px;padding:9px 14px;border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;font-weight:700;cursor:pointer;font-size:14.5px}
+.acc-drift .go{font-size:13px;white-space:nowrap;text-decoration:underline}
+.rpop-ov{position:fixed;inset:0;background:rgba(28,25,23,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:12px}
+.rpop{background:#fff;width:100%;max-width:600px;max-height:88vh;overflow:auto;border-radius:16px;padding:16px 18px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.rpop-h{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+.rpop-h h3{margin:0;font-size:17px}
+.rpop-x{border:0;background:#f5f5f4;border-radius:8px;min-width:36px;height:36px;font-size:18px;cursor:pointer}
+.rpop table{border-collapse:collapse;width:100%;font-size:14px}.rpop td{padding:5px 6px;border-bottom:1px dashed #fecaca}.rpop td.n{text-align:right;font-variant-numeric:tabular-nums}
+@media (max-width:640px){ .rpop-ov{align-items:flex-end;padding:0} .rpop{border-radius:16px 16px 0 0;max-height:90vh} }
 @media (max-width:640px){ #d_cashp>*:not(.ic){grid-column:2} #d_cashp .ic{grid-row:1/3} #cashp_amt{max-width:none!important;width:100%;text-align:center} }
 @media (max-width:640px){ .card td,.card th{white-space:nowrap} #cutCard td{white-space:normal} }
 </style>
@@ -159,7 +175,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.4</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.5.5</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -183,6 +199,7 @@
         <span class="ab-fn" id="fn_acc">กำลังโหลด…</span>
         <label id="acc_up" class="r-fin" style="display:none;cursor:pointer"><input type="file" accept=".xlsx,.xls" class="hide" id="f_pos"><span class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px">📂 อัปไฟล์เครื่องเอง</span><span class="fn" id="fn_pos"></span></label>
       </div>
+      <div id="acc_drift"></div>
       <div class="muted" id="up_lbl" style="margin:12px 0 8px">สิ่งที่ต้องอัป</div>
       <div class="drops" id="up_drops" style="margin-bottom:0">
         <label class="drop" id="d_form"><input type="file" accept=".xlsx,.xls" class="hide" id="f_form"><div class="ic">📄</div><div class="nm">ฟอร์มแคชเชียร์</div><div class="hint">ชีต “สรุปรายรับ-รายจ่าย”</div><div class="fn" id="fn_form"></div></label>
@@ -358,6 +375,55 @@ function posFromAcc(a){
            custTotal:custTotal, custBill:custBill, billCust:billCust, billTotal:billTotal,
            custTotalByName:custTotalByName, fromCloud:true };
 }
+/* v0.5.5 (21 ต.ค.69) — popup กลาง (ปิดด้วย ✕ / แตะพื้นหลัง / Esc) */
+function revPop(title,html){
+  revPopClose();
+  const ov=document.createElement("div"); ov.className="rpop-ov"; ov.id="rpopOv";
+  ov.innerHTML='<div class="rpop" role="dialog" aria-modal="true"><div class="rpop-h"><h3>'+title+'</h3><button type="button" class="rpop-x" aria-label="ปิด" onclick="revPopClose()">✕</button></div>'+html+'<button type="button" class="btn sec" style="width:100%;margin-top:14px;min-height:44px" onclick="revPopClose()">ปิด</button></div>';
+  ov.addEventListener("click",function(e){ if(e.target===ov) revPopClose(); });
+  document.body.appendChild(ov);
+}
+function revPopClose(){ const o=document.getElementById("rpopOv"); if(o) o.remove(); }
+document.addEventListener("keydown",function(e){ if(e.key==="Escape") revPopClose(); });
+/* v0.5.5 (21 ต.ค.69) — ยอดเครื่องเปลี่ยนหลังแคชเชียร์กดยืนยัน
+   rev_audit.machine_net = ยอดเครื่อง (ACC) ตอนยืนยัน · เทียบกับยอด ACC ตอนนี้ ต่างเกิน 1 บาท = มีบิล/ใบลดหนี้เข้าวันนั้นหลังยืนยัน (คีย์ย้อนหลัง)
+   เดิมแถบยอดจากเครื่องขึ้น ✓ เขียว และ "อัปครบ ไม่มีปัญหา" ใช้ผลตอนยืนยัน → เขียวทั้งที่ยอดไม่ตรงแล้ว (เคส 20/10 บิล 0850 430 เปิดย้อนหลัง)
+   เทียบเฉพาะวันที่ยอดตอนยืนยันมาจาก ACC (ไม่ได้อัปไฟล์เครื่องเอง) เพราะไฟล์เครื่องคิดยอดคนละแบบ */
+async function accDrift(d,data,stale){
+  try{
+    const q=await sb.from("rev_audit").select("machine_net,form_main,status,detail->files").eq("date",d).maybeSingle();
+    if(stale()) return; const au=q&&q.data; if(!au||au.machine_net==null||au.status==="วันหยุด") return;
+    if(au.files && au.files.pos) return;
+    const was=+au.machine_net, now=+data.net, diff=Math.round((now-was)*100)/100; if(Math.abs(diff)<=1) return;
+    let late=[];
+    try{ let first=null, nd=d; for(let i=0;i<3&&!first;i++){ nd=shiftISO1(nd); const nx=await sb.rpc("rev_cut_bills",{p_date:nd}); if(stale()) return; /* วันถัดไปร้านปิด → ดูวันถัดไปอีก (ไม่เกิน 3 วัน) */
+        first=((nx&&nx.data)||[]).map(function(b){ return String(b.no||""); }).filter(Boolean).sort()[0]||null; }
+      const sq=function(no){ const m=/^(KM\d{4})-(\d+)$/.exec(String(no||"")); return m?{p:m[1],n:+m[2]}:null; }, f=sq(first);
+      const byNo={}; (data.bills||[]).forEach(function(b){ const no=String(b.no||"").trim(); if(!no) return; if(!byNo[no]) byNo[no]={no:no,name:b.name,amt:0,first:first}; byNo[no].amt=Math.round((byNo[no].amt+(+b.amt||0))*100)/100; }); /* ACC อาจส่งหลายแถวต่อบิล → รวมก่อน */
+      if(f) late=Object.keys(byNo).filter(function(no){ const s=sq(no); return s&&s.p===f.p&&s.n>f.n; }).sort().map(function(no){ return byNo[no]; });
+    }catch(_e){}
+    window._accDrift={d:d,was:was,now:now,diff:diff,form:+au.form_main,late:late};
+    const el=document.getElementById("acc_drift");
+    if(el) el.innerHTML='<div class="acc-drift" role="button" tabindex="0" onclick="accDriftPop()"><span>🚩 ยอดเครื่องเปลี่ยนหลังแคชเชียร์ยืนยัน · '+(diff>0?'+':'−')+TH(Math.abs(diff))+'</span><span class="go">ดูรายละเอียด ›</span></div>';
+    if(window._upLast && window._upLast.date===d) upState(d,window._upLast.clean,window._upLast.amt);
+  }catch(e){ console.warn("accDrift",e); }
+}
+function shiftISO1(iso){ const p=String(iso).slice(0,10).split("-"); const t=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]+1)); return t.toISOString().slice(0,10); }
+function accDriftPop(){
+  const x=window._accDrift; if(!x) return;
+  let h='<div class="muted">ยอดในเครื่อง (ACC-BILLING) ของวันนี้เปลี่ยนไปหลังจากแคชเชียร์กดยืนยันฟอร์มแล้ว — '+(x.diff>0?'มีบิลถูกคีย์เข้าวันนี้ทีหลัง หรือบิลถูกแก้ยอดขึ้น':'มีบิลถูกยกเลิก/แก้ยอดลง หรือมีใบลดหนี้เพิ่มเข้าวันนี้ทีหลัง')+'</div>';
+  h+='<table style="margin-top:10px"><tr><td></td><td class="n"><b>ตอนยืนยัน</b></td><td class="n"><b>ตอนนี้</b></td></tr>'
+    +'<tr><td>ยอดเครื่อง</td><td class="n">'+TH(x.was)+'</td><td class="n"><b>'+TH(x.now)+'</b></td></tr>'
+    +'<tr><td>ฟอร์มแคชเชียร์</td><td class="n">'+TH(x.form)+'</td><td class="n">'+TH(x.form)+'</td></tr>'
+    +'<tr><td>เครื่อง − ฟอร์ม</td><td class="n">'+TH(x.was-x.form)+'</td><td class="n" style="color:#b91c1c"><b>'+TH(x.now-x.form)+'</b></td></tr></table>';
+  h+='<div class="muted" style="margin-top:4px">ฟอร์มอาจมีบรรทัด UPK / คืนเงิน ที่ทำให้เครื่องกับฟอร์มต่างกันอยู่แล้ว — ดูที่การเปลี่ยนจาก "ตอนยืนยัน" เป็น "ตอนนี้"</div>';
+  if(x.late.length){ const sum=x.late.reduce(function(s,b){ return s+b.amt; },0);
+    h+='<div style="margin-top:12px;font-weight:800">บิลที่เปิดย้อนหลัง <span class="muted">(เลขบิลอยู่หลังบิล '+esc(String(x.late[0].first).slice(-4))+' ของวันถัดไป)</span></div><div class="cut-grp h" style="margin-top:4px">'
+      +x.late.map(function(b){ return '<div class="cut-row"><div><b>'+esc(b.no)+'</b> · '+esc(b.name||"")+'<div class="muted">ไม่อยู่ในฟอร์มที่ยืนยันไว้ — ให้แคชเชียร์ลงฟอร์ม Excel แล้วอัปใหม่</div></div><div class="r">'+TH(b.amt)+'</div></div>'; }).join("")+'</div>'
+      +(Math.abs(sum-x.diff)<=1?'<div class="muted" style="margin-top:4px;color:#15803d">✓ ยอดบิลเหล่านี้รวม '+TH(sum)+' = ยอดที่เปลี่ยนพอดี</div>':'<div class="muted" style="margin-top:4px">บิลเหล่านี้รวม '+TH(sum)+' · ยอดที่เปลี่ยน '+TH(x.diff)+' — ส่วนที่เหลือดูใบลดหนี้ในหน้ารายละเอียดวัน</div>');
+  } else h+='<div class="muted" style="margin-top:12px">'+(x.diff>0?'หาบิลเปิดย้อนหลังไม่เจอ — ':'')+'ดูใบลดหนี้/บิลที่ยกเลิกหรือแก้ยอดใน ACC-BILLING ของวันนี้</div>';
+  revPop("🚩 ยอดเครื่องเปลี่ยนหลังยืนยัน · "+beDate(x.d),h);
+}
 function fmtSync(s){ if(!s) return "—"; const d=new Date(s);
   return beDate(d.toISOString().slice(0,10))+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
 function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.value) return;
@@ -372,6 +438,7 @@ function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.va
   const be=document.getElementById("accDateBe"); if(be) be.textContent=beDate(d);
   const fn=document.getElementById("fn_acc"), box=document.getElementById("d_acc");
   if(fn) fn.textContent="กำลังโหลด…";
+  window._accDrift=null; try{ var _drEl=document.getElementById("acc_drift"); if(_drEl) _drEl.innerHTML=""; }catch(_eD){}
   try{
     if(!sb) throw new Error("ยังเชื่อมต่อฐานข้อมูลไม่ได้");
     await ensureOwnerSession();
@@ -387,7 +454,8 @@ function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.va
     if(accComplete(data,d)){
       DATA.pos = posFromAcc(data); DATA["_e_pos"]=null;
       if(box) box.classList.add("on");
-      if(fn) fn.innerHTML = "✓ "+TH0(data.bills_count)+" บิล · "+TH(data.net)+"<br><span style='color:#78716c;font-weight:400'>ซิงก์ "+fmtSync(data.syncedAt)+"</span>";
+      if(fn) fn.innerHTML = "ดึงครบแล้ว · "+TH0(data.bills_count)+" บิล · "+TH(data.net)+"<br><span style='color:#78716c;font-weight:400'>ซิงก์ "+fmtSync(data.syncedAt)+"</span>";
+      accDrift(d,data,_stale); /* v0.5.5 ยอดเครื่องเปลี่ยนหลังแคชเชียร์ยืนยันไหม */
     }else{
       DATA._acc=data||null;
       if(DATA._posFile){
@@ -813,6 +881,13 @@ function render(){
    แคชเชียร์ลงในฟอร์มว่ารับเงินแล้ว ถ้าเลยวันถัดไปยังไม่มีใบเสร็จใน ACC-BILLING
    ให้ขึ้นเตือนตรงนี้ (และเตือนซ้ำทาง Telegram ทุกเช้า) */
 function pendingCardHtml(){
+  /* v0.5.5 (21 ต.ค.69) — เอาตาราง ④ ออกตามที่เจ้าของสั่ง: อ่านจาก ACC ที่ซิงก์วันละ 2 รอบ ไม่รู้ว่าตัดบิล/คืนเงินไปแล้ว → เตือนหลอก (เคส 21/10 ต้องตาม 33 รายการ ทั้งที่ตัดครบ)
+     ด่านที่ยังจำเป็น (เลขบิลในชีตโอนหาไม่เจอ · เงินสดร้านค้าไม่เท่าบิล) อยู่ในการ์ดตัดบิล (cutbill.js) แทน */
+  /* ผู้ตรวจ 21 ต.ค.69: การ์ดนี้เคยเป็นที่เดียวที่บอกว่าบันทึกรายการจากฟอร์มไม่สำเร็จ — คงไว้เฉพาะกรณีนี้ */
+  if(DATA._declaredErr) return '<div class="card" style="border-color:#fca5a5;background:#fef2f2"><h2>⚠ บันทึกรายการจากฟอร์มไม่สำเร็จ</h2><div class="muted">'+esc(DATA._declaredErr)+' — ลองอัปฟอร์มใหม่อีกครั้ง</div></div>';
+  return "";
+}
+function pendingCardHtml_old(){
   const a=DATA._acc; if(!a) return "";
   const rows=a.pending||[]; const n=+a.pendingCount||0; const amt=+a.pendingAmt||0;
   if(DATA._declaredErr){
@@ -2396,7 +2471,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261010a"></script>
-<script src="cutbill.js?v=20261020a"></script>
+<script src="cutbill.js?v=20261021a"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
@@ -2473,12 +2548,18 @@ async function loadCashProof(){
 async function upState(date,cashClean,cashAmt){
   const lbl=document.getElementById("up_lbl"), dr=document.getElementById("up_drops"); if(!lbl||!dr) return;
   const _t=(window._upTok=(window._upTok||0)+1);
+  window._upLast={date:date,clean:cashClean,amt:cashAmt};
   let done=false;
   if(cashClean){ try{ const q=await Promise.all([ sb.from("rev_audit").select("date,detail->recon_ok").eq("date",date).maybeSingle(), sb.from("rev_daily").select("kplus_total,bank_dep_total").eq("date",date).maybeSingle() ]);
       const au=q[0]&&q[0].data, da=q[1]&&q[1].data;
       done=!!au && au.recon_ok!==false && !!da && da.kplus_total!=null && da.bank_dep_total!=null;
     }catch(e){ done=false; } }
   if(_t!==window._upTok || cpDate()!==date) return;
+  /* v0.5.5: ยอดเครื่องเปลี่ยนหลังยืนยัน → ไม่ถือว่า "ไม่มีปัญหา" */
+  const _dr=(window._accDrift && window._accDrift.d===date)? window._accDrift : null;
+  if(_dr && done){ const _o=(window._upOpen===date);
+    lbl.innerHTML='<span style="display:inline-block;width:14px">'+(_o?'▼':'▶')+'</span>สิ่งที่ต้องอัป · <span style="color:#b91c1c;font-weight:600">⚠ ยอดเครื่องเปลี่ยนหลังยืนยัน — ต้องตรวจใหม่</span>';
+    lbl.style.cursor="pointer"; lbl.onclick=function(){ window._upOpen=(window._upOpen===date)?null:date; upState(date,true,cashAmt); }; dr.style.display=_o?"":"none"; return; }
   if(!done){ window._upOpen=null; lbl.innerHTML="สิ่งที่ต้องอัป"; lbl.style.cursor=""; lbl.onclick=null; dr.style.display=""; return; }
   const open=(window._upOpen===date);
   lbl.innerHTML='<span style="display:inline-block;width:14px">'+(open?'▼':'▶')+'</span>สิ่งที่ต้องอัป · <span style="color:#15803d;font-weight:600">✓ อัปครบ ไม่มีปัญหา</span> <span style="font-size:12px">(ฟอร์ม · ใบนับเงินสด '+TH(cashAmt)+' · K+ · สเตทเมนต์)</span>';
@@ -2760,11 +2841,9 @@ function cutRow(x,kind){
             : x.ap? '<span class="cut-tag ct-ok">'+esc(x.ap.method)+(x.ap.rc_no?' · '+esc(x.ap.rc_no):'')+'</span>' : '';
   return '<div class="cut-row"><div><b>'+esc(String(x.b.no).replace(/^KM\d{4}-/,""))+'</b> · '+esc(x.b.name)+'<div>'+tag+'</div></div><div class="r">'+TH(x.b.out||x.b.tot)+'</div></div>';
 }
+/* v0.5.5 (21 ต.ค.69): รายละเอียดอยู่ใน popup แล้ว — แสดงทีละบิล รวมลูกค้าปลีก (เดิมรวมเป็นแถวเดียว เห็นเหตุผลแค่บิลแรก) */
 function cutList(arr,kind){
-  const rt=arr.filter(function(x){return x.b.retail;}), ot=arr.filter(function(x){return !x.b.retail;});
-  let h=ot.map(function(x){return cutRow(x,kind);}).join("");
-  if(rt.length){ const sum=rt.reduce(function(s,x){return s+(+x.b.out||+x.b.tot||0);},0);
-    h+='<div class="cut-row"><div><b>ลูกค้าปลีก (คุณ 1)</b> · '+rt.length+' บิล<div><span class="cut-tag '+(kind==="s"?"ct-skip":kind==="h"?"ct-hold":"ct-ok")+'">'+esc(rt[0].src||rt[0].why||"ตัดรวมหน้ารับชำระ")+(rt.length>1?' …':'')+'</span></div></div><div class="r">'+TH(sum)+'</div></div>'; }
+  const h=arr.map(function(x){return cutRow(x,kind);}).join("");
   return h||'<div class="muted">—</div>';
 }
 function cutSum(a){ return a.reduce(function(s,x){return s+(+x.b.out||0);},0); }
@@ -2781,28 +2860,40 @@ async function renderCut(){
   if(D.status!=="ตรวจแล้ว") miss.push("วันนี้ยังไม่ได้กดยืนยันผลตรวจ");
   if(!D.hasK) miss.push("ยังไม่มีรายงาน K+"); if(D.kLateWarn) miss.push(D.kLateWarn); if(!D.hasB) miss.push("ยังไม่มีสเตทเมนต์");
   let h='<h2>📋 ตัดบิลประจำวัน <span class="muted">'+beDate(date)+'</span></h2>';
-  h+='<div class="cut-chips"><span class="cut-chip cc-ok">✅ พร้อมตัด '+ready.length+'</span><span class="cut-chip cc-hold">⏸ พักไว้ '+R.h.length+'</span>'+
-     (R.appr.length?'<span class="cut-chip cc-appr">🕒 อนุมัติแล้ว รอตัด '+R.appr.length+'</span>':'')+
-     '<span class="cut-chip cc-skip">➖ ไม่ต้องตัด '+R.s.length+'</span><span class="cut-chip cc-done">✔ ตัดแล้ว '+(R.done.length+R.cut.length)+'</span></div>';
+  const _cp=function(cls,txt){ return '<button type="button" class="cut-chip click '+cls+'" onclick="cutPop()">'+txt+'</button>'; };
+  h+='<div class="cut-chips">'+_cp("cc-ok","✅ พร้อมตัด "+ready.length)+_cp("cc-hold","⏸ พักไว้ "+R.h.length)+
+     (R.appr.length?_cp("cc-appr","🕒 อนุมัติแล้ว รอตัด "+R.appr.length):'')+
+     _cp("cc-skip","➖ ไม่ต้องตัด "+R.s.length)+_cp("cc-done","✔ ตัดแล้ว "+(R.done.length+R.cut.length))+'</div>';
   if(miss.length) h+='<div class="muted" style="color:#b45309">⚠ '+miss.join(" · ")+' — บิลเงินโอนที่หาเงินไม่เจอจะถูกพักไว้</div>';
   h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืน'+(R.refund&&R.refund.on?'':'ตามใบลดหนี้')+' '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
   if(R.refund&&R.refund.on&&(R.refund.rows.length||R.refund.gate)) h+='<div class="muted">↩️ คืนเงิน: '+(R.refund.gate?'🚩 '+esc(R.refund.gate):'✅ ใบคืนเงิน '+R.refund.rows.length+' รายการ '+TH(R.refund.sum)+' ตรงกับฟอร์ม')+'</div>';
-  h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3>'+cutList(R.t,"t")+'</div>';
-  h+='<div class="cut-sec"><h3>✅ พร้อมตัด — เงินสด <span class="muted">'+R.c.length+' บิล · '+TH(cutSum(R.c))+'</span></h3>'+cutList(R.c,"c")+'</div>';
-  if(R.appr.length) h+='<div class="cut-sec"><h3>🕒 อนุมัติแล้ว รอเลขาตัด <span class="muted">'+R.appr.length+' บิล · '+TH(cutSum(R.appr))+'</span></h3>'+cutList(R.appr,"a")+'</div>';
-  h+='<div class="cut-sec"><h3>⏸ พักไว้ <span class="muted">'+R.h.length+' บิล</span></h3>'+cutList(R.h,"h")+'</div>';
-  h+='<div class="cut-sec"><h3>➖ ไม่ต้องตัดวันนี้ <span class="muted">'+R.s.length+' บิล</span></h3>'+cutList(R.s,"s")+'</div>';
-  if(R.cut.length) h+='<div class="cut-sec"><h3>✔ เลขาตัดแล้ว <span class="muted">'+R.cut.length+' บิล</span></h3>'+cutList(R.cut,"a")+'</div>';
-  /* v0.4.7 บิลเก่าที่มีเงินจ่ายเข้ามาวันนี้ */
+  /* v0.5.5 (21 ต.ค.69): หน้าการ์ดเหลือบรรทัดสรุป — รายการบิลทั้งหมดอยู่ใน popup (กดชิป หรือ "ดูรายละเอียด") เจ้าของสั่ง: ไม่เอามากองเรียงในหน้า */
   const obRow=function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-ok">'+esc(x.ap&&x.ap.rc_no?(x.ap.method+' · '+x.ap.rc_no):(x.method+' · '+x.src))+'</span></div></div><div class="r">'+TH(x.ap?+x.ap.amount:(x.amt||x.b.out))+'</div></div>'; };
   const obSum=function(a){ return a.reduce(function(s,x){return s+(+x.amt||0);},0); };
-  if(OB.wait.length) h+='<div class="cut-sec" style="border:1px solid #fdba74;background:#fff7ed;border-radius:10px;padding:8px 10px;margin-top:10px"><h3 style="color:#c2410c">⏳ บิลเก่า เงินเข้าแล้ว — รอแคชเชียร์แจ้งในชีตบิลเก่า <span class="muted">'+OB.wait.length+' บิล · '+TH(obSum(OB.wait))+'</span></h3><div class="muted" style="color:#9a3412;margin-bottom:4px">ยังอนุมัติตัดไม่ได้ — พอแคชเชียร์ใส่ในชีตบิลเก่าแล้ว จะย้ายไป "พร้อมตัด" ในการ์ดวันที่แคชเชียร์แจ้งเอง</div>'+OB.wait.map(function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-hold">'+esc(x.method+' · '+x.src)+'</span></div></div><div class="r">'+TH(x.amt||x.b.out)+'</div></div>'; }).join("")+'</div>';
-  if(OB.ready.length+OB.appr.length+OB.done.length){
-    h+='<div class="cut-sec" style="border-top:2px dashed #e7e5e4;padding-top:10px"><h3>🧾 บิลเก่าที่จับคู่เงินแล้ว รอตัด <span class="muted">'+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+'</span></h3>'+(OB.ready.map(obRow).join("")||'<div class="muted">—</div>')+'</div>';
-    if(OB.appr.length) h+='<div class="cut-sec"><h3>🕒 บิลเก่า อนุมัติแล้ว รอเลขาตัด <span class="muted">'+OB.appr.length+' บิล</span></h3>'+OB.appr.map(obRow).join("")+'</div>';
-    if(OB.done.length) h+='<div class="cut-sec"><h3>✔ บิลเก่า ตัดแล้ว <span class="muted">'+OB.done.length+' บิล</span></h3>'+OB.done.map(obRow).join("")+'</div>';
-    /* v0.6.0 (13 ต.ค.69): บิลเก่ารวมอยู่ในปุ่มอนุมัติตัดหลัก กดครั้งเดียว (เจ้าของสั่ง) */
-  }
+  const unk=R.unk||[];
+  let det='';
+  if(R.h.length) det+='<div class="cut-sec"><h3 style="color:#c2410c">⏸ พักไว้ <span class="muted">'+R.h.length+' บิล · '+TH(cutSum(R.h))+'</span></h3><div class="cut-grp h">'+cutList(R.h,"h")+'</div></div>';
+  if(unk.length) det+='<div class="cut-sec"><h3 style="color:#b91c1c">🔎 เลขบิลในชีตโอนที่ไม่มีในบิลวันนี้ <span class="muted">'+unk.length+' รายการ</span></h3><div class="cut-grp h">'+unk.map(function(u){ return '<div class="cut-row"><div><b>'+esc(u.bill)+'</b>'+(u.cust?' · '+esc(u.cust):'')+'<div class="muted">ไม่ได้กันการอนุมัติ · พิมพ์เลขบิลผิด หรือเป็นบิลของวันอื่น — ให้แคชเชียร์แก้ฟอร์มแล้วอัปใหม่</div></div><div class="r">'+TH(u.amt)+'</div></div>'; }).join("")+'</div></div>';
+  if(OB.wait.length) det+='<div class="cut-sec"><h3 style="color:#c2410c">⏳ บิลเก่า เงินเข้าแล้ว — รอแคชเชียร์แจ้งในชีตบิลเก่า <span class="muted">'+OB.wait.length+' บิล · '+TH(obSum(OB.wait))+'</span></h3><div class="muted" style="color:#9a3412;margin-bottom:4px">ยังอนุมัติตัดไม่ได้ — พอแคชเชียร์ใส่ในชีตบิลเก่าแล้ว จะย้ายไป "พร้อมตัด" ในการ์ดวันที่แคชเชียร์แจ้งเอง</div><div class="cut-grp h">'+OB.wait.map(function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-hold">'+esc(x.method+' · '+x.src)+'</span></div></div><div class="r">'+TH(x.amt||x.b.out)+'</div></div>'; }).join("")+'</div></div>';
+  if(R.t.length) det+='<div class="cut-sec"><h3 style="color:#15803d">✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3><div class="cut-grp t">'+cutList(R.t,"t")+'</div></div>';
+  if(R.c.length) det+='<div class="cut-sec"><h3 style="color:#15803d">✅ พร้อมตัด — เงินสด <span class="muted">'+R.c.length+' บิล · '+TH(cutSum(R.c))+'</span></h3><div class="cut-grp t">'+cutList(R.c,"c")+'</div></div>';
+  if(OB.ready.length) det+='<div class="cut-sec"><h3>🧾 บิลเก่าที่จับคู่เงินแล้ว รอตัด <span class="muted">'+OB.ready.length+' บิล · '+TH(obSum(OB.ready))+'</span></h3><div class="cut-grp t">'+OB.ready.map(obRow).join("")+'</div></div>';
+  if(R.appr.length) det+='<div class="cut-sec"><h3>🕒 อนุมัติแล้ว รอเลขาตัด <span class="muted">'+R.appr.length+' บิล · '+TH(cutSum(R.appr))+'</span></h3><div class="cut-grp">'+cutList(R.appr,"a")+'</div></div>';
+  if(OB.appr.length) det+='<div class="cut-sec"><h3>🕒 บิลเก่า อนุมัติแล้ว รอเลขาตัด <span class="muted">'+OB.appr.length+' บิล</span></h3><div class="cut-grp">'+OB.appr.map(obRow).join("")+'</div></div>';
+  if(R.s.length) det+='<div class="cut-sec"><h3 style="color:#475569">➖ ไม่ต้องตัดวันนี้ <span class="muted">'+R.s.length+' บิล</span></h3><div class="cut-grp">'+cutList(R.s,"s")+'</div></div>';
+  if(R.cut.length) det+='<div class="cut-sec"><h3>✔ เลขาตัดแล้ว <span class="muted">'+R.cut.length+' บิล</span></h3><div class="cut-grp">'+cutList(R.cut,"a")+'</div></div>';
+  if(OB.done.length) det+='<div class="cut-sec"><h3>✔ บิลเก่า ตัดแล้ว <span class="muted">'+OB.done.length+' บิล</span></h3><div class="cut-grp">'+OB.done.map(obRow).join("")+'</div></div>';
+  window._cutDet={date:date, html:det||'<div class="muted">ไม่มีบิล</div>'};
+  const _sr=function(lbl,val,link){ return '<div class="cut-sum"><span>'+lbl+(link?' <button type="button" class="cut-link" onclick="cutPop()">'+link+'</button>':'')+'</span><span class="r">'+val+'</span></div>'; };
+  if(R.t.length) h+=_sr("✅ พร้อมตัด — เงินโอน", R.t.length+" บิล · "+TH(cutSum(R.t)));
+  if(R.c.length) h+=_sr("✅ พร้อมตัด — เงินสด", R.c.length+" บิล · "+TH(cutSum(R.c)));
+  if(OB.ready.length) h+=_sr("🧾 บิลเก่า รอตัด", OB.ready.length+" บิล · "+TH(obSum(OB.ready)));
+  if(R.appr.length+OB.appr.length) h+=_sr("🕒 อนุมัติแล้ว รอเลขาตัด", (R.appr.length+OB.appr.length)+" บิล");
+  if(R.h.length) h+=_sr("⏸ พักไว้", R.h.length+" บิล · "+TH(cutSum(R.h)), "ดูว่าทำไม ›");
+  if(unk.length) h+=_sr('<span style="color:#b91c1c">🔎 เลขบิลในชีตโอนหาไม่เจอ</span>', unk.length+" รายการ", "ดู ›");
+  if(OB.wait.length) h+=_sr('<span style="color:#c2410c">⏳ บิลเก่า เงินเข้าแล้ว รอแคชเชียร์แจ้ง</span>', OB.wait.length+" บิล · "+TH(obSum(OB.wait)), "ดู ›");
+  if(!(R.t.length+R.c.length+OB.ready.length+R.appr.length+OB.appr.length+R.h.length+unk.length+OB.wait.length)) h+='<div class="cut-sum"><span class="muted">ไม่มีบิลต้องทำวันนี้</span><span></span></div>';
+  h+='<div style="text-align:right;margin-top:2px"><button type="button" class="cut-link" style="color:#475569" onclick="cutPop()">ดูรายละเอียดทุกบิล ›</button></div>';
   if(ROLE==="owner"){
     { const _obr=(OB&&OB.ready)||[]; if(ready.length||_obr.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+(ready.length+_obr.length)+' บิล · '+TH(cutSum(ready)+obSum(_obr))+' บาท'+(_obr.length?' <span style="font-weight:600">(รวมบิลเก่า '+_obr.length+' บิล)</span>':'')+'</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>'; }
     if(R.appr.length) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+R.appr.length+' บิล — เลขาจะตัดใน ACC-BILLING ให้อัตโนมัติ<b>รอบเที่ยง</b> ไม่ต้องสั่งในแชท · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px"><button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
@@ -2810,6 +2901,7 @@ async function renderCut(){
   card.innerHTML=h;
   cutNotify(date,R);
 }
+function cutPop(){ const x=window._cutDet; if(!x||x.date!==cpDate()) return; revPop("📋 รายละเอียดบิล · "+beDate(x.date), x.html); }
 async function cutApprove(){
   if(ROLE!=="owner"||!CUT) return; const date=CUT.D.date, ready=CUT.t.concat(CUT.c), _ob=(CUT.ob&&CUT.ob.ready)||[];
   if(!ready.length && !_ob.length) return;

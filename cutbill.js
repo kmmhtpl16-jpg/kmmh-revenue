@@ -1,4 +1,4 @@
-/* cutbill.js — v0.7.0 (20 ต.ค.69: กล่อง "คืนเงิน (ไม่ออกบิล)" rev_cash_refund — คืนเพราะโอนเกิน (เคส 0770 พูนกิจ โอน 12,610 บิล 12,510 คืนสด 100) · บิลเงินสดที่ใบลดหนี้คืนเงินจนคงค้าง 0 นับเข้ายอดเงินสด (เคส 0738 210) · โอนคืนอ่านจากกล่องแทนรายจ่ายหมวดโอนเงินคืนลูกค้า · K+ หลังตัดรอบดู "วันที่มีข้อมูลล่าสุด" แทนเมื่อวาน (วันจันทร์ไปดูวันเสาร์ เคส 0710 25,220 / 0713 200)) · v0.6.0 (14 ต.ค.69: แคชเชียร์ลงช่องโอนผิดช่อง (K+ ↔ กสิกร) — เจอเงินในอีกบัญชี = พักไว้ + เตือน "เงินเข้าจริงทาง K+/กสิกร โปรดแก้รายการในไฟล์ Excel แล้วอัปเอกสารใหม่" ไม่ตัดให้เอง · เคส KM6910-0456 ป้ายอะแด็ปดีไซน์ 4,250 ลงช่องกสิกร แต่เข้า K+ 12/10 17:36) · v0.5.9 (13 ต.ค.69: บิลเก่าที่มีเงินเข้าแต่แคชเชียร์ยังไม่แจ้งในชีตบิลเก่า = รอแคชเชียร์แจ้ง ขึ้นเตือนแต่อนุมัติไม่ได้ · เคสเจียง-ฟิวเจอร์ 10,878.80) · v0.5.8 (13 ต.ค.69: คืนเงินตามใบลดหนี้ที่โอนคืน (รายจ่ายหมวด "โอนเงินคืนลูกค้า") ไม่หักจากเงินสดในลิ้นชัก · เคสกราเซีย 970 โอน 10/10) · v0.5.7 (13 ต.ค.69: จ่ายเต็มบิลแล้วคืนเงินสดตามใบลดหนี้ ไม่นับเป็นเงินเกิน · เงินสดร้านค้านับส่วนเงินสดของบิลจ่ายผสม) · v0.5.6 (10 ต.ค.69: เงินเข้าบัญชีอื่นที่มีสลิป นับเป็นเงินจริง) · v0.5.1 (9 ต.ค.69: เงินสดร้านค้าในฟอร์มต้องเท่ากับบิลเงินสดของร้านนั้น ไม่งั้นพัก + บอกว่าร้านค้าขาด/ลูกค้าปลีกเกินเท่าไร เคส FFF 945 vs 970) · v0.5.0 (9 ต.ค.69: (1) ลูกค้าโอนก้อนเดียวจ่ายหลายบิล → รวมยอดบิลลูกค้าเดียวกันแล้วหาในเงินที่เหลือ เคสอ้วนกลม 0196+0198=1,290 (2) โอนเกินยอดค้าง แล้วส่วนเกินถูกออกเป็นมัดจำ RA หักบิลอื่นของลูกค้าเดียวกัน เคสรุ่งชัย 0225 โอน 29,395 ค้าง 29,095 + RA6910-0002 300 หักบิล 0226) · v0.4.9 (8 ต.ค.69: เงินโอนที่เข้าบัญชีมาก่อนวันออกบิล (ทะเบียนมัดจำจับคู่บิลแล้ว + เจอในสเตทเมนต์/K+ วันที่เงินเข้า) นับเป็นเงินของบิล — เคส KM6910-0118/0119) · v0.4.7 (3 ต.ค.69: บิลเก่าที่มีเงินจ่ายวันนี้ RevCut.old) · v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
+/* cutbill.js — v0.8.0 (21 ต.ค.69: ลูกค้าปลีกลงบัญชี (เลขบิลในชีตลงบัญชี) = ไม่ต้องตัด เคส 0824 · ลูกค้าปลีกโอนก้อนเดียวจ่ายหลายบิล เฉพาะเลขบิลติดกัน เคส 0817+0818=120 · บิลเปิดย้อนหลัง (เลขอยู่หลังบิลแรกของวันถัดไป) แยกพัก ไม่ทำให้บิลเงินสดอื่นติด เคส 0850 · R.unk เลขบิลในชีตโอนที่ไม่มีใน ACC (ย้ายมาจากตาราง ④)) · v0.7.0 (20 ต.ค.69: กล่อง "คืนเงิน (ไม่ออกบิล)" rev_cash_refund — คืนเพราะโอนเกิน (เคส 0770 พูนกิจ โอน 12,610 บิล 12,510 คืนสด 100) · บิลเงินสดที่ใบลดหนี้คืนเงินจนคงค้าง 0 นับเข้ายอดเงินสด (เคส 0738 210) · โอนคืนอ่านจากกล่องแทนรายจ่ายหมวดโอนเงินคืนลูกค้า · K+ หลังตัดรอบดู "วันที่มีข้อมูลล่าสุด" แทนเมื่อวาน (วันจันทร์ไปดูวันเสาร์ เคส 0710 25,220 / 0713 200)) · v0.6.0 (14 ต.ค.69: แคชเชียร์ลงช่องโอนผิดช่อง (K+ ↔ กสิกร) — เจอเงินในอีกบัญชี = พักไว้ + เตือน "เงินเข้าจริงทาง K+/กสิกร โปรดแก้รายการในไฟล์ Excel แล้วอัปเอกสารใหม่" ไม่ตัดให้เอง · เคส KM6910-0456 ป้ายอะแด็ปดีไซน์ 4,250 ลงช่องกสิกร แต่เข้า K+ 12/10 17:36) · v0.5.9 (13 ต.ค.69: บิลเก่าที่มีเงินเข้าแต่แคชเชียร์ยังไม่แจ้งในชีตบิลเก่า = รอแคชเชียร์แจ้ง ขึ้นเตือนแต่อนุมัติไม่ได้ · เคสเจียง-ฟิวเจอร์ 10,878.80) · v0.5.8 (13 ต.ค.69: คืนเงินตามใบลดหนี้ที่โอนคืน (รายจ่ายหมวด "โอนเงินคืนลูกค้า") ไม่หักจากเงินสดในลิ้นชัก · เคสกราเซีย 970 โอน 10/10) · v0.5.7 (13 ต.ค.69: จ่ายเต็มบิลแล้วคืนเงินสดตามใบลดหนี้ ไม่นับเป็นเงินเกิน · เงินสดร้านค้านับส่วนเงินสดของบิลจ่ายผสม) · v0.5.6 (10 ต.ค.69: เงินเข้าบัญชีอื่นที่มีสลิป นับเป็นเงินจริง) · v0.5.1 (9 ต.ค.69: เงินสดร้านค้าในฟอร์มต้องเท่ากับบิลเงินสดของร้านนั้น ไม่งั้นพัก + บอกว่าร้านค้าขาด/ลูกค้าปลีกเกินเท่าไร เคส FFF 945 vs 970) · v0.5.0 (9 ต.ค.69: (1) ลูกค้าโอนก้อนเดียวจ่ายหลายบิล → รวมยอดบิลลูกค้าเดียวกันแล้วหาในเงินที่เหลือ เคสอ้วนกลม 0196+0198=1,290 (2) โอนเกินยอดค้าง แล้วส่วนเกินถูกออกเป็นมัดจำ RA หักบิลอื่นของลูกค้าเดียวกัน เคสรุ่งชัย 0225 โอน 29,395 ค้าง 29,095 + RA6910-0002 300 หักบิล 0226) · v0.4.9 (8 ต.ค.69: เงินโอนที่เข้าบัญชีมาก่อนวันออกบิล (ทะเบียนมัดจำจับคู่บิลแล้ว + เจอในสเตทเมนต์/K+ วันที่เงินเข้า) นับเป็นเงินของบิล — เคส KM6910-0118/0119) · v0.4.7 (3 ต.ค.69: บิลเก่าที่มีเงินจ่ายวันนี้ RevCut.old) · v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
    ตัดบิลประจำวัน: คัดบิลของวันว่าบิลไหน "ยอดตรงแล้ว พร้อมตัด" / "พักไว้" / "ไม่ต้องตัด" / "ตัดแล้ว"
    ใช้ร่วมกัน: การ์ดในหน้าตรวจรายได้ (index.html) + กระดิ่ง (bell.js)
    หลัก: ไม่มีเงินจริง ไม่ตัด · เงินโอนต้องเจอยอดใน K+/สเตทเมนต์ · เงินสดต้องมีรูปใบนับเงินสดที่ยอดตรงกับฟอร์ม
@@ -11,6 +11,8 @@
   function r2(n){ return Math.round(num(n)*100)/100; }
   function norm(s){ return String(s||"").replace(/บริษัท|จำกัด|ห้างหุ้นส่วนจำกัด|หจก\.?|ร้าน|คุณ|นาย|นางสาว|นาง|\s|\(|\)|\.|-/g,"").toLowerCase(); }
   function nameHit(a,b){ a=norm(a); b=norm(b); return !!(a&&b&&(a.indexOf(b)>=0||b.indexOf(a)>=0)); }
+  function billKey(s){ return String(s==null?"":s).split("(")[0].replace(/\s+/g,"").toUpperCase(); }
+  function billSeq(no){ var m=/^(KM\d{4})-(\d+)$/.exec(String(no||"")); return m? {p:m[1], n:+m[2]} : null; }
   function SB(){ try{ if(typeof sb!=="undefined" && sb) return sb; }catch(e){} return window.sb||null; }
 
   /* D = {bills, xfer, cash, acct:[names], kp:[amt], bk:[amt], proof:{amount,image_path}|null, appr:[rows]} */
@@ -45,6 +47,7 @@
     var noMoney=[], raUsed={}; /* v0.5.0 */
     var billByNo={}; (D.bills||[]).forEach(function(z){ billByNo[z.no]=z; });
     var cashC=[]; /* v0.4.4: ผู้สมัครเงินสด {b, part, mixed} — ตัดสินรวมทีเดียวท้ายลูป */
+    var lateC=[]; /* v0.8.0 บิลเงินสดที่เปิดย้อนหลัง */
     function take(arr,amt){ var i=arr.findIndex(function(x){ return Math.abs(num(x)-amt)<=1; }); if(i<0) return false; arr.splice(i,1); return true; }
     /* v0.4.9: เงินที่โอนเข้ามาก่อนวันออกบิล ผูกกับเลขบิลนี้แล้ว — ใช้ก่อนยอดของวันนี้ (กันไปกินยอดวันนี้ของบิลอื่นที่ยอดเท่ากัน) */
     var pre={}; Object.keys(D.pre||{}).forEach(function(k){ pre[k]=(D.pre[k]||[]).slice(); });
@@ -70,6 +73,9 @@
       if(ap && ap.status==="approved"){ R.appr.push({b:b,ap:ap}); return; }
       if(b.cus===SHOPEE_CUS){ R.s.push({b:b,why:"Shopee — ตัดตามวันที่ Shopee โอนเงินเข้า"}); return; }
       if(b.cus===UPK_CUS){ R.s.push({b:b,why:"UPK — ตัดตามยอดที่ UPK จ่ายจริง (ไม่ใช่เงินสดหน้าร้าน)"}); return; }
+      /* v0.8.0 (21 ต.ค.69): ลูกค้าปลีกลงบัญชี — ชีตลงบัญชีช่องลูกค้าปลีกใส่เลขบิล (rev_credit_bills.customer = เลขบิล) → ไม่ต้องตัดวันนี้
+         เคส KM6910-0824 บิล 2,640 = มัดจำ RA6910-0005 1,320 + ลงบัญชี 1,320 (เดิมพักว่า "มีมัดจำ — รอลูกค้าจ่ายครบ") */
+      if(b.retail && (D.acct||[]).some(function(n){ return billKey(n)===b.no; })){ R.s.push({b:b,why:"ลงบัญชี "+TH(b.out)+" — ตัดเมื่อลูกค้าจ่ายจริง"+(b.dep>0?" · หักมัดจำแล้ว "+TH(b.dep):"")}); return; }
       if(!b.retail && (D.acct||[]).some(function(n){ return nameHit(n,b.name); })){ R.s.push({b:b,why:"ลงบัญชี — ตัดเมื่อลูกค้าจ่ายจริง"}); return; }
       var xs=(D.xfer||[]).filter(function(x){ return x.bill===b.no && !x.ra; });
       if(xs.length){
@@ -95,16 +101,27 @@
         return;
       }
       if(b.dep>0){ R.h.push({b:b, why:"มีมัดจำ — งานสั่ง รอลูกค้าจ่ายครบ"}); return; }
-      var cb0=cnBack(b); cashC.push({b:b, part:r2(b.out+cb0), cnb:cb0});
+      var cb0=cnBack(b);
+      /* v0.8.0: บิลเปิดย้อนหลัง = ลงวันที่วันนี้ แต่เลขบิลอยู่หลังบิลแรกของวันถัดไป (เปิดหลังตัดรอบ 15:30 แล้วย้อนวันที่) — แยกไว้ก่อน ตัดสินท้ายลูป */
+      var sq=billSeq(b.no), nf=billSeq(D.nextFirst);
+      if(sq && nf && sq.p===nf.p && sq.n>nf.n){ lateC.push({b:b, part:r2(b.out+cb0), cnb:cb0}); return; }
+      cashC.push({b:b, part:r2(b.out+cb0), cnb:cb0});
     });
     /* v0.5.0 (1): โอนก้อนเดียวจ่ายหลายบิล — บิลที่หาเงินไม่เจอของลูกค้า (รหัสเดียวกัน ไม่ใช่ลูกค้าทั่วไป) ช่องทางเดียวกัน
        ลองรวมยอดทีละชุด (ชุดใหญ่ก่อน อย่างน้อย 2 บิล) แล้วหาในเงิน K+/สเตทเมนต์ที่ยังไม่ถูกจับคู่ */
-    var grp={}; noMoney.forEach(function(n){ if(n.b.retail||!n.b.cus) return; var ch=(n.knv>0&&!(n.ksk>0))?"knv":(n.ksk>0&&!(n.knv>0))?"ksk":null; if(!ch) return;
+    /* v0.8.0 (21 ต.ค.69): ลูกค้าปลีก (คุณ 1) ก็โอนก้อนเดียวจ่ายหลายบิลได้ — แต่รหัสลูกค้าเดียวกันหมดทั้งร้าน
+       จึงรวมได้เฉพาะบิลที่เลขติดกัน (ห่างกันไม่เกิน 5 เลข) ชุดละ 2–3 บิล · เคส 0817 85 + 0818 35 = โอนกสิกร 120 (20/10) */
+    var grp={}; noMoney.forEach(function(n){ if(!n.b.cus) return; var ch=(n.knv>0&&!(n.ksk>0))?"knv":(n.ksk>0&&!(n.knv>0))?"ksk":null; if(!ch) return;
       var k=n.b.cus+"|"+ch; (grp[k]=grp[k]||[]).push(n); });
-    Object.keys(grp).forEach(function(k){
-      var L=grp[k], ch=k.split("|").pop(), pool=(ch==="knv")?kp:bk; if(L.length<2||L.length>8) return;
+    /* ลูกค้าปลีก: แบ่งเป็นกลุ่มบิลเลขติดกัน (ห่างจากบิลก่อนหน้าไม่เกิน 5 เลข) แต่ละกลุ่มคิดแยก */
+    Object.keys(grp).forEach(function(k){ var L=grp[k]; if(!L.length||!L[0].b.retail) return; delete grp[k];
+      var S=L.filter(function(x){ return billSeq(x.b.no); }).sort(function(a,b){ return billSeq(a.b.no).n-billSeq(b.b.no).n; }), ci=0, prev=null;
+      var cnt=0; S.forEach(function(x){ var q=billSeq(x.b.no).n; if((prev!=null && q-prev>5) || cnt>=8){ ci++; cnt=0; } prev=q; cnt++; var kk=k+"|c"+ci; (grp[kk]=grp[kk]||[]).push(x); }); }); /* กลุ่มละไม่เกิน 8 บิล (เกินแบ่งเป็นช่วง) */
+    Object.keys(grp).sort(function(a,b){ return (grp[a][0].b.retail?1:0)-(grp[b][0].b.retail?1:0); }).forEach(function(k){ /* ลูกค้าร้านค้าก่อน ลูกค้าปลีกทีหลัง */
+      var L=grp[k], ch=k.split("|")[1], pool=(ch==="knv")?kp:bk; if(L.length<2||L.length>8) return;
+      var isR=L[0].b.retail;
       var left=L.slice();
-      for(var size=left.length; size>=2; size--){
+      for(var size=Math.min(left.length, isR?3:left.length); size>=2; size--){
         var found=true;
         while(found && left.length>=size){ found=false;
           var n=left.length, masks=[];
@@ -113,10 +130,11 @@
             var pick=left.filter(function(_,j){ return masks[mi]&(1<<j); });
             var sum=r2(pick.reduce(function(a,x){ return a+x[ch]; },0));
             var okOut=pick.every(function(x){ return Math.abs(x[ch]-x.b.out)<=1; });
+            if(okOut && isR){ var sqs=pick.map(function(x){ var q=billSeq(x.b.no); return q?q.n:NaN; }); okOut=sqs.every(function(v){ return !isNaN(v); }) && (Math.max.apply(null,sqs)-Math.min.apply(null,sqs))<=5; }
             if(okOut && take(pool,sum)){
               var nos=pick.map(function(x){ return x.b.no.slice(-4); }).join("+");
               pick.forEach(function(x){ var i=R.h.indexOf(x.h); if(i>=0) R.h.splice(i,1);
-                R.t.push({b:x.b, method:"เงินโอน", src:(ch==="knv"?"K+ ":"เข้ากสิกร ")+"โอนรวม "+TH(sum)+" (จ่ายบิล "+nos+")"}); });
+                R.t.push({b:x.b, method:"เงินโอน", grp:nos, src:(ch==="knv"?"K+ ":"เข้ากสิกร ")+"โอนรวม "+TH(sum)+" (จ่ายบิล "+nos+")"+(isR?" · ลูกค้าปลีก เลขบิลติดกัน ดูให้แน่ใจก่อนอนุมัติ":"")}); });
               left=left.filter(function(x){ return pick.indexOf(x)<0; }); found=true; break;
             }
           }
@@ -125,7 +143,13 @@
     });
     /* v0.4.4: บิลเงินสดทั้งวันต้องรวมแล้วตรงกับเงินสดในฟอร์ม (±1) ถึงจะพร้อมตัด — ไม่ตรง = พักทั้งก้อน (กันบิลที่ยังไม่จ่ายหลุดเป็นเงินสด เช่น UPK) */
     var cashSum=r2(cashC.reduce(function(s,x){ return s+x.part; },0)+R.cashExtra.reduce(function(s,x){ return s+x.amt; },0)); R.cashSum=cashSum;
-    var sumOk=(D.cash!=null && Math.abs(cashSum-num(D.cash))<=1); R.cashSumOk=sumOk;
+    var sumOk=(D.cash!=null && Math.abs(cashSum-num(D.cash))<=1);
+    /* v0.8.0: บิลเปิดย้อนหลัง — ถ้ารวมเข้าไปแล้วยอดเงินสดตรงฟอร์ม = แคชเชียร์ลงฟอร์มแล้ว นับเป็นบิลเงินสดปกติ · ไม่งั้นพักไว้ ไม่ให้ไปทำให้บิลเงินสดอื่นติด */
+    R.late=[];
+    if(lateC.length){ var lateSum=r2(lateC.reduce(function(s,x){ return s+x.part; },0)), nfS=String(D.nextFirst||"").slice(-4);
+      if(!sumOk && D.cash!=null && Math.abs(r2(cashSum+lateSum)-num(D.cash))<=1){ lateC.forEach(function(x){ cashC.push(x); }); cashSum=r2(cashSum+lateSum); sumOk=true; }
+      else lateC.forEach(function(x){ var h={b:x.b, cash:true, late:true, why:"เปิดบิลย้อนหลัง (เลขบิลอยู่หลังบิล "+nfS+" ของวันถัดไป) — ไม่อยู่ในยอดเงินสดของฟอร์ม ให้แคชเชียร์ลงฟอร์ม Excel แล้วอัปใหม่"}; R.h.push(h); R.late.push(h); }); }
+    R.cashSum=cashSum; R.cashSumOk=sumOk;
     /* v0.5.1 (9 ต.ค.69): เงินสดร้านค้า — ยอดที่แคชเชียร์ลงช่อง "ร้านค้าเงินสด" ต้องเท่ากับบิลเงินสดของร้านนั้นวันนี้
        ไม่เท่า = ลงผิดช่อง (เงินไปปนในเงินสดลูกค้าปลีก) → พักบิลร้านนั้น + บอกส่วนต่าง ให้แคชเชียร์แก้ฟอร์ม · เคส FFF ลง 945 บิลรวม 970 */
     var shopBad={}; R.shopWarn=[];
@@ -160,6 +184,10 @@
     /* v0.7.0: บิลเงินโอนที่ผูกกับแถวคืนเงิน — มีปัญหารายบิล หรือด่านรวมของวันไม่ผ่าน → พักไว้ */
     if(RF.on){ R.t=R.t.filter(function(x){ var no=x.b.no, why=RF.prob[no] || (RF.gate && RF.by[no] ? RF.gate+" — ต้องตรวจก่อน" : null);
       if(why){ R.h.push({b:x.b, why:why}); return false; } return true; }); }
+    /* v0.8.0: ด่านจากตาราง ④ เดิม — เลขบิลในชีตโอนที่ไม่มีในบิลของวันนี้ (พิมพ์ผิด หรือเป็นบิลวันอื่น) */
+    var nextSet={}; (D.nextNos||[]).forEach(function(n){ nextSet[n]=1; });
+    R.unk=(D.xfer||[]).filter(function(x){ var k=billKey(x.bill); return k && !x.ra && !billByNo[k] && !nextSet[k] && !(D.pre&&D.pre[k]); })
+      .map(function(x){ return {bill:String(x.bill||""), amt:r2(num(x.knv)+num(x.ksk)), cust:x.cust||""}; });
     return R;
   }
   function preLbl(p,d0){ return p.other ? ("โอนเข้าบัญชีอื่น (มีสลิป) "+dmy(p.d)) : (p.d<d0 ? "โอนเข้ามาก่อน "+dmy(p.d) : "โอนเข้า "+dmy(p.d)+" (ลงมัดจำ)"); }
@@ -192,8 +220,11 @@
       s.from("rev_cash_proof_req").select("id").eq("date",date).eq("status","pending"),
       s.from("rev_daily").select("date,kplus_rows").lt("date",date).gte("date",shiftISO(date,-7)), /* v0.7.0 ย้อน 7 วัน หา K+ ของวันขายล่าสุด */
       s.rpc("rev_shop_cash_decl",{p_date:date}),
-      s.from("rev_audit").select("date,status").lt("date",date).gte("date",shiftISO(date,-7))
+      s.from("rev_audit").select("date,status").lt("date",date).gte("date",shiftISO(date,-7)),
+      s.rpc("rev_cut_bills",{p_date:shiftISO(date,1)}) /* v0.8.0 บิลของวันถัดไป — หาเลขบิลแรก (จับบิลเปิดย้อนหลัง) */
     ]);
+    var nxt=((q[11]&&!q[11].error&&Array.isArray(q[11].data))? q[11].data : []).map(function(b){ return String(b.no||""); }).filter(Boolean).sort();
+    for(var ni=2; ni<=3 && !nxt.length; ni++){ try{ var nq=await s.rpc("rev_cut_bills",{p_date:shiftISO(date,ni)}); if(!nq.error && Array.isArray(nq.data)) nxt=nq.data.map(function(b){ return String(b.no||""); }).filter(Boolean).sort(); }catch(e){} } /* วันถัดไปร้านปิด → ดูวันถัดไปอีก */
     /* v0.4.6 (3 ต.ค.69): บิลหลังตัดรอบ 15:30 ลงวันที่วันถัดไป → K+ ที่เข้าหลัง 15:30 ของเมื่อวาน เป็นเงินของบิลวันนี้ (เคส KM6910-0054 72 บาท โอน 1/10 16:55) */
     /* v0.7.0: ไล่ย้อนจากเมื่อวาน หาวันแรกที่มีรายงาน K+ (วันจันทร์ข้ามวันอาทิตย์ที่ร้านปิด ไปวันเสาร์)
        ข้ามได้เฉพาะวันที่ปิดจริง = rev_audit สถานะ "วันหยุด" หรือ ACC ไม่มีบิลขายเลย
@@ -211,7 +242,7 @@
     var rfx=rfOn? {amt:0, rows:[], open:[]} : await refundXfer(s, date, det.cns||[]);
     var RFD=rfOn? await refundData(s, date) : {};
     return {
-      date:date, status:au?au.status:null,
+      date:date, status:au?au.status:null, nextFirst:nxt[0]||null, nextNos:nxt,
       bills:(q[0]&&q[0].data)||[],
       xfer:det.xfer||[], cash:(det.form_cash!=null?num(det.form_cash):null),
       otherSum:((q[6]&&q[6].data)||[]).reduce(function(s2,x){ return s2+num(x.amount); },0), oldCash:num(det.form_old_cash), refund:num(det.form_refund_cash!=null?det.form_refund_cash:(au&&au.form_refund)),

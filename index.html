@@ -2471,7 +2471,7 @@ ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthSt
 </script>
 <script src="credit.js?v=20261003a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261010a"></script>
-<script src="cutbill.js?v=20261021a"></script>
+<script src="cutbill.js?v=20261022a"></script>
 <script src="mpager.js?v=20261001a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
@@ -2866,13 +2866,17 @@ async function renderCut(){
      _cp("cc-skip","➖ ไม่ต้องตัด "+R.s.length)+_cp("cc-done","✔ ตัดแล้ว "+(R.done.length+R.cut.length))+'</div>';
   if(miss.length) h+='<div class="muted" style="color:#b45309">⚠ '+miss.join(" · ")+' — บิลเงินโอนที่หาเงินไม่เจอจะถูกพักไว้</div>';
   h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืน'+(R.refund&&R.refund.on?'':'ตามใบลดหนี้')+' '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
+  /* v0.5.6 (22 ต.ค.69): มัดจำรับเงินสดวันนี้ + ด่านเงินสดของวัน — แสดงบรรทัดเดียว (เดิมแปะซ้ำทุกบิลในรายการพักไว้) */
+  if(R.raSum>0) h+='<div class="muted">💵 มัดจำรับเงินสดวันนี้ '+(R.raCash||[]).map(function(x){ return esc(x.no)+' '+TH(x.amt)+(x.bill?' (บิล '+esc(x.bill.replace(/^KM\d{4}-/,""))+')':''); }).join(' · ')+' — นับรวมในบิลเงินสดแล้ว</div>';
+  const _gate=R.cashGate? '<div class="muted" style="color:#b91c1c;font-weight:600">🚩 ด่านเงินสดของวัน: '+esc(R.cashGate)+'</div>' : '';
+  h+=_gate;
   if(R.refund&&R.refund.on&&(R.refund.rows.length||R.refund.gate)) h+='<div class="muted">↩️ คืนเงิน: '+(R.refund.gate?'🚩 '+esc(R.refund.gate):'✅ ใบคืนเงิน '+R.refund.rows.length+' รายการ '+TH(R.refund.sum)+' ตรงกับฟอร์ม')+'</div>';
   /* v0.5.5 (21 ต.ค.69): หน้าการ์ดเหลือบรรทัดสรุป — รายการบิลทั้งหมดอยู่ใน popup (กดชิป หรือ "ดูรายละเอียด") เจ้าของสั่ง: ไม่เอามากองเรียงในหน้า */
   const obRow=function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-ok">'+esc(x.ap&&x.ap.rc_no?(x.ap.method+' · '+x.ap.rc_no):(x.method+' · '+x.src))+'</span></div></div><div class="r">'+TH(x.ap?+x.ap.amount:(x.amt||x.b.out))+'</div></div>'; };
   const obSum=function(a){ return a.reduce(function(s,x){return s+(+x.amt||0);},0); };
   const unk=R.unk||[];
   let det='';
-  if(R.h.length) det+='<div class="cut-sec"><h3 style="color:#c2410c">⏸ พักไว้ <span class="muted">'+R.h.length+' บิล · '+TH(cutSum(R.h))+'</span></h3><div class="cut-grp h">'+cutList(R.h,"h")+'</div></div>';
+  if(R.h.length) det+='<div class="cut-sec"><h3 style="color:#c2410c">⏸ พักไว้ <span class="muted">'+R.h.length+' บิล · '+TH(cutSum(R.h))+'</span></h3>'+_gate+'<div class="cut-grp h">'+cutList(R.h,"h")+'</div></div>';
   if(unk.length) det+='<div class="cut-sec"><h3 style="color:#b91c1c">🔎 เลขบิลในชีตโอนที่ไม่มีในบิลวันนี้ <span class="muted">'+unk.length+' รายการ</span></h3><div class="cut-grp h">'+unk.map(function(u){ return '<div class="cut-row"><div><b>'+esc(u.bill)+'</b>'+(u.cust?' · '+esc(u.cust):'')+'<div class="muted">ไม่ได้กันการอนุมัติ · พิมพ์เลขบิลผิด หรือเป็นบิลของวันอื่น — ให้แคชเชียร์แก้ฟอร์มแล้วอัปใหม่</div></div><div class="r">'+TH(u.amt)+'</div></div>'; }).join("")+'</div></div>';
   if(OB.wait.length) det+='<div class="cut-sec"><h3 style="color:#c2410c">⏳ บิลเก่า เงินเข้าแล้ว — รอแคชเชียร์แจ้งในชีตบิลเก่า <span class="muted">'+OB.wait.length+' บิล · '+TH(obSum(OB.wait))+'</span></h3><div class="muted" style="color:#9a3412;margin-bottom:4px">ยังอนุมัติตัดไม่ได้ — พอแคชเชียร์ใส่ในชีตบิลเก่าแล้ว จะย้ายไป "พร้อมตัด" ในการ์ดวันที่แคชเชียร์แจ้งเอง</div><div class="cut-grp h">'+OB.wait.map(function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-hold">'+esc(x.method+' · '+x.src)+'</span></div></div><div class="r">'+TH(x.amt||x.b.out)+'</div></div>'; }).join("")+'</div></div>';
   if(R.t.length) det+='<div class="cut-sec"><h3 style="color:#15803d">✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3><div class="cut-grp t">'+cutList(R.t,"t")+'</div></div>';

@@ -769,6 +769,11 @@
         if(_dp){ if(msg) msg.innerHTML='<span style="color:#b91c1c">⛔ ไม่ได้ดูดบิลลงบัญชี เพราะวันที่ไม่ถูกต้อง — '+esc(_dp.join(" · "))+'</span>'; return; }
       }
       var _cm=await canonMap();   /* source_key คงเดิม (กันดูดซ้ำ) เปลี่ยนแค่ชื่อที่เก็บ */
+      /* 22 ต.ค.69 — ลูกหนี้ร้านค้าดึงจาก ACC แล้ว (credit-acc.js · rev_credit_sync_acc) → ไม่ดูดแถวที่มีแต่ชื่อร้าน (กันบิลซ้ำ/ค้างหลอก) · ดูดเฉพาะแถวที่มีเลขบิล
+         และข้ามเลขบิลที่มีในทะเบียนแล้ว */
+      var _have={}; try{ var _bn=parsed.entries.filter(function(e){return e.bill_no;}).map(function(e){return e.bill_no;}); if(_bn.length){ var _q=await sb.from("rev_credit_bills").select("bill_no").in("bill_no",_bn); (_q.data||[]).forEach(function(x){ _have[x.bill_no]=1; }); } }catch(_e){}
+      parsed.entries=parsed.entries.filter(function(e){ return e.bill_no && !_have[e.bill_no]; });
+      if(!parsed.entries.length){ if(msg) msg.textContent=""; try{ await window.__creditOldBills(wb, parsed.date); }catch(e){} return; }
       var payload=parsed.entries.map(function(e){
         return {source_key:e.source_key, bill_no:e.bill_no, customer:canonName(_cm,e.customer), bill_date:parsed.date||todayISO(),
                 total_amount:e.amount, source:"auto-form", note:"ดูดจากชีตลงบัญชี"};

@@ -972,7 +972,8 @@ window.delDupBill=async function(id){
 
 function boot(){
   document.getElementById("cb_date").value=todayISO();
-  ensureOwnerSession().then(function(){ loadNotes(); loadRegister(); runDupScan(); });
+  /* v22ต.ค.69 เติมบิลค้างจาก ACC ก่อนโหลดทะเบียน (credit-acc.js) */
+  ensureOwnerSession().then(async function(){ try{ if(window.__creditAccSync) await window.__creditAccSync(); }catch(e){} loadNotes(); loadRegister(); runDupScan(); });
 }
 window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
 (function(){ try{ var _r=localStorage.getItem("rev_role"); if(_r&&["cashier","finance","owner"].indexOf(_r)>=0){ ROLE=_r; var _g=document.getElementById("gate"); if(_g)_g.style.display="none"; applyGating(); boot(); } }catch(e){} })();
@@ -1027,5 +1028,7 @@ window.revLogout=function(){ if(confirm("ออกจากระบบ / สล
   });
 })();
 </script>
+<script src="credit-acc.js?v=20261022a"></script>
+<script src="nav.js?v=20261022a"></script>
 </body>
 </html>

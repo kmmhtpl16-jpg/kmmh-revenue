@@ -175,7 +175,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.6.6</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.6.7</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -419,6 +419,16 @@ function accDriftMatched(d,now,au){
   const sumForm=(+au.form_main) + (+au.form_upk||0), rf=(+au.form_refund||0);
   return Math.abs(netCmp-sumForm)<=1 || Math.abs(netCmp-(sumForm-rf))<=1;
 }
+/* v0.6.7 (24 ต.ค.69) — ยอดเครื่องแบบเบา rev_day_from_acc_fast (ไม่คำนวณ "แจ้งแล้วยังไม่ตัดชำระ" ที่หน้านี้เลิกใช้แล้ว · เดิม 3.6–10 วิ เกินเพดาน 8 วิ = "ดึงข้อมูลไม่ได้")
+   ฐานยังไม่มีฟังก์ชันใหม่ (PGRST202/404) → ใช้ตัวเดิม */
+async function accDayRpc(d){
+  if(!window._accFastNo){
+    const r=await sb.rpc("rev_day_from_acc_fast",{p_date:d});
+    if(!(r && r.error && (r.error.code==="PGRST202" || r.status===404))) return r;
+    window._accFastNo=true;
+  }
+  return sb.rpc("rev_day_from_acc",{p_date:d});
+}
 function shiftISO1(iso){ const p=String(iso).slice(0,10).split("-"); const t=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]+1)); return t.toISOString().slice(0,10); }
 function accDriftPop(){
   const x=window._accDrift; if(!x) return;
@@ -453,14 +463,19 @@ function stepDay(n){ const el=document.getElementById("accDate"); if(!el||!el.va
   try{
     if(!sb) throw new Error("ยังเชื่อมต่อฐานข้อมูลไม่ได้");
     await ensureOwnerSession();
-    const { data, error } = await sb.rpc("rev_day_from_acc", { p_date:d });
     if(_stale()) return;
+    /* v0.6.7 โหลดพร้อมกัน (เดิมรอทีละตัว) · ยอดเครื่องใช้ตัวเบา accDayRpc · เก็บผลไว้ก่อน ตั้ง DATA หลังเช็กว่ายังเป็นวันที่เลือกอยู่ (Codex r3-3) */
+    const _pr=await Promise.all([
+      accDayRpc(d),
+      /* v0.3.3 — ใบลดหนี้ของบิลหลังตัดรอบ 15:30 นับเข้าวันของบิล (acc_cn_shift) ให้ด่านบันทึก + ข้อความ Telegram ใช้ยอดเดียวกับหน้ารายละเอียด */
+      sb.rpc("acc_cn_shift",{p_date:d}).then(function(_sr){ return (_sr&&_sr.data)?{d:d, out:+_sr.data.out_amt||0, inn:+_sr.data.in_amt||0}:null; },function(){ return null; }),
+      sb.from("rev_deposits").select("deposit_no,status").eq("received_date",d).then(function(_rq){ return (_rq&&!_rq.error)?{d:d, set:(_rq.data||[]).filter(function(x){ return x.status!=="cancelled"; }).map(function(x){ return normRA(x.deposit_no); })}:null; },function(){ return null; }), /* v0.5.4 ใบลดหนี้ที่กลายเป็นมัดจำ */
+      cnBoxCash(d).then(function(_bx){ return {d:d, m:_bx.m, any:_bx.any, err:_bx.err}; },function(){ return null; }) /* v0.5.7 คืนสดต่อ CN จากกล่องคืนเงิน */
+    ]);
+    if(_stale()) return;
+    const { data, error } = _pr[0];
     if(error) throw error;
-    DATA._acc = data;
-    /* v0.3.3 — ใบลดหนี้ของบิลหลังตัดรอบ 15:30 นับเข้าวันของบิล (acc_cn_shift) ให้ด่านบันทึก + ข้อความ Telegram ใช้ยอดเดียวกับหน้ารายละเอียด */
-    DATA._accShift=null; try{ const _sr=await sb.rpc("acc_cn_shift",{p_date:d}); if(_sr&&_sr.data) DATA._accShift={d:d, out:+_sr.data.out_amt||0, inn:+_sr.data.in_amt||0}; }catch(_eS){}
-    DATA._raReg=null; try{ const _rq=await sb.from("rev_deposits").select("deposit_no,status").eq("received_date",d); if(_rq&&!_rq.error) DATA._raReg={d:d, set:(_rq.data||[]).filter(function(x){ return x.status!=="cancelled"; }).map(function(x){ return normRA(x.deposit_no); })}; }catch(_eR){} /* v0.5.4 ใบลดหนี้ที่กลายเป็นมัดจำ */
-    DATA._cnCash=null; try{ const _bx=await cnBoxCash(d); DATA._cnCash={d:d, m:_bx.m, any:_bx.any, err:_bx.err}; }catch(_eB){} /* v0.5.7 คืนสดต่อ CN จากกล่องคืนเงิน */
+    DATA._acc = data; DATA._accShift=_pr[1]; DATA._raReg=_pr[2]; DATA._cnCash=_pr[3];
     if(_stale()) return;
     const _up=document.getElementById("acc_up"); if(_up) _up.style.display=accComplete(data,d)?"none":"block";
     if(accComplete(data,d)){
@@ -1490,7 +1505,7 @@ window.revFocus=function(id){
   },280);
   return true;
 };
-/* v0.3.5 — กันเซฟไฟล์ผิดวัน (เคส 26/09/69 ฟอร์มวันที่ 26 ลืมแก้ D1 → ทับวันที่ 01/09) · ตรวจ 3 ชั้น: ชื่อไฟล์ · เลขบิลในฟอร์ม · แคชเชียร์บันทึกได้แค่วันนี้/เมื่อวาน */ function dateFromFileName(n){ var m=String(n||"").match(/(^|[^0-9])(\d{1,2})[-_. ](\d{1,2})[-_. ](\d{4}|\d{2})(?![0-9])/); if(!m) return null; var d=+m[2], mo=+m[3], y=+m[4]; if(y<100) y+=2500; if(y>2400) y-=543; if(d<1||d>31||mo<1||mo>12||y<2000||y>2100) return null; return y+"-"+pad2(mo)+"-"+pad2(d); } function bkkDay(back){ return new Date(Date.now()+7*3600e3-(back||0)*864e5).toISOString().slice(0,10); } async function formDateProblem(f){ if(!f||!f.date) return null; var d=String(f.date).slice(0,10), why=[]; var fn=(DATA._files&&DATA._files.form)||""; var fd=dateFromFileName(fn); if(fd && fd!==d) why.push("ชื่อไฟล์ \""+fn+"\" เป็นวันที่ "+beDate(fd)+" แต่วันที่ในไฟล์ (เซลล์ D1) เป็น "+beDate(d)); if(ROLE==="cashier" && d!==bkkDay(0) && d!==bkkDay(1)) why.push("วันที่ในไฟล์ "+beDate(d)+" ไม่ใช่วันนี้หรือเมื่อวาน — แคชเชียร์บันทึกย้อนหลังเกิน 1 วันไม่ได้ (ให้การเงินบันทึกแทน)"); try{ var fb=[...new Set((f.xfer||[]).map(function(x){ return String((x&&x.bill)||"").trim(); }).filter(function(b){ return /^KM\d{4}-\d+$/.test(b); }))]; if(fb.length>=3 && sb){ var ref=new Set(), src=""; var a=await sb.from("rev_audit").select("detail").eq("date",d).maybeSingle(); ((a&&a.data&&a.data.detail&&a.data.detail.xfer)||[]).forEach(function(x){ if(x&&x.bill) ref.add(String(x.bill).trim()); }); if(ref.size>=3) src="ที่ยืนยันไว้แล้วของวันที่ "+beDate(d); else { ref=new Set(); var r=await sb.rpc("rev_day_from_acc",{p_date:d}); if(r&&r.data&&accComplete(r.data,d)){ (r.data.bills||[]).forEach(function(b){ if(b&&b.no) ref.add(String(b.no).trim()); }); src="ใน ACC-BILLING ของวันที่ "+beDate(d); } } if(ref.size>=3){ var hit=fb.filter(function(b){ return ref.has(b); }).length; if(hit*2<fb.length) why.push("เลขบิลในฟอร์ม ("+fb.slice(0,3).join(", ")+"…) ตรงกับบิล"+src+" แค่ "+hit+"/"+fb.length+" ใบ — ไฟล์นี้น่าจะเป็นของวันอื่น"); } } }catch(e){} return why.length?why:null; } async function saveAudit(){
+/* v0.3.5 — กันเซฟไฟล์ผิดวัน (เคส 26/09/69 ฟอร์มวันที่ 26 ลืมแก้ D1 → ทับวันที่ 01/09) · ตรวจ 3 ชั้น: ชื่อไฟล์ · เลขบิลในฟอร์ม · แคชเชียร์บันทึกได้แค่วันนี้/เมื่อวาน */ function dateFromFileName(n){ var m=String(n||"").match(/(^|[^0-9])(\d{1,2})[-_. ](\d{1,2})[-_. ](\d{4}|\d{2})(?![0-9])/); if(!m) return null; var d=+m[2], mo=+m[3], y=+m[4]; if(y<100) y+=2500; if(y>2400) y-=543; if(d<1||d>31||mo<1||mo>12||y<2000||y>2100) return null; return y+"-"+pad2(mo)+"-"+pad2(d); } function bkkDay(back){ return new Date(Date.now()+7*3600e3-(back||0)*864e5).toISOString().slice(0,10); } async function formDateProblem(f){ if(!f||!f.date) return null; var d=String(f.date).slice(0,10), why=[]; var fn=(DATA._files&&DATA._files.form)||""; var fd=dateFromFileName(fn); if(fd && fd!==d) why.push("ชื่อไฟล์ \""+fn+"\" เป็นวันที่ "+beDate(fd)+" แต่วันที่ในไฟล์ (เซลล์ D1) เป็น "+beDate(d)); if(ROLE==="cashier" && d!==bkkDay(0) && d!==bkkDay(1)) why.push("วันที่ในไฟล์ "+beDate(d)+" ไม่ใช่วันนี้หรือเมื่อวาน — แคชเชียร์บันทึกย้อนหลังเกิน 1 วันไม่ได้ (ให้การเงินบันทึกแทน)"); try{ var fb=[...new Set((f.xfer||[]).map(function(x){ return String((x&&x.bill)||"").trim(); }).filter(function(b){ return /^KM\d{4}-\d+$/.test(b); }))]; if(fb.length>=3 && sb){ var ref=new Set(), src=""; var a=await sb.from("rev_audit").select("detail").eq("date",d).maybeSingle(); ((a&&a.data&&a.data.detail&&a.data.detail.xfer)||[]).forEach(function(x){ if(x&&x.bill) ref.add(String(x.bill).trim()); }); if(ref.size>=3) src="ที่ยืนยันไว้แล้วของวันที่ "+beDate(d); else { ref=new Set(); var r=await accDayRpc(d); if(r&&r.data&&accComplete(r.data,d)){ (r.data.bills||[]).forEach(function(b){ if(b&&b.no) ref.add(String(b.no).trim()); }); src="ใน ACC-BILLING ของวันที่ "+beDate(d); } } if(ref.size>=3){ var hit=fb.filter(function(b){ return ref.has(b); }).length; if(hit*2<fb.length) why.push("เลขบิลในฟอร์ม ("+fb.slice(0,3).join(", ")+"…) ตรงกับบิล"+src+" แค่ "+hit+"/"+fb.length+" ใบ — ไฟล์นี้น่าจะเป็นของวันอื่น"); } } }catch(e){} return why.length?why:null; } async function saveAudit(){
   const s=DATA._auditSnapshot, msg=document.getElementById("audit_msg");
   if(!s||!s.date){ if(msg){ msg.innerHTML=(DATA.form&&!DATA.form.date)?'⚠ อ่านวันที่จากไฟล์รายรับไม่ได้ — แก้เซลล์วันที่ (D1) ชีท "สรุปรายรับ-รายจ่าย" ให้เป็นวันที่จริง หรือพิมพ์ 21/07/2569 แล้วอัปใหม่':"ยังไม่มีข้อมูลให้บันทึก"; msg.style.color="#b91c1c";} return; }
   if(!sb){ if(msg){msg.textContent="เชื่อม Supabase ไม่ได้";msg.style.color="#b91c1c";} return; } { const _dp=await formDateProblem(DATA.form); if(_dp){ const _t="บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง"; if(msg){ msg.innerHTML="⛔ <b>"+_t+"</b><br>• "+_dp.map(esc).join("<br>• ")+"<br>👉 แก้เซลล์วันที่ (D1) หรือเลือกไฟล์ให้ถูกวัน แล้วอัปใหม่"; msg.style.color="#b91c1c"; } alert("⛔ "+_t+" \n\n• "+_dp.join(" \n• ")+" \n\nแก้เซลล์วันที่ (D1) หรือเลือกไฟล์ให้ถูกวัน แล้วอัปใหม่"); return; } }
@@ -1697,11 +1712,14 @@ async function renderDay(date, edit){
     }catch(e){}
     /* v0.3.1 — วันที่บันทึกฟอร์มก่อนยอดเครื่องขึ้น rev_audit.machine_net = null
        เดิม +null = 0 → ขึ้น 🚩 ยอดต่าง = ยอดฟอร์มทั้งก้อน (ผิด) · ตอนนี้อ่านยอดเครื่องจาก ACC-BILLING มาแสดง (อ่านอย่างเดียว ไม่เขียน rev_audit) */
-    var _mAcc=null; try{ var _ra=(DATA._acc&&String(DATA._acc.d||"").slice(0,10)===String(date).slice(0,10))?DATA._acc:null; if(!_ra){ var _rr=await sb.rpc("rev_day_from_acc",{p_date:date}); _ra=_rr&&_rr.data; } if(_ra&&accComplete(_ra,date)) _mAcc=_ra; }catch(_eA){} window._cnCtx={date:date, bills:(_mAcc&&_mAcc.bills)||null};
-    var _mFromAcc=(au.machine_net==null&&_mAcc!=null);
-    var _mNet=(au.machine_net!=null)?au.machine_net:(_mAcc?_mAcc.net:null);
-    var _cnT=(au.cn_total!=null)?au.cn_total:(_mAcc?_mAcc.cnTotal:null);
-    var _dnT=(au.dn_total!=null)?au.dn_total:(_mAcc?_mAcc.dnTotal:null);
+    var _mAcc=null; try{ var _ra=(DATA._acc&&String(DATA._acc.d||"").slice(0,10)===String(date).slice(0,10))?DATA._acc:null; if(!_ra){ var _rr=await accDayRpc(date); _ra=_rr&&_rr.data; } if(_ra&&accComplete(_ra,date)) _mAcc=_ra; }catch(_eA){} window._cnCtx={date:date, bills:(_mAcc&&_mAcc.bills)||null};
+    /* v0.6.7 (24 ต.ค.69) — ยอดเครื่องเปลี่ยนหลังยืนยัน (เคส 23/10 บิล 1011 เข้า ACC รอบซิงก์เช้าวันถัดไป) → ใช้ยอด ACC ตอนนี้ แทนยอดที่จดไว้ตอนยืนยัน (ไม่เขียน rev_audit)
+       เฉพาะวันที่ยอดตอนยืนยันมาจาก ACC (ไม่ได้อัปไฟล์เครื่องเอง) เหมือน accDrift */
+    var _mWas=null; if(au.machine_net!=null && _mAcc && !(au.detail&&au.detail.files&&au.detail.files.pos) && isFinite(+_mAcc.net) && Math.abs((+_mAcc.net)-(+au.machine_net))>1) _mWas=+au.machine_net;
+    var _mFromAcc=((au.machine_net==null||_mWas!=null)&&_mAcc!=null);
+    var _mNet=(au.machine_net!=null&&_mWas==null)?au.machine_net:(_mAcc?_mAcc.net:null);
+    var _cnT=(au.cn_total!=null&&_mWas==null)?au.cn_total:(_mAcc?_mAcc.cnTotal:au.cn_total);
+    var _dnT=(au.dn_total!=null&&_mWas==null)?au.dn_total:(_mAcc?_mAcc.dnTotal:au.dn_total);
     /* ใบลดหนี้ที่ลงวันที่ก่อนบิลที่อ้างถึง (บิลหลังตัดรอบ 15:30 ลงวันถัดไป) → นับเข้าวันของบิล · ตรงกับ acc_form_vs_machine บนคลาวด์ */
     var _sh=null; try{ var _sr=await sb.rpc("acc_cn_shift",{p_date:date}); _sh=_sr&&_sr.data; }catch(_eS){}
     var _shOut=_sh?(+_sh.out_amt||0):0, _shIn=_sh?(+_sh.in_amt||0):0;
@@ -1709,6 +1727,7 @@ async function renderDay(date, edit){
     var _cnHint=function(diff){ if(!_mAcc||!(+_cnT>0)||Math.abs(Math.abs(diff)-(+_cnT))>1) return ''; var _mx=''; (_mAcc.bills||[]).forEach(function(b){ var n=String(b.no||''); if(n>_mx) _mx=n; }); var _late=(_mAcc.cns||[]).filter(function(c){ var b=String(c.bill_no||''); return _mx&&b.length===_mx.length&&b.slice(0,6)===_mx.slice(0,6)&&b>_mx; }); return '<div style="font-weight:600;font-size:12.5px;margin-top:4px;color:#92400e">💡 ยอดต่าง = ใบลดหนี้ของวันนี้พอดี '+TH(_cnT)+' → ฟอร์มตรงกับยอดขายก่อนหักใบลดหนี้ (เครื่อง '+TH(_mAcc.gross)+')'+(_late.length?('<br>⚠️ ใบลดหนี้ '+_late.map(function(c){return esc(c.cn_no)+' ('+esc(c.bill_no)+' '+TH(c.cn)+')';}).join(' · ')+' อ้างบิลที่ออก<b>หลัง</b>บิลสุดท้ายของวันนี้ ('+esc(_mx)+') = บิลหลังตัดรอบ 15:30 ที่ลงวันถัดไป · ใบลดหนี้ควรนับเป็นของวันเดียวกับบิลนั้น → วันนี้ถือว่าตรง ยอดนี้ไปหักที่วันถัดไป'):'')+'</div>'; };
     html+='<div style="margin:8px 0 2px"><b>📊 ยอดของวันนี้</b></div>';
     html+=figRow("ยอดขายเครื่อง (สุทธิ)"+(_mFromAcc?' <span class="muted" style="font-weight:400">(จาก ACC-BILLING)</span>':''),_mNet,null);
+    if(_mWas!=null) html+='<div class="muted" style="font-size:12.5px;margin:-2px 0 4px">↻ ยอดเครื่องตอนแคชเชียร์ยืนยัน '+TH(_mWas)+' → ตอนนี้ '+TH(+_mAcc.net)+' ('+((+_mAcc.net)-_mWas>0?'+':'−')+TH(Math.abs((+_mAcc.net)-_mWas))+') · ใช้ยอดตอนนี้เทียบ</div>';
     if(_shOut>0) html+='<div class="kv"><span>&nbsp;&nbsp;↪️ ใบลดหนี้ของบิลหลังตัดรอบ ย้ายไปนับวันของบิล</span><b>+ '+TH(_shOut)+'</b></div><div class="muted" style="font-size:12px;margin:-2px 0 4px">'+(_sh.out||[]).map(function(c){return esc(c.cn_no)+' → '+esc(c.bill_no)+' ('+beDate(c.to)+') '+TH(c.amt);}).join(' · ')+' · ยอดเครื่องก่อนย้าย '+TH(_mNetRaw)+'</div>';
     if(_shIn>0) html+='<div class="kv"><span>&nbsp;&nbsp;↩️ ใบลดหนี้ลงวันก่อนหน้า แต่เป็นของบิลวันนี้</span><b>− '+TH(_shIn)+'</b></div><div class="muted" style="font-size:12px;margin:-2px 0 4px">'+(_sh.in||[]).map(function(c){return esc(c.cn_no)+' ('+beDate(c.from)+') → '+esc(c.bill_no)+' '+TH(c.amt);}).join(' · ')+' · ยอดเครื่องก่อนย้าย '+TH(_mNetRaw)+'</div>';
     if(_mNet==null) html+='<div class="verdict" style="margin:5px 0;background:#f8fafc;border:1px dashed #cbd5e1;color:#475569;padding:7px 10px;border-radius:8px">⏳ ยอดจากเครื่องยังไม่ขึ้น — ระบบดึงจาก ACC-BILLING แล้วเทียบให้เอง</div>';
@@ -2477,9 +2496,23 @@ function posFileSave(){ try{ localStorage.setItem("rev_pos_file", JSON.stringify
 (function initAccDay(){
   try{
     var el=document.getElementById("accDate");
+    /* v0.6.7 (24 ต.ค.69 คุณหลิง) — เปิดมาที่วันล่าสุดที่มีข้อมูลอัป (rev_audit ไม่นับวันหยุด · ไม่เกินวันนี้) · วันนี้อัปแล้ว = วันนี้ · หาไม่ได้ = เมื่อวานเหมือนเดิม
+       เช้าก่อนแคชเชียร์อัปวันนี้ = เมื่อวาน → การ์ดตัดบิลอัตโนมัติของเมื่อวานทำงานเหมือนเดิม */
+    var _y0=null;
     if(el && !el.value){ var y=new Date(Date.now()-864e5);
-      el.value=y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate()); }
-    setTimeout(loadAccDay, 400);
+      el.value=_y0=y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate()); }
+    var _t=new Date(), _today=_t.getFullYear()+"-"+pad2(_t.getMonth()+1)+"-"+pad2(_t.getDate());
+    /* Codex r3-1/2: ผู้ใช้เปลี่ยนวัน/อัปฟอร์มแล้ว (loadAccDay ถูกเรียก → _accTok ขยับ) = ไม่แตะวันที่ ไม่โหลดซ้ำ */
+    var _tok0=window._accTok||0, _fired=false, _mine=function(){ return !_fired && (window._accTok||0)===_tok0; };
+    var _go=function(){ if(!_mine()){ _fired=true; return; } _fired=true; loadAccDay(); };
+    if(el && _y0 && sb){
+      setTimeout(_go, 2500); /* ฐานช้า → ไม่รอ ใช้เมื่อวาน */
+      sb.from("rev_audit").select("date").neq("status","วันหยุด").lte("date",_today).order("date",{ascending:false}).limit(1).then(function(r){
+        var d=r&&!r.error&&r.data&&r.data[0]&&String(r.data[0].date||"").slice(0,10);
+        if(_mine() && /^\d{4}-\d{2}-\d{2}$/.test(d||"") && el.value===_y0) el.value=d;
+        _go();
+      },function(){ _go(); });
+    } else setTimeout(_go, 400); /* Codex r4 */
   }catch(e){}
 })();
 render();

@@ -221,8 +221,8 @@ table.cmp td.d{font-weight:700}
 <div id="printArea"></div>
 <div class="modal" id="modal" hidden>
   <div class="mbox" role="dialog" aria-label="ปริ้นฟอร์ม">
-    <div class="mhead"><b>ปริ้น / บันทึกเป็น PDF · กระดาษ A4 แนวตั้งเสมอ</b>
-      <div class="acts"><button class="btn" id="mAll">เลือกทุกหน้า</button><button class="btn" id="mClose">ปิด</button><button class="btn pri" id="mGo">ปริ้นหน้าที่เลือก</button></div></div>
+    <div class="mhead"><b>ปริ้น / บันทึกเป็น PDF หรือ Excel · กระดาษ A4 แนวตั้งเสมอ</b>
+      <div class="acts"><button class="btn" id="mAll">เลือกทุกหน้า</button><button class="btn" id="mClose">ปิด</button><button class="btn" id="mXlsx">บันทึกเป็น Excel (หน้าที่เลือก)</button><button class="btn pri" id="mGo">ปริ้นหน้าที่เลือก</button></div></div>
     <div class="pick" id="mPick"></div>
     <p class="hint" id="mNote">ในหน้าต่างปริ้น เลือกเครื่องพิมพ์ หรือ "บันทึกเป็น PDF" ได้เลย ขนาดกระดาษถูกล็อกไว้ที่ A4</p>
     <div class="previews" id="mPrev"></div>
@@ -889,7 +889,40 @@ function drawPrev(){
   const box=document.getElementById('mPrev');const w=box.clientWidth-28;const sc=Math.min(1,w/794);
   const ids=PAGES.filter(p=>picked.has(p.id)).map(p=>p.id);
   box.innerHTML=ids.length?ids.map(id=>`<div style="width:${794*sc}px;height:${1123*sc}px;overflow:hidden"><div class="pv" style="transform:scale(${sc});transform-origin:top left">${pageHTML(id)}</div></div>`).join(''):'<div class="small">ยังไม่ได้เลือกหน้า</div>';
-  document.getElementById('mGo').disabled=!ids.length;
+  document.getElementById('mGo').disabled=!ids.length; document.getElementById('mXlsx').disabled=!ids.length;
+}
+/* บันทึกเป็นไฟล์ Excel เฉพาะหน้าที่เลือก (หรือทั้งชุด) — คุณหลิงขอ 24 ต.ค.69
+   ใช้ CashierForm.buildWorkbook ตัวเดียวกับปุ่ม "ดึงจากฟอร์มในโปรแกรม" (หน้าตาเหมือนฟอร์ม Excel ต้นฉบับ) แล้วเก็บเฉพาะชีตที่เลือก
+   หน้า 7 รายรับอื่นๆ/คืนเงิน ไม่มีในฟอร์มต้นฉบับ สร้างชีตเพิ่ม · โหมดทดลองชื่อไฟล์ลงท้าย "-ทดลอง" · ทำในเครื่องล้วน ไม่เขียนฐาน */
+const XLSX_SHEET={p1:'สรุปรายรับ-รายจ่าย',p2:'ร้านค้าเงินสด',p3:'โอน',p4:'ลงบัญชี',p5:'บิลเก่า',p6:'ง-ส คุณ1'};
+function xlsxName(){ const p=DATA.date.split('-'); return `${p[2]}-${p[1]}-${String(+p[0]+543).slice(2)}${TRIAL?'-ทดลอง':''}.xlsx`; }
+function buildXlsx(ids){
+  const X=window.XLSX, CF=window.CashierForm; if(!X||!CF) throw new Error('ตัวสร้างไฟล์ Excel ยังโหลดไม่เสร็จ ลองเปิดหน้าใหม่');
+  const ent=entriesOf(); const ok=r=>CF.BILL_RE.test(String(r.bill||''));
+  const e={date:DATA.date,rcash:ent.rcash};
+  ['scash','xfer','credit','oldc','oldx','upk'].forEach(k=>e[k]=(ent[k]||[]).filter(ok));
+  e.other=S.other.map(x=>({desc:x.desc,amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
+  e.refund=S.refund.map(x=>({bill:x.bill,cn:x.cn||'',amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
+  const full=CF.buildWorkbook(X,e,{bills:BILL,deps:DEP});
+  const wb=X.utils.book_new();
+  ids.forEach(id=>{
+    if(XLSX_SHEET[id]){ const ws=full.Sheets[XLSX_SHEET[id]]; if(ws) X.utils.book_append_sheet(wb,ws,XLSX_SHEET[id]); return; }
+    if(id==='p7'){
+      const n=v=>Math.round(num(v)*100)/100, oc=e.other.filter(x=>x.ch!=='xfer'), rc=e.refund.filter(x=>x.ch!=='xfer');
+      const aoa=[['รายรับอื่นๆ / คืนเงิน',null,null,null,beDate(DATA.date)],['รายรับอื่นๆ'],['ลำดับ','รายละเอียด','เงินสด','เงินโอน']];
+      e.other.forEach((x,i)=>aoa.push([i+1,String(x.desc||''),x.ch!=='xfer'?n(x.amt):null,x.ch==='xfer'?n(x.amt):null]));
+      aoa.push([null,'ยอดรวม',n(oc.reduce((s,x)=>s+n(x.amt),0)),n(e.other.filter(x=>x.ch==='xfer').reduce((s,x)=>s+n(x.amt),0))],[],['คืนเงิน (ไม่ออกบิล)'],['ลำดับ','เลขบิล','ใบลดหนี้','เงินสด','เงินโอน']);
+      e.refund.forEach((x,i)=>aoa.push([i+1,String(x.bill||''),String(x.cn||''),x.ch!=='xfer'?n(x.amt):null,x.ch==='xfer'?n(x.amt):null]));
+      aoa.push([null,'ยอดรวม',null,n(rc.reduce((s,x)=>s+n(x.amt),0)),n(e.refund.filter(x=>x.ch==='xfer').reduce((s,x)=>s+n(x.amt),0))]);
+      X.utils.book_append_sheet(wb,X.utils.aoa_to_sheet(aoa),'รายรับอื่นๆ-คืนเงิน');
+    }
+  });
+  return wb;
+}
+function doXlsx(){
+  const ids=PAGES.filter(p=>picked.has(p.id)).map(p=>p.id); if(!ids.length) return;
+  try{ window.XLSX.writeFile(buildXlsx(ids),xlsxName()); document.getElementById('mNote').textContent=`บันทึกไฟล์ ${xlsxName()} แล้ว (${ids.length} หน้า) — ดูในโฟลเดอร์ดาวน์โหลด`; }
+  catch(err){ document.getElementById('mNote').textContent='บันทึก Excel ไม่สำเร็จ: '+(err.message||err); }
 }
 function doPrint(){
   const ids=PAGES.filter(p=>picked.has(p.id)).map(p=>p.id);if(!ids.length)return;
@@ -901,6 +934,7 @@ document.getElementById('bPrint').onclick=openPrint;
 document.getElementById('mClose').onclick=()=>document.getElementById('modal').hidden=true;
 document.getElementById('mAll').onclick=()=>{picked=new Set(PAGES.map(p=>p.id));openPrint()};
 document.getElementById('mGo').onclick=doPrint;
+document.getElementById('mXlsx').onclick=doXlsx;
 document.getElementById('modal').onclick=e=>{if(e.target.id==='modal')e.target.hidden=true};
 document.getElementById('bSubmit').onclick=async()=>{
   const b=document.getElementById('bSubmit'); if(TRIAL||b.disabled) return;

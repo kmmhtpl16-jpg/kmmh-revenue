@@ -19,7 +19,10 @@
     chart:'<path d="M4 20v-5h4v5M10 20v-8h4v8M16 20V9h4v11"/>',
     pend:'<circle cx="9" cy="9" r="5"/><path d="M14.5 6.5a5 5 0 1 1-3 9"/><path d="M9 7v4"/>',
     menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', door:'<path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4"/><path d="M10 8l-4 4 4 4M6 12h9"/>',
-    caret:'<path d="M9 6l6 6-6 6"/>', left:'<path d="M15 6l-6 6 6 6"/>'
+    caret:'<path d="M9 6l6 6-6 6"/>', left:'<path d="M15 6l-6 6 6 6"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+    swap:'<path d="M4 8h14l-3.5-3.5"/><path d="M20 16H6l3.5 3.5"/>',
+    power:'<path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>'
   };
   /* roles: c=แคชเชียร์ f=การเงิน o=เจ้าของ
      "รายการเดินบัญชี K+/กสิกร" ให้แคชเชียร์เห็นได้หลังเจ้าของอนุมัติเปิดสิทธิ์ (ตอนนี้ f,o เหมือนเดิม) */
@@ -68,6 +71,8 @@
     " body.km-side nav.topnav, body.km-side .wrap>nav:not(.km-nav){display:none!important}",
     " .km-aside{position:fixed;top:0;left:0;bottom:0;width:240px;background:#fbfcfc;border-right:1px solid #d6dedb;display:flex;flex-direction:column;z-index:900;font:14px/1.45 'IBM Plex Sans Thai','Sarabun',Tahoma,sans-serif;color:#18232b}",
     " body.km-mini .km-aside{width:64px}",
+    /* v0.7.5 ปุ่มออก/สลับผู้ใช้ย้ายมามุมซ้ายล่าง → ซ่อนป้าย "เจ้าของ · ออก" มุมขวาบนของหน้าตรวจ (จอคอม) */
+    " body.km-side #roleBar{display:none!important}",
     "}",
     "@media (max-width:899px){ .km-aside{display:none!important} }",
     /* ── มือถือ: แถบล่าง + แผ่นเมนูเต็ม ── */
@@ -121,6 +126,20 @@
     ".km-open>.km-sub{display:flex}.km-sub .km-it{padding:6px 10px;font-size:13.5px}",
     ".km-who{border-top:1px solid #d6dedb;padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:13px}",
     ".km-who .km-wt{flex:1;min-width:0}.km-who small{display:block;color:#5d6b72;font-size:11.5px}",
+    /* v0.7.5 (24 ต.ค.69 คุณหลิง) มุมซ้ายล่าง = ปุ่มผู้ใช้ กดแล้วเด้งเมนู สลับผู้ใช้ / ออกจากระบบ (แบบปุ่มปิดเครื่อง Windows) */
+    ".km-who{position:relative}",
+    ".km-wb{flex:1;min-width:0;display:flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:8px;padding:4px 6px;margin:-4px -6px;font:inherit;color:inherit;text-align:left;cursor:pointer}",
+    ".km-wb:hover:not(:disabled),.km-wb[aria-expanded=true]{background:#eef3f1}.km-wb:disabled{cursor:default}",
+    ".km-wb>svg{width:22px;height:22px;flex:none;stroke:#1f6f5c;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}",
+    ".km-pm{position:absolute;left:8px;bottom:calc(100% + 6px);min-width:224px;background:#fff;border:1px solid #d6dedb;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.18);padding:6px;z-index:950}",
+    ".km-pm[hidden]{display:none}",
+    ".km-pm .km-ph{padding:6px 10px 8px;font-size:12px;color:#5d6b72;border-bottom:1px solid #eef1f0;margin-bottom:4px}.km-pm .km-ph b{color:#18232b}",
+    ".km-pm button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:7px;padding:9px 10px;font:inherit;color:#18232b;text-align:left;cursor:pointer}",
+    ".km-pm button:hover,.km-pm button:focus-visible{background:#eef3f1;outline:none}",
+    ".km-pm button svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}",
+    ".km-pm button small{display:block;font-size:11.5px;color:#5d6b72}",
+    ".km-pm .km-pout{color:#b91c1c}",
+    "body.km-mini .km-pm{left:6px}",
     ".km-tog{border:1px solid #d6dedb;background:#fff;border-radius:7px;width:30px;height:30px;display:grid;place-items:center;cursor:pointer;flex:none}",
     ".km-tog svg{width:16px;height:16px;stroke:#18232b;fill:none;stroke-width:2}",
     "body.km-mini .km-aside .km-bt, body.km-mini .km-aside .km-l, body.km-mini .km-aside .km-c, body.km-mini .km-aside .km-gt, body.km-mini .km-aside .km-sub, body.km-mini .km-aside .km-wt{display:none!important}",
@@ -203,6 +222,29 @@
     try{ sessionStorage.removeItem("rev_dash_ok"); sessionStorage.removeItem("rev_role"); }catch(e){}
     location.reload();
   }
+  /* v0.7.5 เมนูมุมซ้ายล่าง: เลือกในเมนู = ยืนยันแล้ว (เหมือนเมนูปิดเครื่อง) ไม่ถาม confirm ซ้ำ
+     ทำเหมือน revLogout ของทุกหน้า: RevAuth.logout (signOut เฉพาะเครื่องนี้ + ลบ session ในเครื่อง) + ล้างสิทธิ์ที่จำไว้ → โหลดหน้าใหม่ = หน้าใส่รหัส
+     สลับผู้ใช้ กับ ออกจากระบบ ทำเหมือนกัน (ต่างกันที่ป้าย) — ออกแล้วใส่รหัสของคนใหม่ได้ทันที */
+  var busy=false;
+  async function logoutNow(){
+    if(busy) return; busy=true;
+    /* Codex r1: เน็ตค้าง → รอ signOut ไม่เกิน 3 วิ · RevAuth ไม่โหลด/ล้มเหลว → ลบ session ในเครื่องเองด้วย (ไม่ให้สิทธิ์ค้างหลังโหลดใหม่) */
+    try{ if(window.RevAuth) await Promise.race([window.RevAuth.logout(SB()), new Promise(function(r){ setTimeout(r,3000); })]); }catch(e){}
+    try{ localStorage.removeItem("sb-rev-kmmh"); }catch(e){}
+    try{ localStorage.removeItem("rev_role"); }catch(e){}
+    try{ sessionStorage.removeItem("rev_dash_ok"); sessionStorage.removeItem("rev_role"); }catch(e){}
+    location.reload();
+  }
+  function pmOpen(){
+    var pm=document.getElementById("kmPm"), wb=document.querySelector("#kmAside .km-wb"); if(!pm||!wb||wb.disabled||locked()) return;
+    pm.querySelector(".km-ph b").textContent=RN[role()]||"";
+    pm.hidden=false; wb.setAttribute("aria-expanded","true");
+    var f=pm.querySelector("button"); if(f) f.focus();
+  }
+  function pmShut(back){
+    var pm=document.getElementById("kmPm"), wb=document.querySelector("#kmAside .km-wb"); if(!pm||pm.hidden) return;
+    pm.hidden=true; if(wb){ wb.setAttribute("aria-expanded","false"); if(back) try{ wb.focus(); }catch(e){} }
+  }
   /* เลขแดงบนปุ่ม "รอจับคู่" = เงินรอจับคู่ที่ยังเปิดอยู่ (เกณฑ์เดียวกับกระดิ่ง: ย้อนหลัง 120 วัน) · ยังไม่ล็อกอิน = ไม่โชว์ */
   function SB(){ try{ if(typeof sb!=="undefined" && sb) return sb; }catch(e){} return window.sb||null; }
   var MQ=window.matchMedia?window.matchMedia("(max-width:899px)"):null;
@@ -227,7 +269,8 @@
     drawMob(r,cur);
     aside.querySelector(".km-nav").innerHTML=tree(r,cur);
     var rn=RN[r]||"ยังไม่ได้เข้าระบบ";
-    aside.querySelector(".km-wt").innerHTML=esc(rn)+"<small>กิจมั่งมีโฮม</small>";
+    aside.querySelector(".km-wt").innerHTML=esc(rn)+"<small>"+(r?"กดเพื่อสลับผู้ใช้ / ออก":"กิจมั่งมีโฮม")+"</small>";
+    var wb=aside.querySelector(".km-wb"); if(wb){ wb.disabled=!r; wb.title=r?(rn+" · สลับผู้ใช้ / ออกจากระบบ"):""; if(!r) pmShut(false); }
     aside.querySelectorAll("[data-g]").forEach(function(b){ b.onclick=function(){
       var id=b.getAttribute("data-g");
       if(document.body.classList.contains("km-mini")){ document.body.classList.remove("km-mini"); try{ localStorage.setItem("km_nav_mini","0"); }catch(e){} open[id]=1; }
@@ -247,7 +290,11 @@
     if(document.getElementById("kmAside")) return;
     var st=document.createElement("style"); st.textContent=CSS; document.head.appendChild(st);
     var a=document.createElement("aside"); a.id="kmAside"; a.className="km-aside"; a.setAttribute("aria-label","เมนูหลัก");
-    a.innerHTML='<a class="km-brand" href="index.html"><div class="km-logo">ก</div><div class="km-bt"><b>ตรวจรายได้</b><small>กิจมั่งมีโฮม</small></div></a><nav class="km-nav"></nav><div class="km-who"><div class="km-wt"></div><button type="button" class="km-tog" title="ย่อ/ขยายเมนู" aria-label="ย่อหรือขยายเมนู">'+svg("left")+'</button></div>';
+    a.innerHTML='<a class="km-brand" href="index.html"><div class="km-logo">ก</div><div class="km-bt"><b>ตรวจรายได้</b><small>กิจมั่งมีโฮม</small></div></a><nav class="km-nav"></nav><div class="km-who"><button type="button" class="km-wb" aria-haspopup="menu" aria-expanded="false" aria-controls="kmPm">'+svg("user")+'<div class="km-wt"></div></button>'
+      +'<div class="km-pm" id="kmPm" role="menu" aria-label="ผู้ใช้" hidden><div class="km-ph">เข้าระบบเป็น <b></b></div>'
+      +'<button type="button" role="menuitem" data-pm="swap">'+svg("swap")+'<span>สลับผู้ใช้ / เปลี่ยนสิทธิ์<small>ออก แล้วใส่รหัสของคนที่จะใช้ต่อ</small></span></button>'
+      +'<button type="button" role="menuitem" data-pm="out" class="km-pout">'+svg("power")+'<span>ออกจากระบบ<small>ออกจากเครื่องนี้</small></span></button></div>'
+      +'<button type="button" class="km-tog" title="ย่อ/ขยายเมนู" aria-label="ย่อหรือขยายเมนู">'+svg("left")+'</button></div>';
     document.body.appendChild(a); document.body.classList.add("km-side");
     /* มือถือ: แถบล่าง + ฉากมืด + แผ่นเมนูเต็ม */
     var bn=document.createElement("div"); bn.id="kmBn"; bn.className="km-bn"; bn.setAttribute("role","navigation"); bn.setAttribute("aria-label","เมนูลัด");
@@ -263,12 +310,20 @@
     sh.querySelector(".km-out").onclick=function(){ shut(); logout(); };
     document.addEventListener("keydown",function(ev){ if(ev.key==="Escape") shut(); });
     try{ if(localStorage.getItem("km_nav_mini")==="1") document.body.classList.add("km-mini"); }catch(e){}
-    a.querySelector(".km-tog").onclick=function(){ var m=document.body.classList.toggle("km-mini"); try{ localStorage.setItem("km_nav_mini",m?"1":"0"); }catch(e){} };
+    var wbt=a.querySelector(".km-wb"), pm=a.querySelector("#kmPm");
+    wbt.onclick=function(ev){ ev.stopPropagation(); if(pm.hidden) pmOpen(); else pmShut(true); };
+    pm.addEventListener("click",function(ev){ ev.stopPropagation(); var b=ev.target.closest("[data-pm]"); if(!b) return; pmShut(false); logoutNow(); });
+    pm.addEventListener("keydown",function(ev){ if(ev.key!=="ArrowDown"&&ev.key!=="ArrowUp") return; ev.preventDefault();
+      var bs=[].slice.call(pm.querySelectorAll("button")), i=bs.indexOf(document.activeElement); i=(i+(ev.key==="ArrowDown"?1:bs.length-1))%bs.length; bs[i].focus(); });
+    document.addEventListener("click",function(ev){ if(!pm.hidden && !ev.target.closest(".km-who")) pmShut(false); });
+    a.querySelector(".km-who").addEventListener("focusout",function(ev){ if(!pm.hidden && !(ev.relatedTarget && ev.currentTarget.contains(ev.relatedTarget))) pmShut(false); }); /* Codex r1: Tab ออกนอกเมนู = ปิด */
+    document.addEventListener("keydown",function(ev){ if(ev.key==="Escape" && !pm.hidden) pmShut(true); });
+    a.querySelector(".km-tog").onclick=function(){ pmShut(false); var m=document.body.classList.toggle("km-mini"); try{ localStorage.setItem("km_nav_mini",m?"1":"0"); }catch(e){} };
     draw(); goHash();
     window.addEventListener("hashchange",function(){ shut(); draw(); goHash(); });
     /* หน้าเดิมเปลี่ยนสิทธิ์หลังใส่ PIN → วาดเมนูใหม่ */
     var last=role(); setInterval(function(){ var r=role(); if(r!==last){ last=r; pendN=0; draw(); setTimeout(loadPend,1500); }
-      var lk=locked(); document.body.classList.toggle("km-lock",lk); if(lk) shut(); },1000);
+      var lk=locked(); document.body.classList.toggle("km-lock",lk); if(lk){ shut(); pmShut(false); } },1000);
     document.body.classList.toggle("km-lock",locked());
     /* จอขยายเป็นจอคอม / สั่งปริ้น → ปิดแผ่นเมนู ไม่ให้ค้างเปิดเองตอนกลับมาจอแคบ */
     if(MQ){ var onMq=function(){ if(!MQ.matches) shut(); else loadPend(); }; if(MQ.addEventListener) MQ.addEventListener("change",onMq); else if(MQ.addListener) MQ.addListener(onMq); }

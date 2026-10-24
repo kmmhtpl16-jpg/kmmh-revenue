@@ -188,6 +188,8 @@ table.cmp td.d{font-weight:700}
       <a class="btn" href="index.html" style="text-decoration:none;color:inherit">↩ หน้าตรวจรายได้</a>
       <a class="btn trialbtn" id="bTrial" href="ฟอร์มรายรับ.html?trial=1" title="ลองกรอกฟอร์มของวันที่ผ่านมาแล้ว ตรวจกับ ACC จริง โดยไม่บันทึกเข้าระบบจริง">🧪 โหมดทดลอง</a>
       <button class="btn" id="bReset" hidden>ล้างที่ลองกรอก</button>
+      <button class="btn" id="bTrialSave" hidden>💾 บันทึกข้อมูลทดลอง</button>
+      <button class="btn trialbtn" id="bCopyReal" hidden>📋 คัดลอกไปฟอร์มจริง (ร่าง)</button>
       <button class="btn" id="bSubmit" disabled>ส่งฟอร์ม</button>
       <button class="btn pri" id="bPrint" disabled>ปริ้น / PDF (A4)</button>
     </div>
@@ -252,7 +254,8 @@ const isRA=s=>/^RA/.test(s);
 let S={rcash:[],scash:[],xfer:[],credit:[],oldc:[],oldx:[],upk:[],other:[],refund:[],photo:null,count:''};
 let ROW={status:'draft'};
 /* โหมดทดลอง (?trial=1): เลือกวันย้อนหลัง กรอกเหมือนจริง ตรวจกับ ACC จริงด้วยกติกาเดียวกัน
-   อ่าน/เขียนแค่ rev_cashier_form_trial · ไม่แตะ rev_cashier_form / rev_cash_* / รูปใบนับ / ส่งฟอร์ม · รายรับอื่นๆ คืนเงิน ยอดนับเงินสด กรอกในฟอร์มเลย */
+   อ่าน/เขียนแค่ rev_cashier_form_trial · ไม่แตะ rev_cashier_form / rev_cash_* / รูปใบนับ / ส่งฟอร์ม · รายรับอื่นๆ คืนเงิน ยอดนับเงินสด กรอกในฟอร์มเลย
+   ยกเว้นทางเดียว: ปุ่ม "คัดลอกไปฟอร์มจริง (ร่าง)" ที่ผู้ใช้กดยืนยันเอง (ดู bCopyReal) */
 const TRIAL=new URLSearchParams(location.search).get('trial')==='1';
 const FORM_TABLE=TRIAL?'rev_cashier_form_trial':'rev_cashier_form';
 let XLDAY=null; /* ยอดที่ยืนยันจาก Excel ของวันนั้น (rev_audit) — ไว้เทียบในโหมดทดลอง */
@@ -267,7 +270,7 @@ const bkkShift=(iso,n)=>{const p=iso.split("-");const d=new Date(Date.UTC(+p[0],
 /* แคชเชียร์แก้ได้เฉพาะวันนี้/เมื่อวาน (เหมือนกล่องอื่นในหน้าตรวจรายได้) · ส่งฟอร์มแล้วแคชเชียร์แก้ไม่ได้ เจ้าของแก้ได้ */
 function canEditDay(){ if(!ROLE) return false; if(TRIAL) return !!DATA.date&&DATA.date<=bkkToday(); if(ROLE==="owner") return true; if(ROW.status==="submitted") return false; const t0=bkkToday(); return DATA.date===t0||DATA.date===bkkShift(t0,-1); }
 /* ระหว่างโหลดวันใหม่ / กำลังส่งฟอร์ม ล็อกช่องกรอกไว้ ไม่งั้นสิ่งที่พิมพ์ช่วงนั้นจะถูกทับหรือไม่ได้เข้าไปกับฟอร์มที่ส่ง */
-function canEdit(){ return _loadOk&&!_submitting&&canEditDay(); }
+function canEdit(){ return _loadOk&&!_submitting&&!_copying&&canEditDay(); }
 async function ensureSession(){
   /* หน้าเว็บนี้อยู่โดเมนเดียวกับหน้าตรวจรายได้ ใช้ session เดียวกัน (storageKey sb-rev-kmmh) */
   try{ const {data:{session}}=await sb.auth.getSession(); if(session) return true; }catch(e){}
@@ -284,9 +287,9 @@ function setAcc(d){ DATA=d; indexAcc(); }
 function extraBills(s){ s=s||S; const out=[]; const add=v=>{ v=normBill(v); if(v&&validBill(v)&&out.indexOf(v)<0) out.push(v); };
   ['scash','xfer','credit','oldc','oldx','upk','refund'].forEach(k=>(s[k]||[]).forEach(r=>add(r.bill)));
   (s.rcash||[]).forEach(r=>add(r.ra)); return out; }
-let _loadTok=0,_loadOk=false,_submitting=false;
+let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 async function loadDay(date){
-  const tok=++_loadTok; _loadOk=false; ['subOk','rsOk'].forEach(id=>{ const so=document.getElementById(id); if(so) so.remove(); }); if(DATA.date) renderAll(); YYMM=date.slice(2,4)==='26'?String(+date.slice(0,4)+543).slice(2)+date.slice(5,7):'';
+  const tok=++_loadTok; _loadOk=false; _copyNote=''; ['subOk','rsOk','cpOk'].forEach(id=>{ const so=document.getElementById(id); if(so) so.remove(); }); if(DATA.date) renderAll(); YYMM=date.slice(2,4)==='26'?String(+date.slice(0,4)+543).slice(2)+date.slice(5,7):'';
   document.getElementById('dTxt').textContent=''; setChip('syncChip','mute','กำลังโหลด…'); setChip('saveChip','mute','');
   try{
     if(TRIAL){
@@ -408,7 +411,7 @@ function amtInput(key,i,f,v,ph){return `<input class="num" id="${key}_${f}_${i}"
 function paneBillAmt(key,title,hint,R){
   const rows=rowsWithBlank(S[key],{bill:'',amt:''});
   const tot=S[key].reduce((s,r)=>s+num(r.amt),0);
-  return `<div class="pane"><h2>${title}</h2><p class="hint">${hint}</p><div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th>${key==='scash'?'<th class="depc">มัดจำ</th>':''}<th>ชื่อร้าน (จาก ACC)</th><th style="text-align:right">ยอดเงิน</th><th>ตรวจ</th></tr></thead><tbody>
+  return `<div class="pane"><h2>${title}</h2><p class="hint">${hint}${hint?' · ':''}Enter ไปช่องถัดไป · ลูกศร ↑↓←→ เลื่อนช่องเหมือน Excel</p><div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th>${key==='scash'?'<th class="depc">มัดจำ</th>':''}<th>ชื่อร้าน (จาก ACC)</th><th style="text-align:right">ยอดเงิน</th><th>ตรวจ</th></tr></thead><tbody>
   ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${billCell(key,i,r,R)}<td style="width:9em">${amtInput(key,i,'amt',r.amt)}</td>${stCell(key,i,R)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td colspan="${key==='scash'?3:2}">ยอดรวม</td><td style="text-align:right">${fmt(tot)}</td><td></td></tr></tfoot></table></div></div>`;
 }
@@ -423,7 +426,7 @@ function paneRcash(R){
 function paneXfer(R){
   const rows=rowsWithBlank(S.xfer,{bill:'',kp:'',ks:''});
   const tk=S.xfer.reduce((s,r)=>s+num(r.kp),0),ts=S.xfer.reduce((s,r)=>s+num(r.ks),0);
-  return `<div class="pane"><h2>รายการโอน</h2><p class="hint">ใส่เลขบิล + ยอด ในช่องบัญชีที่เงินเข้า · ถ้าเป็นมัดจำ ติ๊กช่องมัดจำ แล้วใส่เลข RA</p>
+  return `<div class="pane"><h2>รายการโอน</h2><p class="hint">ใส่เลขบิล + ยอด ในช่องบัญชีที่เงินเข้า · ถ้าเป็นมัดจำ ติ๊กช่องมัดจำ แล้วใส่เลข RA · Enter ไปช่องถัดไป · ลูกศร ↑↓←→ เลื่อนช่อง</p>
   <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th><th class="depc">มัดจำ</th><th>ชื่อ (จาก ACC)</th><th style="text-align:right">โอนเข้า K+NV</th><th style="text-align:right">โอนเข้ากสิกร</th><th>ตรวจ</th></tr></thead><tbody>
   ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${billCell('xfer',i,r,R)}<td style="width:8em">${amtInput('xfer',i,'kp',r.kp)}</td><td style="width:8em">${amtInput('xfer',i,'ks',r.ks)}</td>${stCell('xfer',i,R)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td colspan="3">รวม</td><td style="text-align:right">${fmt(tk)}</td><td style="text-align:right">${fmt(ts)}</td><td></td></tr></tfoot></table></div></div>`;
@@ -669,9 +672,11 @@ function renderTrialCards(R){
 let R;
 function renderAll(keepFocus){
   const fid=document.activeElement&&document.activeElement.id,sel=document.activeElement&&document.activeElement.selectionStart;
+  /* ช่องที่กำลังพิมพ์ค้าง (ยังไม่ Enter/ออกช่อง) ไม่ให้ถูกวาดทับด้วยค่าเก่า เช่นตอนข้อมูล ACC ตอบกลับระหว่างพิมพ์ (Codex kbd r2) */
+  const ae=document.activeElement, pend=(ae&&ae.tagName==='INPUT'&&ae.dataset&&(ae.dataset.k||ae.id==='cnt_amt_0')&&ae.closest('#panes')&&ae.value!==ae.defaultValue)?{id:ae.id,v:ae.value,s:ae.selectionStart,e:ae.selectionEnd}:null;
   R=compute();renderTabs(R);
   const p=document.getElementById('panes');
-  p.querySelectorAll('input').forEach(i=>{i.onchange=null;i.onkeydown=null;i.oninput=null});
+  p.querySelectorAll('input').forEach(i=>{i.onchange=null;i.onkeydown=null;i.oninput=null;i.onblur=null});
   p.innerHTML=cur==='sum'?paneSum(R):cur==='rcash'?paneRcash(R):cur==='scash'?paneBillAmt('scash','ร้านค้าเงินสด','เลขบิลเต็ม + ยอดเงิน (เช่น KM6910-0874) · ชื่อร้านขึ้นเองจาก ACC · มัดจำเงินสดของร้านค้า ติ๊กช่องมัดจำ แล้วใส่เลขที่ใบรับมัดจำ',R):cur==='xfer'?paneXfer(R):cur==='ex'?paneEx(R):cur==='credit'?paneBillAmt('credit','ลงบัญชี (รวมงานสั่งทำ)','บิลที่ลูกค้ายังไม่จ่าย ใส่ยอดที่ค้าง · บิลที่หักมัดจำไปแล้ว ใส่แค่ยอดที่เหลือ (ACC รู้ยอดหักเอง)',R):paneOld(R);
   renderSide(R);bind();
   const ed=canEdit(); p.querySelectorAll('input,select').forEach(i=>{ i.disabled=!ed; });
@@ -682,29 +687,71 @@ function renderAll(keepFocus){
   const bp=document.getElementById('bPrint'), bs=document.getElementById('bSubmit');
   bp.disabled=!(done&&!miss.length); bp.title=!done?'ปริ้นได้หลังข้อมูล ACC เข้ารอบ 16:30 (ชื่อร้าน + แยกปลีก/ร้านค้า จะครบ)':miss.length?('ยังไม่พบใน ACC: '+miss.join(', ')):'';
   bs.hidden=TRIAL; document.getElementById('bTrial').hidden=TRIAL; document.getElementById('bReset').hidden=!TRIAL; document.getElementById('bReset').disabled=!canEdit();
+  { const bt=document.getElementById('bTrialSave'), bc=document.getElementById('bCopyReal'), t0=bkkToday(), okDay=DATA.date===t0||DATA.date===bkkShift(t0,-1);
+    bt.hidden=bc.hidden=!TRIAL; bt.disabled=!canEdit(); bc.disabled=!(canEdit()&&okDay&&!_copying);
+    bc.title=!okDay?'คัดลอกไปฟอร์มจริงได้เฉพาะวันนี้และเมื่อวาน':'คัดลอกรายการในฟอร์มนี้ไปเป็นฉบับร่างของฟอร์มจริง (ต้องเปิดฟอร์มปกติตรวจแล้วกดส่งเอง)'; }
   bs.disabled=TRIAL||!(done&&!fmtBad&&canEdit()&&ROW.status!=='submitted'); bs.title=ROW.status==='submitted'?'ส่งแล้ว':!done?'ส่งได้หลังข้อมูล ACC เข้ารอบ 16:30':fmtBad?'แก้เลขบิลที่ผิดรูปแบบก่อน':'';
   const tn=document.getElementById('topNote'); const notes=[];
-  if(TRIAL){ if(!ed&&_loadOk) notes.push('โหมดทดลองใช้ได้กับวันนี้หรือวันที่ผ่านมาแล้วเท่านั้น'); }
+  if(TRIAL){ if(!canEditDay()&&_loadOk) notes.push('โหมดทดลองใช้ได้กับวันนี้หรือวันที่ผ่านมาแล้วเท่านั้น'); }
   else if(!ed&&ROLE!=='owner') notes.push(ROW.status==='submitted'?'ส่งฟอร์มของวันนี้แล้ว — แก้ไม่ได้ ถ้าต้องแก้ให้แจ้งเจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้เฉพาะวันนี้และเมื่อวาน)');
   if(done&&miss.length) notes.push('ยังไม่พบใน ACC: '+miss.join(', ')+' — ตรวจเลขบิล หรือรอรอบซิงก์ถัดไป');
-  tn.hidden=!notes.length; tn.textContent=notes.join(' · ');
+  tn.hidden=!notes.length&&!_copyNote; tn.textContent=notes.join(' · '); if(_copyNote) tn.insertAdjacentHTML('beforeend',(notes.length?' · ':'')+_copyNote);
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{el.setSelectionRange(sel,sel)}catch(e){}}}
+  if(pend){const el=document.getElementById(pend.id);if(el&&!el.disabled&&el===document.activeElement){el.value=pend.v;try{el.setSelectionRange(pend.s,pend.e)}catch(e){}}}
 }
 function bind(){
   document.querySelectorAll('#panes [data-k]').forEach(el=>{
     el.oninput=()=>{};
     el.onchange=()=>commit(el);
-    el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commit(el);const k=el.dataset.k,f=el.dataset.f,i=+el.dataset.i;const nx=document.getElementById(`${k}_${f==='bill'?'b':f}_${i+1}`)||document.getElementById(`${k}_${f==='bill'?'b':f}_${i}`);if(nx)nx.focus()}};
+    /* ออกช่อง (เมาส์/Tab) ทั้งที่ค่ายังไม่ได้บันทึก — เช่นค่าที่ renderAll ใส่คืนให้ ซึ่งเบราว์เซอร์ไม่ยิง change — บันทึกด้วย (Codex kbd r3) */
+    if(el.tagName==='INPUT') el.onblur=()=>{ if(el.isConnected&&el.value!==el.defaultValue) commit(el); };
   });
+  document.querySelectorAll('#panes table.entry tbody input:not([type=checkbox]),#panes table.entry tbody select').forEach(el=>{ el.onkeydown=e=>navKey(e,el); });
   document.querySelectorAll('#panes [data-dep]').forEach(cb=>cb.onchange=()=>{const [k,i]=cb.dataset.dep.split(':');if(cb.checked){if(!canEdit()){renderAll();return}openDep(k,+i);return}else{if(!canEdit()){renderAll();return}if(S[k][+i]&&isRA(S[k][+i].bill)){S[k][+i].bill='';S[k]=S[k].filter(r=>Object.values(r).some(v=>v!==''&&v!=null))}renderAll();scheduleSave()}});
   document.querySelectorAll('#panes [data-depedit]').forEach(el=>el.onclick=()=>{const [k,i]=el.dataset.depedit.split(':');openDep(k,+i)});
   document.querySelectorAll('#panes [data-go2]').forEach(b=>b.onclick=()=>{cur=b.dataset.go2;renderAll()});
-  const ci=document.getElementById('cnt_amt_0');if(ci){const f=()=>{if(!canEdit()){renderAll();return}const v=ci.value.trim()===''?'':num(ci.value);if(v===S.count)return;S.count=v;renderAll();scheduleSave()};ci.onchange=f;ci.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();f()}}}
+  const ci=document.getElementById('cnt_amt_0');if(ci){const f=()=>{if(!canEdit()){renderAll();return}const v=ci.value.trim()===''?'':num(ci.value);if(v===S.count)return;ci.defaultValue=ci.value;S.count=v;renderAll();scheduleSave()};ci.onchange=f;ci.onblur=()=>{if(ci.isConnected)f()};ci.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();f()}}}
   const ph=document.getElementById('phIn');
   if(ph)ph.onchange=()=>{const f=ph.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{S.photo=rd.result;renderAll()};rd.readAsDataURL(f)};
 }
+/* เลื่อนช่องแบบ Excel (แคชเชียร์ขอ 24 ต.ค.69)
+   Enter = ช่องถัดไปในแถว (เลขบิล → ยอดเงิน → แถวถัดไป) · เงินสดปลีก Enter = ลงแถวถัดไป (พิมพ์ยอดเรียงลงเหมือนชีต)
+   ↑ ↓ = แถวบน/ล่าง ช่องเดียวกัน · ← → = ช่องซ้าย/ขวา (ถ้ากำลังแก้กลางข้อความ ลูกศรเลื่อนเคอร์เซอร์ตามปกติ)
+   มาถึงช่องใหม่ = เลือกข้อความทั้งช่อง พิมพ์ทับได้เลย · ค่าที่แก้ บันทึกก่อนเลื่อน */
+const NAV_SEL='input:not([type=checkbox]),select';
+function navKey(e,el){
+  const key=e.key;
+  if(!['Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(key)||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey) return;
+  /* ฟอร์มล็อก (แก้ไม่ได้/กำลังโหลด/ส่ง/คัดลอก) หรือช่องปิด = ไม่ดักคีย์ (Codex kbd r1 #1) · ช่อง RA ที่ล็อกแบบ readonly ยังเป็นจุดผ่านได้ (แตะเพื่อแก้) */
+  if(!canEdit()||el.disabled) return;
+  if(el.tagName==='INPUT'&&(key==='ArrowLeft'||key==='ArrowRight')){
+    const s=el.selectionStart,en=el.selectionEnd,L=el.value.length,all=s===0&&en===L;
+    if(s!=null&&!all&&!(key==='ArrowLeft'?(s===0&&en===0):(s===L&&en===L))) return;
+  }
+  const tr=el.closest('tr'), tb=tr&&tr.parentElement; if(!tb) return;
+  const cells=[...tr.querySelectorAll(NAV_SEL)], ci=cells.indexOf(el), ri=[...tb.rows].indexOf(tr);
+  /* id ของช่องในแถว r คอลัมน์ c · แถวที่ยังไม่มี (แถวว่างใหม่หลังบันทึก) เดาจากเลขแถวท้าย id เช่น scash_b_3 → scash_b_4 */
+  const idAt=(r,c)=>{ const row=tb.rows[r]; if(row){ const cs=[...row.querySelectorAll(NAV_SEL)]; const x=cs[Math.min(c,cs.length-1)]; return x?x.id:null; }
+    const base=cells[Math.min(c,cells.length-1)]; return base&&/_\d+$/.test(base.id)?base.id.replace(/_(\d+)$/,(m,n)=>'_'+(+n+r-ri)):null; };
+  let target=null;
+  if(key==='Enter') target=(el.dataset.k==='rcash'||ci>=cells.length-1)?idAt(ri+1,0):cells[ci+1].id;
+  else if(key==='ArrowDown') target=idAt(ri+1,ci);
+  else if(key==='ArrowUp') target=ri>0?idAt(ri-1,ci):null;
+  else if(key==='ArrowRight') target=ci<cells.length-1?cells[ci+1].id:null;
+  else target=ci>0?cells[ci-1].id:null;
+  e.preventDefault();
+  if(el.dataset.k&&el.tagName==='INPUT'&&el.value!==el.defaultValue){
+    /* ล้างค่าจนแถวว่าง → commit ตัดแถวนั้นทิ้ง แถวล่างเลื่อนขึ้น 1 → ปรับเลขแถวปลายทางตาม (Codex kbd r2) */
+    const k=el.dataset.k, i=+el.dataset.i, n0=(S[k]||[]).length;
+    commit(el);
+    if(target&&(S[k]||[]).length<n0) target=target.replace(/_(\d+)$/,(m,n)=>'_'+(+n>i?+n-1:+n));
+  }
+  const nx=target&&document.getElementById(target);
+  if(nx){ nx.focus(); if(nx.tagName==='INPUT') try{ nx.select(); }catch(_e){} }
+}
 function commit(el){
   if(!canEdit()){renderAll();return}
+  if(el.tagName==='INPUT') el.defaultValue=el.value; /* ค่านี้กำลังบันทึก — ไม่ใช่ "ค่าค้างที่ต้องกันวาดทับ" ใน renderAll */
   const k=el.dataset.k,i=+el.dataset.i,f=el.dataset.f;
   while(S[k].length<=i)S[k].push(k==='rcash'?{amt:'',ra:''}:k==='xfer'?{bill:'',kp:'',ks:''}:k==='other'?{desc:'',amt:'',ch:''}:k==='refund'?{bill:'',cn:'',amt:'',ch:''}:{bill:'',amt:''});
   let v=el.value.trim();
@@ -882,6 +929,51 @@ document.getElementById('bReset').onclick=()=>{
   document.getElementById('rsYes').onclick=()=>{ document.getElementById('rsOk').remove(); if(!TRIAL||!canEdit()||DATA.date!==date0||_loadTok!==tok0) return;
     S={rcash:[],scash:[],xfer:[],credit:[],oldc:[],oldx:[],upk:[],other:[],refund:[],photo:null,count:''}; renderAll(); scheduleSave(); };
 };
+/* โหมดทดลอง: ปุ่มบันทึก (ปกติบันทึกเองอยู่แล้ว ปุ่มนี้บังคับบันทึกทันที) */
+document.getElementById('bTrialSave').onclick=async()=>{ if(!TRIAL||!canEdit()) return; _dirty=true; await saveNow(); };
+/* โหมดทดลอง → คัดลอกไปเป็น "ร่าง" ของฟอร์มจริง (คุณหลิงเลือก 24 ต.ค.69)
+   ทำได้เฉพาะ: วันนี้/เมื่อวาน · ฟอร์มจริงของวันนั้นยังไม่มี หรือเป็นร่างว่าง · วันนั้นยังไม่ยืนยันในหน้าตรวจรายได้ (ไม่มีแถว rev_audit)
+   คัดลอกเฉพาะรายการในฟอร์ม (rcash/scash/xfer/credit/oldc/oldx/upk) — รายรับอื่นๆ/คืนเงิน/ยอดนับ ของจริงอยู่ที่กล่องในหน้าตรวจรายได้ ไม่คัดลอก
+   ไม่ส่งฟอร์ม · ไม่แตะ rev_audit / rev_cash_* / ตัดบิล — แคชเชียร์ต้องเปิดฟอร์มปกติ ตรวจ แล้วกดส่งเอง */
+const REAL_KEYS=['rcash','scash','xfer','credit','oldc','oldx','upk'];
+/* ร่างว่าง = ทุกช่องใน entries เป็น array ว่าง / '' / null เท่านั้น · ช่องอื่นที่มีค่า หรือรูปแบบแปลก = ถือว่ามีข้อมูล ไม่ทับ (Codex v072 #3) */
+const isEmptyEntries=e=>e==null||(typeof e==='object'&&!Array.isArray(e)&&Object.values(e).every(v=>v==null||v===''||(Array.isArray(v)&&!v.length)));
+document.getElementById('bCopyReal').onclick=()=>{
+  if(!TRIAL||!canEdit()||_copying||document.getElementById('cpOk')) return;
+  const date0=DATA.date, tok0=_loadTok, t0=bkkToday();
+  if(!(date0===t0||date0===bkkShift(t0,-1))){ setChip('saveChip','bad','คัดลอกไปฟอร์มจริงได้เฉพาะวันนี้และเมื่อวาน'); return; }
+  const ex=[]; if(S.other.length) ex.push('รายรับอื่นๆ'); if(S.refund.length) ex.push('คืนเงิน'); if(S.count!=='') ex.push('ยอดนับเงินสด');
+  document.getElementById('bCopyReal').insertAdjacentHTML('afterend',`<span id="cpOk" class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:520px">คัดลอกรายการของวันที่ ${esc(beDate(date0))} ไปเป็นร่างของฟอร์มจริง?${ex.length?` (${esc(ex.join(' / '))} ไม่คัดลอก — ลงที่กล่องในหน้าตรวจรายได้เอง)`:''} <button class="btn pri" id="cpYes">คัดลอก</button><button class="btn" id="cpNo">ยกเลิก</button></span>`);
+  document.getElementById('cpNo').onclick=()=>document.getElementById('cpOk').remove();
+  document.getElementById('cpYes').onclick=async()=>{ document.getElementById('cpOk').remove();
+    if(!TRIAL||!canEdit()||_copying||DATA.date!==date0||_loadTok!==tok0) return;
+    _copying=true; renderAll();
+    try{
+      /* เก็บฉบับทดลองให้ลงฐานก่อน ของที่คัดลอก = ของที่บันทึกในฟอร์มทดลองแล้ว */
+      /* จับรายการไว้ก่อน await ทุกตัว แล้วใช้ชุดนี้ชุดเดียว (ระหว่างรอ ช่องกรอกล็อกด้วย _copying อยู่แล้ว) · เปลี่ยนวัน/โหลดใหม่ระหว่างทาง = หยุด (Codex v072 #1) */
+      const ent=entriesOf(); const real={}; REAL_KEYS.forEach(k=>real[k]=ent[k]||[]);
+      const same=()=>DATA.date===date0&&_loadTok===tok0;
+      _dirty=true; if(!(await saveNow())){ setChip('saveChip','bad','คัดลอกไม่สำเร็จ: บันทึกฟอร์มทดลองไม่สำเร็จ'); return; }
+      if(!same()) return;
+      const [a,f]=await Promise.all([
+        sb.from('rev_audit').select('date').eq('date',date0).maybeSingle(),
+        sb.from('rev_cashier_form').select('date,status,entries,updated_at').eq('date',date0).maybeSingle()]);
+      if(!same()) return;
+      if(a.error||f.error){ setChip('saveChip','bad','คัดลอกไม่สำเร็จ: เช็กฟอร์มจริงไม่ได้ ('+((a.error||f.error).message||'')+')'); return; }
+      if(a.data){ setChip('saveChip','bad','คัดลอกไม่ได้: วันที่นี้ยืนยันในหน้าตรวจรายได้ไปแล้ว'); return; }
+      if(f.data&&(f.data.status!=='draft'||!isEmptyEntries(f.data.entries))){ setChip('saveChip','bad','คัดลอกไม่ได้: ฟอร์มจริงของวันนี้มีรายการอยู่แล้ว'+(f.data.status==='submitted'?' (ส่งแล้ว)':'')+' — เปิดฟอร์มปกติแก้เอง'); return; }
+      if(isEmptyEntries(real)){ setChip('saveChip','bad','ไม่มีรายการให้คัดลอก'); return; }
+      /* ไม่มีแถว = insert (ถ้ามีคนสร้างแข่ง จะชน PK แล้วหยุด) · มีร่างว่าง = update เฉพาะเมื่อยังเป็นร่างเดิม (updated_at ไม่เปลี่ยน) */
+      const r=f.data
+        ? await sb.from('rev_cashier_form').update({entries:real}).eq('date',date0).eq('status','draft').eq('updated_at',f.data.updated_at).select('date')
+        : await sb.from('rev_cashier_form').insert({date:date0,entries:real}).select('date');
+      if(r.error){ setChip('saveChip','bad','คัดลอกไม่สำเร็จ: '+(r.error.message||r.error)); return; }
+      if(!r.data||!r.data.length){ setChip('saveChip','bad','คัดลอกไม่สำเร็จ: ฟอร์มจริงเพิ่งถูกแก้ระหว่างนี้ — เปิดฟอร์มปกติดู'); return; }
+      setChip('saveChip','ok','คัดลอกไปฟอร์มจริง (ร่าง) แล้ว');
+      _copyNote=`คัดลอกไปเป็นร่างของฟอร์มจริงวันที่ ${esc(beDate(date0))} แล้ว — <a href="ฟอร์มรายรับ.html?d=${esc(date0)}">เปิดฟอร์มปกติ</a> ตรวจอีกรอบแล้วกด "ส่งฟอร์ม"${ex.length?` · อย่าลืมลง ${esc(ex.join(' / '))} ที่หน้าตรวจรายได้`:''}`;
+    } finally{ _copying=false; renderAll(); }
+  };
+};
 (async function init(){
   if(TRIAL){ document.body.classList.add('trial'); document.getElementById('trialBar').hidden=false; document.title='ฟอร์มรายรับ (ทดลอง) — กิจมั่งมีโฮม'; }
   if(sb&&window.RevAuth&&(await ensureSession())){ const r=await RevAuth.currentRole(sb); ROLE=(r==="owner"||r==="finance"||r==="cashier")?r:null; }
@@ -889,7 +981,7 @@ document.getElementById('bReset').onclick=()=>{
   /* โหมดทดลองเปิดมาที่เมื่อวาน (วันที่ ACC ครบแล้ว) · เลือกวันในอนาคตไม่ได้ */
   const q=new URLSearchParams(location.search).get('d'); const d0=(q&&/^\d{4}-\d{2}-\d{2}$/.test(q)&&!(TRIAL&&q>bkkToday()))?q:(TRIAL?bkkShift(bkkToday(),-1):bkkToday());
   const di=document.getElementById('fDate'); di.value=d0; if(TRIAL) di.max=bkkToday(); di.onchange=async()=>{ const want=di.value;
-    if(_submitting){ di.value=DATA.date||''; setChip('saveChip','warn','กำลังส่งฟอร์ม รอสักครู่ค่อยเปลี่ยนวัน'); return; }
+    if(_submitting||_copying){ di.value=DATA.date||''; setChip('saveChip','warn',(_copying?'กำลังคัดลอกไปฟอร์มจริง':'กำลังส่งฟอร์ม')+' รอสักครู่ค่อยเปลี่ยนวัน'); return; }
     /* บันทึกวันเดิมให้สำเร็จก่อนค่อยเปลี่ยนวัน · บันทึกไม่ได้ = คงวันเดิมไว้ ข้อมูลที่พิมพ์ไม่หาย */
     if((_dirty||_savePromise)&&!(await saveNow())){ di.value=DATA.date||''; setChip('saveChip','bad','ยังเปลี่ยนวันไม่ได้ — ข้อมูลวันเดิมบันทึกไม่สำเร็จ'); return; }
     if(want) loadDay(want); };

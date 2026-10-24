@@ -175,7 +175,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.6.5</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.6.6</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -391,10 +391,11 @@ document.addEventListener("keydown",function(e){ if(e.key==="Escape") revPopClos
    เทียบเฉพาะวันที่ยอดตอนยืนยันมาจาก ACC (ไม่ได้อัปไฟล์เครื่องเอง) เพราะไฟล์เครื่องคิดยอดคนละแบบ */
 async function accDrift(d,data,stale){
   try{
-    const q=await sb.from("rev_audit").select("machine_net,form_main,status,detail->files").eq("date",d).maybeSingle();
+    const q=await sb.from("rev_audit").select("machine_net,form_main,form_upk,form_refund,status,detail->files").eq("date",d).maybeSingle();
     if(stale()) return; const au=q&&q.data; if(!au||au.machine_net==null||au.status==="วันหยุด") return;
     if(au.files && au.files.pos) return;
     const was=+au.machine_net, now=+data.net, diff=Math.round((now-was)*100)/100; if(Math.abs(diff)<=1) return;
+    if(accDriftMatched(d,now,au)) return; /* v0.6.6 เปลี่ยนแล้วกลับมาตรงฟอร์ม = ไม่ใช่ปัญหา (เคส 23/10 บิล 1011 จ่าย 16:39 หลังซิงก์ 16:30) */
     let late=[];
     try{ let first=null, nd=d; for(let i=0;i<3&&!first;i++){ nd=shiftISO1(nd); const nx=await sb.rpc("rev_cut_bills",{p_date:nd}); if(stale()) return; /* วันถัดไปร้านปิด → ดูวันถัดไปอีก (ไม่เกิน 3 วัน) */
         first=((nx&&nx.data)||[]).map(function(b){ return String(b.no||""); }).filter(Boolean).sort()[0]||null; }
@@ -407,6 +408,16 @@ async function accDrift(d,data,stale){
     if(el) el.innerHTML='<div class="acc-drift" role="button" tabindex="0" onclick="accDriftPop()"><span>🚩 ยอดเครื่องเปลี่ยนหลังแคชเชียร์ยืนยัน · '+(diff>0?'+':'−')+TH(Math.abs(diff))+'</span><span class="go">ดูรายละเอียด ›</span></div>';
     if(window._upLast && window._upLast.date===d) upState(d,window._upLast.clean,window._upLast.amt);
   }catch(e){ console.warn("accDrift",e); }
+}
+/* v0.6.6 (24 ต.ค.69) — ยอดเครื่องตอนนี้ตรงฟอร์มแล้ว (สูตรเดียวกับด่านบันทึก: ฟอร์ม + UPK หรือ ฟอร์ม + UPK − คืนเงิน · ยอดเครื่องรวมใบลดหนี้ข้ามวัน acc_cn_shift) ต่างไม่เกิน 1 บาท → ไม่ขึ้นธง
+   ฟอร์มไม่มียอด = ยังตัดสินไม่ได้ → ขึ้นธงเหมือนเดิม */
+function accDriftMatched(d,now,au){
+  const bad=function(v){ return v!=null && (String(v).trim()==="" || !isFinite(+v)); }; /* Codex r1: ค่าผิดรูปห้ามกลายเป็น 0 แล้วซ่อนธง */
+  if(au.form_main==null || bad(au.form_main) || bad(au.form_upk) || bad(au.form_refund) || !isFinite(now)) return false;
+  const sh=(DATA._accShift && DATA._accShift.d===d) ? DATA._accShift : null;
+  const netCmp=sh ? Math.round((now + (+sh.out||0) - (+sh.inn||0))*100)/100 : now;
+  const sumForm=(+au.form_main) + (+au.form_upk||0), rf=(+au.form_refund||0);
+  return Math.abs(netCmp-sumForm)<=1 || Math.abs(netCmp-(sumForm-rf))<=1;
 }
 function shiftISO1(iso){ const p=String(iso).slice(0,10).split("-"); const t=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]+1)); return t.toISOString().slice(0,10); }
 function accDriftPop(){

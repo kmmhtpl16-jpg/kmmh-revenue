@@ -71,9 +71,14 @@
     "}",
     "@media (max-width:899px){ .km-aside{display:none!important} }",
     /* ── มือถือ: แถบล่าง + แผ่นเมนูเต็ม ── */
-    ".km-bn,.km-ov,.km-sh{display:none}",
+    ".km-bn,.km-ov,.km-sh,.km-topfix{display:none}",
     "@media (max-width:899px){",
     " body.km-mob nav.topnav, body.km-mob .wrap>nav:not(.km-nav){display:none!important}",
+    /* 24 ต.ค.69: ป้ายสิทธิ์ลอย (#roleBar หน้าตรวจ) กับปุ่ม 🚪 ออก หัวหน้า (.lo-m) ซ้ำกับแผ่นเมนู → ซ่อนบนมือถือ (สิทธิ์ดูที่ ☰ เมนู) */
+    " body.km-mob #roleBar, body.km-mob .lo-m{display:none!important}",
+    " body.km-mob header h1, body.km-mob .wrap>h1, body.km-mob .wrap>.lead{padding-right:56px!important}",
+    /* แถบทึบบางๆ ติดขอบบน = ให้ Safari (iOS 26) ใช้สีพื้นหน้าแทนเงาควันจางใต้แถบสถานะ */
+    " .km-topfix{display:block;position:fixed;top:0;left:0;right:0;height:2px;z-index:949;pointer-events:none}",
     " body.km-mob{padding-bottom:calc(96px + env(safe-area-inset-bottom))!important}",
     " .km-bn{display:flex;position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));z-index:950;background:#fff;border:1px solid #d6dedb;border-radius:20px;padding:6px 2px;box-shadow:0 4px 18px rgba(0,0,0,.12);font:11.5px/1.3 'IBM Plex Sans Thai','Sarabun',Tahoma,sans-serif;max-width:560px;margin:0 auto}",
     " .km-bn a{flex:1!important;min-width:0;display:flex!important;flex-direction:column;align-items:center;gap:2px;color:#52606a!important;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;background:none!important;border:0!important;border-radius:0!important;padding:0!important;margin:0!important;box-shadow:none!important;font:inherit!important}",
@@ -97,7 +102,7 @@
     " .km-out{display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 12px 12px;border:1px solid #fecaca;color:#b91c1c;background:#fff;border-radius:10px;padding:10px;font:inherit;font-weight:600;cursor:pointer}",
     " .km-out svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}",
     "}",
-    "@media print{ .km-bn,.km-ov,.km-sh{display:none!important} body.km-mob{padding-bottom:0!important} body.km-shon{overflow:visible!important} }",
+    "@media print{ .km-bn,.km-ov,.km-sh,.km-topfix{display:none!important} body.km-mob{padding-bottom:0!important} body.km-shon{overflow:visible!important} }",
     ".km-aside *{box-sizing:border-box}",
     ".km-brand{display:flex;align-items:center;gap:10px;padding:14px 14px 12px;border-bottom:1px solid #d6dedb;text-decoration:none;color:inherit}",
     ".km-logo{width:34px;height:34px;border-radius:9px;background:#1f6f5c;color:#fff;display:grid;place-items:center;font-weight:700;flex:none}",
@@ -248,6 +253,8 @@
     var sh=document.createElement("div"); sh.id="kmSh"; sh.className="km-sh"; sh.setAttribute("role","dialog"); sh.setAttribute("aria-modal","true"); sh.setAttribute("aria-label","เมนูทั้งหมด");
     sh.innerHTML='<div class="km-grab"></div><div class="km-shh"><b>เมนูทั้งหมด</b><small></small><button type="button" aria-label="ปิดเมนู">✕</button></div><nav class="km-nav"></nav><button type="button" class="km-out">'+svg("door")+'ออกจากระบบ</button>';
     document.body.appendChild(bn); document.body.appendChild(ov); document.body.appendChild(sh); document.body.classList.add("km-mob");
+    var tf=document.createElement("div"); tf.className="km-topfix"; tf.setAttribute("aria-hidden","true");
+    try{ tf.style.background=getComputedStyle(document.body).backgroundColor||"#f4f4f5"; }catch(e){} document.body.appendChild(tf);
     bn.addEventListener("click",function(ev){ var m=ev.target.closest("[data-km-menu]"); if(!m) return; ev.preventDefault(); shOpen(m); });
     sh.inert=true;
     ov.onclick=shut; sh.querySelector(".km-shh button").onclick=shut;

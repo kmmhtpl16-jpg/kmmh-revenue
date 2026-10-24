@@ -413,7 +413,8 @@
   async function run(){
     try{
       if(!SB() || !role()) return;
-      try{ if(window.ensureOwnerSession) await window.ensureOwnerSession(); else if(window.ensureRevSession) await window.ensureRevSession("0402"); }catch(e){}
+      /* 🔐 ไม่มินต์ session เอง — ใช้ได้เฉพาะ session ที่ผู้ใช้ล็อกอินด้วย PIN ไว้แล้ว */
+      try{ var _s=(await SB().auth.getSession()).data.session; if(!_s) return; }catch(e){ return; }
       inject();
       if(location.hash==="#bell-expense" && onPage("การเงินบริษัท")){ try{ history.replaceState(null,"",location.pathname); }catch(e){} openExpenseTab(); }
       render(await collect());

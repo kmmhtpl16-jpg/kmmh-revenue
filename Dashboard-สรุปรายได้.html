@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ตรวจรายได้">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root{ color-scheme:light; }
@@ -137,30 +138,23 @@
 </div>
 
 <script>
-// ---- ล็อกรหัส (เฉพาะคุณหลิง) — เปลี่ยนรหัสที่ตัวแปร PIN ----
-const PIN="0402";
-(function gate(){
-  if(sessionStorage.getItem("rev_dash_ok")==="1") return;
-  const p=prompt("🔒 ใส่รหัสผ่านเพื่อดู Dashboard สรุปรายได้:");
-  if(p===PIN){ sessionStorage.setItem("rev_dash_ok","1"); return; }
-  document.documentElement.innerHTML='<body style="font-family:Sarabun,system-ui,sans-serif;text-align:center;padding:80px 20px;color:#1c1917"><div style="font-size:40px">🔒</div><div style="font-size:18px;margin-top:10px">รหัสไม่ถูกต้อง — เฉพาะผู้มีสิทธิ์เท่านั้น</div><button onclick="location.reload()" style="margin-top:18px;padding:9px 18px;border:0;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">ลองใหม่</button></body>';
-  throw new Error("locked");
-})();
 
 const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 const sb = window.supabase.createClient(SB_URL, SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}});
-// บัตรผ่านจริง: ใช้ session ที่ล็อกอินจากหน้าหลักไว้ (เก็บใน localStorage โดเมนเดียวกัน) หรือมินต์ใหม่จาก PIN
-const LOGIN_FN_URL = SB_URL + "/functions/v1/login";
-async function ensureRevSession(pin){
-  try{
-    const { data:{ session } } = await sb.auth.getSession();
-    if(session) return true;
-    const resp = await fetch(LOGIN_FN_URL, { method:"POST", headers:{ "apikey":SB_KEY, "Content-Type":"application/json" }, body: JSON.stringify({ pin }) });
-    const j = await resp.json();
-    if(resp.ok && j.access_token){ await sb.auth.setSession({ access_token:j.access_token, refresh_token:j.refresh_token }); return true; }
-  }catch(e){ console.error("ensureRevSession failed", e); }
-  return false;
+// 🔐 ไม่มี PIN ในโค้ด: ใช้ session เดิม (ล็อกอินจากหน้าหลัก) ถ้าไม่มีให้ไปเข้าระบบที่หน้าตรวจรายได้ (ไม่ถาม PIN ซ้ำในหน้านี้) · หน้านี้เฉพาะเจ้าของ
+function revLock(msg, toLogin){
+  document.body.innerHTML='<div style="font-family:Sarabun,system-ui,sans-serif;text-align:center;padding:80px 20px;color:#1c1917"><div style="font-size:40px">🔒</div><div id="lockMsg" style="font-size:18px;margin-top:10px"></div>'
+    +(toLogin?'<a href="index.html" style="display:inline-block;margin-top:18px;padding:10px 20px;border-radius:8px;background:#1c1917;color:#fff;text-decoration:none">ไปหน้าเข้าระบบ</a><br>':'')
+    +'<button onclick="location.reload()" style="margin-top:18px;padding:8px 18px;border-radius:8px;border:1px solid #d6d3d1;background:#fff;cursor:pointer">ลองใหม่</button></div>';
+  document.getElementById("lockMsg").textContent=msg;
+}
+async function revGate(){
+  let r=await RevAuth.currentRole(sb);
+  /* ใส่รหัสครั้งเดียว (ขั้น 6): หน้านี้ไม่ถาม PIN เอง — ใช้การเข้าระบบเดียวกับหน้าตรวจรายได้ (session ร่วม sb-rev-kmmh) จนกดออก */
+  if(!r){ revLock("ยังไม่ได้เข้าระบบ — เข้าที่หน้าตรวจรายได้ครั้งเดียว แล้วกลับมาหน้านี้ได้เลย", true); return false; }
+  if(r!=="owner"){ revLock(RevAuth.DENY_MSG+" (เฉพาะเจ้าของ)"); return false; }
+  return true;
 }
 const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
@@ -393,7 +387,7 @@ window.saveUpk=async function(){
 
 // default month = ล่าสุดที่มีข้อมูล
 (async ()=>{
-  if(!(await ensureRevSession(PIN))){ document.getElementById("status").textContent="เข้าสู่ระบบไม่สำเร็จ — รีเฟรชหน้าใหม่หรือเข้าผ่านหน้าโปรแกรมตรวจรายได้"; return; }
+  if(!(await revGate())) return;
   const {data}=await sb.from("rev_daily").select("date").order("date",{ascending:false}).limit(1);
   const m=(data&&data[0])? String(data[0].date).slice(0,7) : new Date().toISOString().slice(0,7);
   document.getElementById("month").value=m;
@@ -401,6 +395,6 @@ window.saveUpk=async function(){
 })();
 </script>
 <script src="bell.js?v=20260908a"></script>
-<script src="nav.js?v=20261024a"></script>
+<script src="nav.js?v=20261024b"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="ตรวจรายได้">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
 <style>
   :root{ color-scheme:light; }
   *{ box-sizing:border-box; margin:0; padding:0; }
@@ -163,19 +164,19 @@
 </style>
 </head>
 <body>
-<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="if(confirm('ออกจากระบบ / สลับผู้ใช้?')){try{localStorage.removeItem('rev_role');}catch(e){}try{sessionStorage.removeItem('rev_dash_ok');sessionStorage.removeItem('rev_role');}catch(e){}location.reload();}">👤 <span id="roleBarTxt"></span> · ออก</div>
+<div id="roleBar" style="display:none;position:fixed;top:8px;right:10px;z-index:50;background:#1c1917;color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer" onclick="revLogout()">👤 <span id="roleBarTxt"></span> · ออก</div>
 <div id="taOv" style="display:none;position:fixed;inset:0;background:rgba(28,25,23,.55);z-index:9500;align-items:flex-start;justify-content:center;padding:26px 12px;overflow:auto"><div style="background:#fff;border-radius:16px;max-width:580px;width:100%;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.28)"><div id="taBody"></div></div></div>
 <div id="pinGate"><div class="box">
   <div style="font-size:34px">🔒</div>
   <h2 style="margin:8px 0 2px;font-size:19px">ตรวจรายได้ KMMH</h2>
   <div style="color:#78716c;font-size:13px">ใส่ PIN เพื่อเข้าใช้งาน</div>
-  <div><input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()"></div>
+  <div><input id="pinInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()"></div>
   <div class="perr" id="pinErr"></div>
   <button class="btn" type="button" onclick="submitPin()" style="width:100%;margin-top:6px">เข้าใช้งาน</button>
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.6.8</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.0</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -259,26 +260,36 @@
 <script>
 
 let ROLE=null;
-const PINMAP={"1234":"cashier","9989":"finance","0402":"owner"};
 const ROLE_LABEL={cashier:"แคชเชียร์",finance:"การเงิน",owner:"เจ้าของ"};
-function submitPin(){
-  const el=document.getElementById("pinInput"); const v=(el.value||"").trim();
-  const r=PINMAP[v];
-  if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง ลองใหม่"; el.value=""; el.focus(); return; }
+/* 🔐 ไม่มี PIN ในโค้ดแล้ว — ส่ง PIN ที่พิมพ์ไปตรวจที่ Edge Function login แล้วใช้ role ที่ระบบตอบ
+   owner = เจ้าของ · finance = การเงิน · cashier = แคชเชียร์ (บัญชีของตัวเอง · REV-ROLE-SPLIT ขั้น 6)
+   PIN พนักงานอื่น (employee) / hr = สิทธิ์ไม่พอสำหรับหน้านี้ */
+let PIN_BUSY=false;
+async function submitPin(){
+  if(PIN_BUSY) return;
+  const el=document.getElementById("pinInput"); const v=(el.value||"").trim(); el.value="";
+  const pe=document.getElementById("pinErr"); pe.textContent="กำลังตรวจ PIN…";
+  PIN_BUSY=true; let res; try{ res=await RevAuth.login(sb,SB_URL,SB_KEY,v); }finally{ PIN_BUSY=false; }
+  if(!res.ok){ pe.textContent=res.msg; el.focus(); return; }
+  pe.textContent=""; useRole(res.role);
+}
+function useRole(r){
+  if(r!=="owner"&&r!=="finance"&&r!=="cashier"){ ROLE=null; document.getElementById("pinGate").style.display=""; document.getElementById("pinErr").textContent=RevAuth.DENY_MSG; try{localStorage.removeItem("rev_role");}catch(e){} return false; }
   ROLE=r; document.body.classList.add("role-"+r);
   document.getElementById("pinGate").style.display="none";
   const rb=document.getElementById("roleBar"); if(rb){ document.getElementById("roleBarTxt").textContent=ROLE_LABEL[r]; rb.style.display="block"; }
   try{localStorage.setItem("rev_role",r);}catch(e){}
   applyGating();
-  try{ if(window.taskAlertRun) setTimeout(taskAlertRun,300); }catch(e){}
+  revBoot();
+  return true;
 }
+async function revLogout(){ if(!confirm("ออกจากระบบ / สลับผู้ใช้?")) return; await RevAuth.logout(sb); try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); }
 function applyGating(){
   const showFin=(ROLE==="finance"||ROLE==="owner"), showOwner=(ROLE==="owner");
   document.querySelectorAll(".r-fin").forEach(e=>e.classList.toggle("gated",!showFin));
   document.querySelectorAll(".r-owner").forEach(e=>e.classList.toggle("gated",!showOwner));
 }
 try{ new MutationObserver(function(){ if(ROLE) applyGating(); }).observe(document.body,{childList:true,subtree:true}); }catch(e){}
-(function(){try{var _r=localStorage.getItem("rev_role");if(_r&&ROLE_LABEL[_r]){ROLE=_r;document.body.classList.add("role-"+_r);var _g=document.getElementById("pinGate");if(_g)_g.style.display="none";var _rb=document.getElementById("roleBar");if(_rb){var _t=document.getElementById("roleBarTxt");if(_t)_t.textContent=ROLE_LABEL[_r];_rb.style.display="block";}applyGating();}}catch(e){}})();
 const TH = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 const TH0 = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("th-TH",{maximumFractionDigits:0});
 const num = v => (typeof v==="number") ? v : (parseFloat(String(v).replace(/,/g,""))||0);
@@ -288,23 +299,15 @@ const SB_URL = "https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY = "sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 let sb = null;
 try { sb = window.supabase.createClient(SB_URL, SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); } catch(e) { console.warn("supabase init failed", e); }
-/* ── บัตรผ่าน owner อัตโนมัติ: ถ้า session ที่ค้างไม่ใช่ owner (พนักงาน/หมดอายุ) ให้มินต์ owner ใหม่ทับ ── */
-const LOGIN_FN_URL = SB_URL + "/functions/v1/login";
-const OWNER_PIN = "0402";
+/* 🔐 ไม่มีล็อกอินอัตโนมัติแล้ว — ใช้ได้เฉพาะ session จาก PIN ที่ผู้ใช้พิมพ์เอง (คงชื่อฟังก์ชันไว้เพราะเรียกหลายที่ + bell.js) */
 window.ensureOwnerSession=ensureOwnerSession;
 async function ensureOwnerSession(){
   if(!sb) return false;
-  try{
-    const { data:{ session } } = await sb.auth.getSession();
-    let role=null;
-    if(session){ try{ role = JSON.parse(atob(session.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata?.role; }catch(_e){} }
-    if(session && role==="owner") return true;
-    const resp = await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:OWNER_PIN})});
-    const j = await resp.json();
-    if(resp.ok && j && j.access_token){ await sb.auth.setSession({access_token:j.access_token, refresh_token:j.refresh_token}); return true; }
-  }catch(e){ console.error("ensureOwnerSession", e); }
+  try{ const { data:{ session } } = await sb.auth.getSession(); return !!session; }catch(e){ console.error("ensureOwnerSession", e); }
   return false;
 }
+/* มี session เดิมที่ยังใช้ได้ → เข้าเลยไม่ต้องถาม PIN (role อ่านจาก public.users ไม่เชื่อ localStorage) */
+if(sb && window.RevAuth) RevAuth.currentRole(sb).then(function(r){ if(r) useRole(r); });
 function beDate(s){ if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+(parseInt(p[0])+543); }
 function pad2(n){ return String(n).padStart(2,"0"); }
 function isoFromExcel(v){
@@ -397,7 +400,10 @@ async function accDrift(d,data,stale){
     const was=+au.machine_net, now=+data.net, diff=Math.round((now-was)*100)/100; if(Math.abs(diff)<=1) return;
     if(accDriftMatched(d,now,au)) return; /* v0.6.6 เปลี่ยนแล้วกลับมาตรงฟอร์ม = ไม่ใช่ปัญหา (เคส 23/10 บิล 1011 จ่าย 16:39 หลังซิงก์ 16:30) */
     let late=[];
-    try{ let first=null, nd=d; for(let i=0;i<3&&!first;i++){ nd=shiftISO1(nd); const nx=await sb.rpc("rev_cut_bills",{p_date:nd}); if(stale()) return; /* วันถัดไปร้านปิด → ดูวันถัดไปอีก (ไม่เกิน 3 วัน) */
+    try{ let first=null, nd=d; for(let i=0;i<3&&!first;i++){ nd=shiftISO1(nd);
+        /* ขั้น 6: แคชเชียร์อ่านบิลได้เฉพาะวันนี้/เมื่อวาน → ไม่ค้นวันหลังวันนี้ (ไม่มีรายการ "บิลเปิดย้อนหลัง" · ป้ายยอดเปลี่ยนยังขึ้นตามปกติ) */
+        if(ROLE==="cashier" && nd>bkkToday()) break;
+        const nx=await sb.rpc("rev_refund_bills",{p_date:nd}); /* ขั้น 6: ใช้แค่เลขบิล */ if(stale()) return; /* วันถัดไปร้านปิด → ดูวันถัดไปอีก (ไม่เกิน 3 วัน) */
         first=((nx&&nx.data)||[]).map(function(b){ return String(b.no||""); }).filter(Boolean).sort()[0]||null; }
       const sq=function(no){ const m=/^(KM\d{4})-(\d+)$/.exec(String(no||"")); return m?{p:m[1],n:+m[2]}:null; }, f=sq(first);
       const byNo={}; (data.bills||[]).forEach(function(b){ const no=String(b.no||"").trim(); if(!no) return; if(!byNo[no]) byNo[no]={no:no,name:b.name,amt:0,first:first}; byNo[no].amt=Math.round((byNo[no].amt+(+b.amt||0))*100)/100; }); /* ACC อาจส่งหลายแถวต่อบิล → รวมก่อน */
@@ -2598,7 +2604,7 @@ async function taskAlertRun(){
   }catch(e){ console.error("taskAlertRun", e); }
 }
 
-ensureOwnerSession().then(function(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} });
+function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
 <script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261023a"></script>
@@ -2771,13 +2777,13 @@ function rfBillNo(v,date){ v=String(v||"").trim().toUpperCase().replace(/\s/g,""
 function rfGot(bill){ return Math.round(((RF&&RF.xfer)||[]).filter(function(x){ return x.bill===bill && !x.ra; }).reduce(function(s,x){ return s+(+x.knv||0)+(+x.ksk||0); },0)*100)/100; }
 async function rfLoad(date, fi, xfer, rfd){
   const out={date:date, fi:fi, xfer:xfer||[], rows:(rfd&&rfd.rows)||[], photo:(rfd&&rfd.photo)||null, err:(rfd&&rfd.err)||null, wd:(rfd&&rfd.wd)||[], opts:[], bills:[], appr:{}, nPhoto:0, dayLock:false, ra:{}};
-  try{ const q=await Promise.all([ sb.rpc("rev_refund_cn_options",{p_date:date}), sb.rpc("rev_cut_bills",{p_date:date}), sb.from("rev_cash_refund_proof").select("id").eq("date",date) ]);
+  try{ const q=await Promise.all([ sb.rpc("rev_refund_cn_options",{p_date:date}), sb.rpc("rev_refund_bills",{p_date:date}) /* ขั้น 6: เลขบิล+ยอดค้าง (แคชเชียร์ใช้ได้) */, sb.from("rev_cash_refund_proof").select("id").eq("date",date) ]);
     out.opts=(q[0]&&q[0].data)||[]; out.bills=(q[1]&&q[1].data)||[]; out.nPhoto=((q[2]&&q[2].data)||[]).length;
     /* v0.5.7: CN ที่ ACC ออก RA แทนคืนเงิน → ไม่ควรลงคืนสด */
     try{ out.ra=await cnRaLinks(date, out.opts.map(function(o){ return {cn_no:o.cn, cust:o.name, amt:o.amt, date:o.date}; })); }catch(_eRa){}
     /* เจ้าของอนุมัติบิลของวันนี้ไปแล้ว (หรือบิลที่ผูกแถวคืนเงิน) → แคชเชียร์แก้กล่องคืนเงินไม่ได้ เพราะยอดเงินสดทั้งวันถูกใช้ตัดสินไปแล้ว */
-    const nos=out.rows.map(function(x){ return x.bill_no; });
-    const a=await sb.from("rev_cut_approvals").select("bill_no,status,bill_date").or("bill_date.eq."+date+(nos.length?",bill_no.in.("+nos.join(",")+")":""));
+    /* ขั้น 6b: อ่านผ่าน rpc rev_refund_appr (แคชเชียร์อ่านตารางอนุมัติตรงไม่ได้) · ฐานคัดบิลของวันนี้ + บิลที่มีแถวคืนเงินวันนี้ให้เอง · ฐานกันการเพิ่ม/ลบด้วย */
+    const a=await sb.rpc("rev_refund_appr",{p_date:date});
     ((a&&a.data)||[]).forEach(function(z){ if(z.status!=="cancelled"){ out.appr[z.bill_no]=z.status; if(z.bill_date===date) out.dayLock=true; } });
   }catch(e){ console.warn("rfLoad",e); }
   return out;
@@ -2804,7 +2810,7 @@ function rfRender(st){
   RF=st; if(!st){ sumEl.innerHTML=""; if(document.getElementById("rf_modal")) rfModal(false); return; }
   rfModal(); const el=document.getElementById("rf_mbody"), md=document.getElementById("rf_mdate"), mp=document.getElementById("rf_mphoto");
   if(md) md.textContent=String(+st.date.slice(8,10))+"/"+String(+st.date.slice(5,7));
-  const date=st.date, lock=(ROLE!=="owner" && !!st.dayLock), can=cpCanEdit(date) && !lock, fr=st.fi? +(st.fi.refund||0) : null;
+  const date=st.date, lock=(ROLE==="cashier" && !!st.dayLock) /* 6b: การเงิน/เจ้าของแก้ได้ (คุณหลิงเลือก 24 ต.ค.69) */, can=cpCanEdit(date) && !lock, fr=st.fi? +(st.fi.refund||0) : null;
   let bad=!!st.err, rowBad=false, exBad=false;
   const optBy={}; st.opts.forEach(function(o){ optBy[o.cn]=o; });
   const used={}; st.rows.forEach(function(x){ if(x.kind==="cn") used[x.cn_no]=1; });
@@ -2844,7 +2850,7 @@ function rfRender(st){
       if(!(b && Math.abs(got-need-(+x.amount))<=1)) why.push("ยอดเงินไม่ตรงส่วนที่โอนเกิน"+(b?" (ชีตโอน "+n0(got)+" · บิล "+n0(need)+")":"")); }
     if(x.pay==="transfer" && !takeWd(+x.amount)) why.push("ยังไม่เจอเงินโอนคืน "+n0(+x.amount)+" ในสเตทเมนต์");
     if(why.length){ bad=true; rowBad=true; }
-    const rlock=(ROLE!=="owner" && st.appr[x.bill_no]);
+    const rlock=(ROLE==="cashier" && st.appr[x.bill_no]);
     return '<div style="border-bottom:1px solid #f1f5f9"><div '+(why.length?'onclick="rfWhy('+i+')" ':'')+'style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px'+(why.length?';cursor:pointer':'')+'">'+
       '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b>'+esc(short(x.bill_no))+'</b> <span class="muted" style="font-size:12px">'+(x.kind==="cn"?esc(short(x.cn_no)):'โอนเกิน')+' · '+(x.pay==="transfer"?'โอนคืน':'สด')+'</span></span>'+
       '<span style="white-space:nowrap">'+n0(+x.amount)+'</span><span style="width:18px;text-align:center">'+(why.length?'🚩':'<span style="color:#16a34a">✓</span>')+'</span>'+
@@ -2893,7 +2899,7 @@ async function rfAdd(){
   const st=RF; if(!st) return; const date=st.date;
   if(date!==cpDate()){ alert("วันที่เปลี่ยนไปแล้ว กดใหม่อีกครั้ง"); await loadCashProof(); return; }
   if(!cpCanEdit(date)){ alert("บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง\nแคชเชียร์ลงคืนเงินได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
-  if(ROLE!=="owner" && st.dayLock){ alert("เจ้าของอนุมัติตัดบิลของวันนี้แล้ว แก้กล่องคืนเงินไม่ได้ — แจ้งเจ้าของ"); return; }
+  if(ROLE==="cashier" && st.dayLock){ alert("เจ้าของอนุมัติตัดบิลของวันนี้แล้ว แก้กล่องคืนเงินไม่ได้ — แจ้งเจ้าของ"); return; }
   const kind=(document.getElementById("rf_kind")||{}).value==="overpay"?"overpay":"cn";
   const pay=(document.getElementById("rf_pay")||{}).value==="transfer"?"transfer":"cash";
   const amt=parseFloat(String((document.getElementById("rf_amt")||{}).value||"").replace(/[, ]/g,""));
@@ -2932,7 +2938,7 @@ async function rfAdd(){
 async function rfDel(id){
   const st=RF; if(!st) return; const date=st.date; const x=st.rows.find(function(z){ return +z.id===+id; }); if(!x) return;
   if(!cpCanEdit(date)){ alert("แคชเชียร์ลบได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
-  if(ROLE!=="owner" && (st.appr[x.bill_no]||st.dayLock)){ alert("เจ้าของอนุมัติตัดบิลแล้ว ลบไม่ได้ — แจ้งเจ้าของ"); return; }
+  if(ROLE==="cashier" && (st.appr[x.bill_no]||st.dayLock)){ alert("เจ้าของอนุมัติตัดบิลแล้ว ลบไม่ได้ — แจ้งเจ้าของ"); return; }
   if(!confirm("ลบรายการคืนเงิน "+x.bill_no+(x.cn_no?" · "+x.cn_no:"")+" "+TH(+x.amount)+" ?")) return;
   try{ await ensureOwnerSession(); const r=await sb.from("rev_cash_refund").delete().eq("id",id); if(r.error) throw r.error; }
   catch(err){ alert("ลบไม่สำเร็จ: "+((err&&err.message)||err)); return; }
@@ -3163,6 +3169,6 @@ async function cutNotify(date,R){
   render=function(){ const x=_r.apply(this,arguments); clearTimeout(_t); _t=setTimeout(function(){ try{ loadCashProof(); }catch(e){} },300); return x; };
 })();
 </script>
-<script src="nav.js?v=20261024a"></script>
+<script src="nav.js?v=20261024b"></script>
 </body>
 </html>

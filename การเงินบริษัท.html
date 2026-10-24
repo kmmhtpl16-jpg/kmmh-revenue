@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ตรวจรายได้">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
@@ -137,7 +138,7 @@ td.wdc select{max-width:210px}
     <div style="font-size:32px">🔐</div>
     <div style="font-weight:700;margin:6px 0">การเงินบริษัท</div>
     <div class="muted" style="margin-bottom:10px">สำหรับเจ้าของ/การเงิน — ใส่รหัสผ่าน</div>
-    <input id="pin" type="password" inputmode="numeric" maxlength="8" style="width:100%;text-align:center" onkeydown="if(event.key==='Enter')doGate()">
+    <input id="pin" type="password" inputmode="numeric" maxlength="6" style="width:100%;text-align:center" onkeydown="if(event.key==='Enter')doGate()">
     <button class="btn" style="width:100%;margin-top:10px" onclick="doGate()">เข้าใช้งาน</button>
     <div id="gerr" style="color:var(--red);font-size:12.5px;margin-top:6px"></div>
   </div>
@@ -192,9 +193,6 @@ td.wdc select{max-width:210px}
 /* ================= ค่าคงที่ + ยูทิล ================= */
 const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
-const LOGIN_FN_URL=SB_URL+"/functions/v1/login";
-const OWNER_PIN="0402";
-const ROLE_PINS={"0402":"owner","9989":"finance"};
 let ROLE=null;
 let sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}});}catch(e){console.warn("sb init",e);}
 
@@ -458,40 +456,33 @@ window.delCustomCat=function(name){
 };
 
 /* ================= GATE ================= */
-window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
+window.revLogout=async function(){ if(!confirm("ออกจากระบบ / สลับผู้ใช้?")) return; await RevAuth.logout(sb); try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); };
+/* 🔐 ไม่มี PIN ในโค้ด — ตรวจที่ Edge Function login แล้วใช้ role ที่ระบบตอบ
+   owner = ทุกแท็บ · finance = แท็บรายรับ · employee/hr = สิทธิ์ไม่พอสำหรับหน้านี้ */
+let PIN_BUSY=false;
 async function doGate(){
-  const v=document.getElementById("pin").value.trim();
-  const role=ROLE_PINS[v];
-  if(!role){ document.getElementById("gerr").textContent="รหัสไม่ถูกต้อง"; return; }
+  if(PIN_BUSY) return;
+  const el=document.getElementById("pin"); const v=el.value.trim(); el.value="";
+  const ge=document.getElementById("gerr"); ge.textContent="กำลังเข้าสู่ระบบ…";
+  PIN_BUSY=true; let res; try{ res=await RevAuth.login(sb,SB_URL,SB_KEY,v); }finally{ PIN_BUSY=false; }
+  if(!res.ok){ ge.textContent=res.msg; el.focus(); return; }
+  ge.textContent=""; useRole(res.role);
+}
+function useRole(role){
+  if(role!=="owner"&&role!=="finance"){ ROLE=null; document.getElementById("gate").classList.remove("hide"); document.getElementById("app").classList.add("hide"); document.getElementById("gerr").textContent=RevAuth.DENY_MSG; try{localStorage.removeItem("rev_role");}catch(e){} return false; }
   ROLE=role;
-  document.getElementById("gerr").textContent="กำลังเข้าสู่ระบบ…";
-  const ok=await ensureRevSession(v);   // 0402=เจ้าของ / 9989(pin_price)=พนักงาน — ทั้งคู่มินต์ session ผ่าน RLS ได้
-  if(!ok){ document.getElementById("gerr").textContent="เชื่อมต่อฐานข้อมูลไม่สำเร็จ ลองใหม่"; return; }
-  sessionStorage.setItem("rev_dash_ok","1");
   sessionStorage.setItem("rev_role",role); try{localStorage.setItem("rev_role",role);}catch(e){}
   document.getElementById("gate").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
   applyGating();
   quick("m"); reloadAll();
+  return true;
 }
 function applyGating(){
   const showOwner=(ROLE==="owner"), showFin=(ROLE==="finance"||ROLE==="owner");
   document.querySelectorAll(".r-owner").forEach(e=>e.classList.toggle("gated",!showOwner));
   document.querySelectorAll(".r-fin").forEach(e=>e.classList.toggle("gated",!showFin));
   if(ROLE!=="owner" && typeof tab==="function") tab("income");
-}
-async function ensureRevSession(pin){
-  if(!sb) return false;
-  try{
-    const {data:{session}}=await sb.auth.getSession();
-    let _role=null;
-    if(session){ try{ _role=JSON.parse(atob(session.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata?.role; }catch(_e){} }
-    if(session && _role==="owner") return true;
-    const resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin})});
-    const j=await resp.json();
-    if(resp.ok && j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; }
-  }catch(e){ console.error("ensureRevSession",e); }
-  return false;
 }
 
 /* ================= ช่วงเวลา ================= */
@@ -1826,15 +1817,12 @@ window.saveMonthlyCogs=async function(m){
 
 /* ================= BOOT ================= */
 (async function(){
-  // ถ้าเคยผ่าน gate ในเซสชันนี้ + มี session อยู่แล้ว ให้เข้าเลย
-  if(sessionStorage.getItem("rev_dash_ok")==="1" && sb){
-    const {data:{session}}=await sb.auth.getSession();
-    if(session){ ROLE=localStorage.getItem("rev_role")||sessionStorage.getItem("rev_role")||"finance"; document.getElementById("gate").classList.add("hide"); document.getElementById("app").classList.remove("hide"); applyGating(); quick("m"); reloadAll(); return; }
-  }
+  // มี session เดิมที่ยังใช้ได้ → เข้าเลยไม่ต้องถาม PIN (role อ่านจาก public.users ไม่เชื่อ localStorage)
+  if(sb && window.RevAuth){ const r=await RevAuth.currentRole(sb); if(r && useRole(r)) return; }
   document.getElementById("pin").focus();
 })();
 </script>
 <script src="bell.js?v=20260908a"></script>
-<script src="nav.js?v=20261024a"></script>
+<script src="nav.js?v=20261024b"></script>
 </body>
 </html>

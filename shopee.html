@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest?v=20261024">
 <meta name="theme-color" content="#ee4d2d">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{--o:#ee4d2d;--o2:#c93a1e;--g:#16a34a;--g2:#15803d;--bg:#f6f7f9;--bd:#e5e7eb;--mut:#6b7280;--red:#dc2626;--amb:#d97706;--blu:#2563eb}
@@ -145,7 +146,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     <div style="font-size:32px">🛒</div>
     <h2 style="margin:6px 0 2px;font-size:18px">โปรแกรม Shopee</h2>
     <div class="muted">ใส่ PIN</div>
-    <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
+    <input id="pinInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
     <div class="perr" id="pinErr"></div>
     <button class="btn" style="width:100%;margin-top:6px" onclick="submitPin()">เข้าใช้งาน</button>
   </div>
@@ -262,25 +263,34 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 <script>
 "use strict";
 /* ---------- PIN ---------- */
-var PINMAP={"2478":"finance","9989":"finance","0402":"owner"};
-var ROLE=null;
-function logout(){ location.reload(); }
-function submitPin(){
-  var el=document.getElementById("pinInput"),v=(el.value||"").trim(),r=PINMAP[v];
-  if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง"; el.value=""; el.focus(); return; }
-  ROLE=r; document.getElementById("gate").style.display="none";
+/* 🔐 ไม่มี PIN ในโค้ด — ตรวจที่ Edge Function login แล้วใช้ role ที่ระบบตอบ
+   owner = ทุกแท็บ · finance = ไม่เห็นกำไร-ขาดทุน · employee/hr = "staff" เห็นเฉพาะแท็บที่ไม่ใช่การเงิน (ตาราง shopee_*) */
+var ROLE=null, PIN_BUSY=false;
+async function logout(){ if(window.RevAuth) await RevAuth.logout(sb); location.reload(); }
+async function submitPin(){
+  if(PIN_BUSY) return;
+  var el=document.getElementById("pinInput"),v=(el.value||"").trim(); el.value="";
+  var pe=document.getElementById("pinErr"); pe.textContent="กำลังตรวจ PIN…";
+  PIN_BUSY=true; var res; try{ res=await RevAuth.login(sb,SB_URL,SB_KEY,v); }finally{ PIN_BUSY=false; }
+  if(!res.ok){ pe.textContent=res.msg; el.focus(); return; }
+  pe.textContent=""; useRole(res.role);
+}
+function useRole(r){
+  ROLE=(r==="owner"||r==="finance")?r:"staff"; document.getElementById("gate").style.display="none";
   document.querySelectorAll(".r-owner").forEach(function(e){e.classList.toggle("gated",ROLE!=="owner");});
   document.querySelectorAll(".r-fin").forEach(function(e){e.classList.toggle("gated",!(ROLE==="finance"||ROLE==="owner"));});
-  CURTAB=(ROLE==="cashier")?"pack":"pay";
-  ensureRevSession(v).then(function(){ reload(); });
+  CURTAB=(ROLE==="finance"||ROLE==="owner")?"pay":"pack";
+  reload();
 }
 function canSee(t){ if(t==="pnl") return ROLE==="owner"; if(t==="pay"||t==="fee") return ROLE==="finance"||ROLE==="owner"; return true; }
 /* ---------- Supabase ---------- */
 var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
-var LOGIN_FN_URL=SB_URL+"/functions/v1/login";
 var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}});}catch(e){}
-async function ensureRevSession(pin){ if(!sb) return false; try{ var s=await sb.auth.getSession(); var _role=null; if(s&&s.data&&s.data.session){ try{ _role=JSON.parse(atob(s.data.session.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata?.role; }catch(_e){} if(_role==="owner") return true; } var resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:pin})}); var j=await resp.json(); if(resp.ok&&j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; } }catch(e){ console.error("ensureRevSession",e); } return false; }
+/* 🔐 ไม่มีล็อกอินอัตโนมัติ — ใช้ได้เฉพาะ session จาก PIN ที่ผู้ใช้พิมพ์เอง */
+async function revHasSession(){ if(!sb) return false; try{ var s=await sb.auth.getSession(); return !!(s&&s.data&&s.data.session); }catch(e){ return false; } }
+/* มี session เดิมที่ยังใช้ได้ → เข้าเลยไม่ต้องถาม PIN (role อ่านจาก public.users) */
+if(sb && window.RevAuth) RevAuth.currentRole(sb).then(function(r){ if(r) useRole(r); });
 function sbReady(){ return !!sb; }
 /* ---------- helpers ---------- */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
@@ -691,9 +701,9 @@ async function creditSync(manual){
   if(box) box.innerHTML='<span class="muted">กำลังตรวจ…</span>';
   try{
     // ตัดชำระ/สร้างบิลลูกหนี้ = เขียนตาราง rev_credit_bills/rev_credit_payments/rev_expenses (owner-only ตาม RLS เฟส2A)
-    // ต้องมี session owner สดก่อนเสมอ ไม่งั้นโดน "new row violates row-level security policy" (เหมือน pushToFinance)
-    var _own=await ensureRevSession("0402");
-    if(!_own) throw new Error("ต้องเป็นเจ้าของ (owner) เพื่อสร้าง/ตัดชำระบิลลูกหนี้ — ลองใหม่อีกครั้ง หรือรีเฟรชหน้าแล้วเข้าใหม่ด้วย PIN 0402");
+    // ต้องมี session เจ้าของ/การเงินที่ล็อกอินด้วย PIN ของตัวเอง (RLS ฝั่ง rev_* = เจ้าของ/การเงิน)
+    var _own=(await revHasSession()) && (ROLE==="finance"||ROLE==="owner");
+    if(!_own) throw new Error("ต้องเข้าสู่ระบบเป็นเจ้าของหรือการเงินก่อน — รีเฟรชหน้าแล้วใส่ PIN ของตัวเอง");
     await ensureCreditBills();
     var res=await autoPostCredit();
     var rec=await reconcileShopeeBills();
@@ -1593,6 +1603,6 @@ window.reload=reload; window.render=render; window.tab=tab;
   </div>
 </div>
 <script src="bell.js?v=20260908a"></script>
-<script src="nav.js?v=20261024a"></script>
+<script src="nav.js?v=20261024b"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest?v=20261024">
 <meta name="theme-color" content="#16a34a">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
 <style>
 :root{--g:#16a34a;--g2:#15803d;--bg:#f6f7f9;--bd:#e5e7eb;--mut:#6b7280;--red:#dc2626;--amb:#d97706;--blu:#2563eb}
 *{box-sizing:border-box}
@@ -136,7 +137,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     <div style="font-size:32px">🔒</div>
     <h2 style="margin:6px 0 2px;font-size:18px">ทะเบียนลูกหนี้ KMMH</h2>
     <div class="muted">ใส่ PIN เพื่อเข้าใช้งาน</div>
-    <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
+    <input id="pinInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
     <div class="perr" id="pinErr"></div>
     <button class="btn" style="width:100%;margin-top:6px" onclick="submitPin()">เข้าใช้งาน</button>
   </div>
@@ -255,16 +256,24 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 <script>
 "use strict";
-/* ---------- PIN gate ---------- */
-var PINMAP={"1234":"cashier","9989":"finance","0402":"owner"};
-var ROLE=null;
-function submitPin(){
-  var el=document.getElementById("pinInput"), v=(el.value||"").trim();
-  var r=PINMAP[v];
-  if(!r){ document.getElementById("pinErr").textContent="PIN ไม่ถูกต้อง ลองใหม่"; el.value=""; el.focus(); return; }
+/* ---------- PIN gate (ไม่มี PIN ในโค้ด — ตรวจที่ Edge Function login แล้วใช้ role ที่ระบบตอบ) ----------
+   owner = เจ้าของ · finance = การเงิน · cashier = แคชเชียร์ (บัญชีของตัวเอง · REV-ROLE-SPLIT ขั้น 6)
+   PIN พนักงานอื่น (employee) / hr = สิทธิ์ไม่พอสำหรับหน้านี้ */
+var ROLE=null, PIN_BUSY=false;
+async function submitPin(){
+  if(PIN_BUSY) return;
+  var el=document.getElementById("pinInput"), v=(el.value||"").trim(); el.value="";
+  var pe=document.getElementById("pinErr"); pe.textContent="กำลังตรวจ PIN…";
+  PIN_BUSY=true; var res; try{ res=await RevAuth.login(sb,SB_URL,SB_KEY,v); }finally{ PIN_BUSY=false; }
+  if(!res.ok){ pe.textContent=res.msg; el.focus(); return; }
+  pe.textContent=""; useRole(res.role);
+}
+function useRole(r){
+  if(r!=="owner"&&r!=="finance"&&r!=="cashier"){ ROLE=null; document.getElementById("gate").style.display=""; document.getElementById("pinErr").textContent=RevAuth.DENY_MSG; try{localStorage.removeItem("rev_role");}catch(e){} return false; }
   ROLE=r; document.getElementById("gate").style.display="none"; try{localStorage.setItem("rev_role",r);}catch(e){}
   applyGating();
   boot();
+  return true;
 }
 
 /* ---------- Supabase (เหมือน index.html) ---------- */
@@ -272,18 +281,10 @@ var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 var sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); }catch(e){ console.warn("sb init",e); }
 function sbReady(){ return (typeof sb!=="undefined" && sb); }
-/* ── บัตรผ่าน owner อัตโนมัติ (เหมือน index.html) ── */
-var LOGIN_FN_URL=SB_URL+"/functions/v1/login"; var OWNER_PIN="0402";
+/* 🔐 ไม่มีล็อกอินอัตโนมัติแล้ว — ใช้ได้เฉพาะ session จาก PIN ที่ผู้ใช้พิมพ์เอง (คงชื่อฟังก์ชันไว้) */
 async function ensureOwnerSession(){
   if(!sb) return false;
-  try{
-    var s=(await sb.auth.getSession()).data.session;
-    var role=null; if(s){ try{ role=JSON.parse(atob(s.access_token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).user_metadata.role; }catch(_e){} }
-    if(s && role==="owner") return true;
-    var resp=await fetch(LOGIN_FN_URL,{method:"POST",headers:{"apikey":SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({pin:OWNER_PIN})});
-    var j=await resp.json();
-    if(resp.ok && j && j.access_token){ await sb.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); return true; }
-  }catch(e){ console.error("ensureOwnerSession",e); }
+  try{ var s=(await sb.auth.getSession()).data.session; return !!s; }catch(e){ console.error("ensureOwnerSession",e); }
   return false;
 }
 
@@ -990,8 +991,9 @@ function boot(){
   /* v22ต.ค.69 เติมบิลค้างจาก ACC ก่อนโหลดทะเบียน (credit-acc.js) */
   ensureOwnerSession().then(async function(){ try{ if(window.__creditAccSync) await window.__creditAccSync(); }catch(e){} loadNotes(); loadRegister(); runDupScan(); });
 }
-window.revLogout=function(){ if(confirm("ออกจากระบบ / สลับผู้ใช้?")){ try{localStorage.removeItem("rev_role");}catch(e){} try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); } };
-(function(){ try{ var _r=localStorage.getItem("rev_role"); if(_r&&["cashier","finance","owner"].indexOf(_r)>=0){ ROLE=_r; var _g=document.getElementById("gate"); if(_g)_g.style.display="none"; applyGating(); boot(); } }catch(e){} })();
+window.revLogout=async function(){ if(!confirm("ออกจากระบบ / สลับผู้ใช้?")) return; await RevAuth.logout(sb); try{sessionStorage.removeItem("rev_dash_ok");sessionStorage.removeItem("rev_role");}catch(e){} location.reload(); };
+/* มี session เดิมที่ยังใช้ได้ → เข้าเลยไม่ต้องถาม PIN (role อ่านจาก public.users ไม่เชื่อ localStorage) */
+if(sb && window.RevAuth) RevAuth.currentRole(sb).then(function(r){ if(r) useRole(r); });
 </script>
 <script src="bell.js?v=20260908a"></script>
 
@@ -1083,6 +1085,6 @@ window.revLogout=function(){ if(confirm("ออกจากระบบ / สล
   run();
 })();
 </script>
-<script src="nav.js?v=20261024a"></script>
+<script src="nav.js?v=20261024b"></script>
 </body>
 </html>

@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
 <script src="cashierform-core.js?v=20261022a"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Sarabun:wght@400;600;700&display=swap">
 <style>
@@ -238,9 +239,10 @@ const isRA=s=>/^RA/.test(s);
 let S={rcash:[],scash:[],xfer:[],credit:[],oldc:[],oldx:[],upk:[],other:[],refund:[],photo:null,count:''};
 let ROW={status:'draft'};
 /* ---------- เชื่อมระบบ ---------- */
-const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co", SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r", LOGIN_FN_URL=SB_URL+"/functions/v1/login";
+const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co", SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 let sb=null; try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); }catch(e){}
-let ROLE=null; try{ ROLE=localStorage.getItem("rev_role"); }catch(e){}
+/* REV-ROLE-SPLIT ขั้น 6: บทบาทอ่านจากฐานตอนเปิดหน้า (RevAuth.currentRole) ไม่เชื่อค่าในเครื่อง · ช่องตัวตนในฐานเติมเองจาก session อยู่แล้ว */
+let ROLE=null;
 const ROLE_LABEL={cashier:"แคชเชียร์",finance:"การเงิน",owner:"เจ้าของ"};
 const bkkToday=()=>new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
 const bkkShift=(iso,n)=>{const p=iso.split("-");const d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
@@ -773,7 +775,8 @@ document.getElementById('bSubmit').onclick=async()=>{
       } finally{ _submitting=false; renderAll(); } };
   } };
 (async function init(){
-  if(!ROLE||!sb||!(await ensureSession())){ document.getElementById('gate').hidden=false; document.querySelector('.grid').hidden=true; setChip('syncChip','mute','ยังไม่ได้เข้าระบบ'); return; }
+  if(sb&&window.RevAuth&&(await ensureSession())){ const r=await RevAuth.currentRole(sb); ROLE=(r==="owner"||r==="finance"||r==="cashier")?r:null; }
+  if(!ROLE||!sb){ document.getElementById('gate').hidden=false; document.querySelector('.grid').hidden=true; setChip('syncChip','mute','ยังไม่ได้เข้าระบบ'); return; }
   const q=new URLSearchParams(location.search).get('d'); const d0=(q&&/^\d{4}-\d{2}-\d{2}$/.test(q))?q:bkkToday();
   const di=document.getElementById('fDate'); di.value=d0; di.onchange=async()=>{ const want=di.value;
     if(_submitting){ di.value=DATA.date||''; setChip('saveChip','warn','กำลังส่งฟอร์ม รอสักครู่ค่อยเปลี่ยนวัน'); return; }
@@ -783,6 +786,6 @@ document.getElementById('bSubmit').onclick=async()=>{
   loadDay(d0);
 })();
 </script>
-<script src="nav.js?v=20261024a"></script>
+<script src="nav.js?v=20261024b"></script>
 </body>
 </html>

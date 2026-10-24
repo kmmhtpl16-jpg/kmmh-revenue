@@ -194,9 +194,11 @@
     document.body.classList.remove("km-shon"); if(sh) sh.inert=true;
     if(was && opener){ var f=opener.isConnected?opener:document.querySelector("#kmBn [data-km-menu]"); try{ if(f) f.focus(); }catch(e){} } opener=null;
   }
-  function logout(){
+  async function logout(){
     if(typeof window.revLogout==="function"){ window.revLogout(); return; }
     if(!confirm("ออกจากระบบ / สลับผู้ใช้?")) return;
+    /* ขั้น 6: หน้าที่ไม่มี revLogout (Dashboard/สารบัญ/ฟอร์ม/Shopee) ต้องออกจาก session จริงด้วย ไม่งั้นโหลดใหม่แล้วยังเข้าอยู่ */
+    try{ if(window.RevAuth) await window.RevAuth.logout(SB()); }catch(e){}
     try{ localStorage.removeItem("rev_role"); }catch(e){}
     try{ sessionStorage.removeItem("rev_dash_ok"); sessionStorage.removeItem("rev_role"); }catch(e){}
     location.reload();

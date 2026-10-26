@@ -19,7 +19,13 @@
   function bills(e){ var out=[]; ["scash","xfer","credit","oldc","oldx","upk"].forEach(function(k){ (e[k]||[]).forEach(function(r){ if(r.bill&&out.indexOf(r.bill)<0) out.push(r.bill); }); }); return out; }
   function clean(e){ /* ตัดแถวที่เลขบิลผิดรูปแบบ (ฟอร์มกันส่งไว้แล้ว แต่กันซ้ำอีกชั้น) */
     var o={rcash:e.rcash||[]}, bad=[];
-    ["scash","xfer","credit","oldc","oldx","upk"].forEach(function(k){ o[k]=(e[k]||[]).filter(function(r){ var ok=CashierForm.BILL_RE.test(String(r.bill||"")); if(!ok) bad.push(r.bill); return ok; }); });
+    /* 26 ต.ค.69: แถวเปล่า (ไม่มีทั้งเลขบิลและยอด) ข้ามเงียบๆ · มียอดแต่ไม่มีเลขบิล = บอกเป็น "กล่อง แถว n ไม่มีเลขบิล (ยอด x)" (เดิมขึ้น "เลขบิลผิดรูปแบบ" แล้วว่าง อ่านไม่รู้เรื่อง) */
+    var BOX={scash:"ร้านค้าเงินสด",xfer:"โอน",credit:"ลงบัญชี",oldc:"บิลเก่า-เงินสด",oldx:"บิลเก่า-โอน",upk:"UPK"};
+    /* ช่องยอดที่มีค่า (ไม่ว่าง ไม่ใช่ 0 — ติดลบ/ตัวอักษรก็นับว่ามีค่า ไม่ข้ามเงียบ) */
+    var vals=function(r){ return ["amt","kp","ks"].map(function(f){ return String(r&&r[f]!=null?r[f]:"").trim(); }).filter(function(v){ return v!=="" && +v.replace(/,/g,"")!==0; }); };
+    ["scash","xfer","credit","oldc","oldx","upk"].forEach(function(k){ o[k]=(e[k]||[]).map(function(r){ return Object.assign({},r,{bill:String(r.bill||"").trim()}); }).filter(function(r,i){ var b=r.bill, v=vals(r);
+      if(!b&&!v.length) return false;
+      var ok=CashierForm.BILL_RE.test(b); if(!ok) bad.push(b? b : BOX[k]+" แถว "+(i+1)+" ไม่มีเลขบิล (ยอด "+v.join(" / ")+")"); return ok; }); });
     return {e:o,bad:bad}; }
   /* โหลดฟอร์มของวัน + ข้อมูล ACC แล้วสร้าง workbook */
   async function buildFor(date){
@@ -58,7 +64,7 @@
       /* คุณหลิงเคาะ 26 ต.ค.69 ไม่ต้องล็อก: เจ้าของ/การเงินดึงร่างที่ยังไม่กดส่งได้ (มีข้อมูลแล้ว) · แคชเชียร์ยังต้องกดส่งฟอร์มก่อน */
       var draft=r.row.status!=="submitted", boss=(typeof ROLE!=="undefined")&&(ROLE==="owner"||ROLE==="finance");
       if(draft&&!boss){ msg("แคชเชียร์ยังไม่กด “ส่งฟอร์ม” ของวันที่ "+beDate(date)+useXl,"#b45309"); return; }
-      if(r.miss.length||r.bad.length){ msg("ยังดึงไม่ได้: "+(r.bad.length?"เลขบิลผิดรูปแบบ "+esc(r.bad.join(", "))+" ":"")+(r.miss.length?"ไม่พบใน ACC "+esc(r.miss.join(", ")):""),"#b91c1c"); return; }
+      if(r.miss.length||r.bad.length){ msg("ยังดึงไม่ได้: "+(r.bad.length?"เลขบิลผิดรูปแบบ/ไม่มีเลขบิล — "+esc(r.bad.join(", "))+" ":"")+(r.miss.length?"ไม่พบใน ACC "+esc(r.miss.join(", ")):"")+" — แก้ที่หน้าฟอร์มรายรับ"+useXl,"#b91c1c"); return; }
       var buf=XLSX.write(r.wb,{type:"array",bookType:"xlsx"});
       var file=new File([buf],fileName(date),{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
       var inp=el("f_form"); if(!inp||inp.disabled){ msg("ช่องอัปฟอร์มถูกปิดอยู่ — ดึงไม่ได้","#b91c1c"); return; }

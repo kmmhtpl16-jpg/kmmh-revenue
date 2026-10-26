@@ -39,7 +39,10 @@
       other:(q[0].data||[]).map(function(x){ return {amt:+x.amount,ch:x.channel==="cash"?"cash":"xfer"}; }),
       refund:(q[1].data||[]).map(function(x){ return {amt:+x.amount,ch:x.pay==="cash"?"cash":"xfer"}; })});
     var wb=CashierForm.buildWorkbook(XLSX,e,acc);
-    return {row:f.data, wb:wb, done:done, miss:miss, bad:c.bad};
+    /* แถวที่มียอดจริง (ไม่นับแถวเปล่า) + รายรับอื่น/คืนเงินของวัน · ใช้ตัดสินว่าร่างว่างไหม */
+    var hasAmt=function(r){ return ["amt","kp","ks"].some(function(f){ return +String(r&&r[f]!=null?r[f]:"").replace(/,/g,"")>0; }); };
+    var nRows=["rcash","scash","xfer","credit","oldc","oldx","upk"].reduce(function(s,k){ return s+((c.e[k]||[]).filter(hasAmt).length); },0)+c.bad.length+e.other.length+e.refund.length;
+    return {row:f.data, wb:wb, done:done, miss:miss, bad:c.bad, nRows:nRows};
   }
   async function pull(ev){
     ev.preventDefault(); ev.stopPropagation();
@@ -48,15 +51,21 @@
     msg("กำลังดึงฟอร์มของวันที่ "+beDate(date)+"…");
     try{
       var r=await buildFor(date);
-      if(r.none){ msg("ยังไม่มีฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" — ให้แคชเชียร์กรอกที่หน้า “ฟอร์มรายรับ” ก่อน","#b45309"); return; }
+      /* 26 ต.ค.69: วันที่แคชเชียร์ทำฟอร์มเป็นไฟล์ Excel ฟอร์มในโปรแกรมว่าง → บอกให้อัปไฟล์แทน (ดึงฟอร์มว่าง = ยอดทั้งวันเป็น 0 ทับของจริง) */
+      var useXl=" — ถ้าวันนี้ทำฟอร์มเป็นไฟล์ Excel ให้คลิกกล่องนี้ หรือลากไฟล์มาวางในกล่อง";
+      if(r.none||!r.nRows){ msg("ฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" ยังว่าง"+useXl,"#b45309"); return; }
       if(!r.done){ msg("ข้อมูล ACC ของวันที่ "+beDate(date)+" ยังไม่ครบ (รอรอบซิงก์ 16:30) — ดึงได้หลังซิงก์","#b45309"); return; }
-      if(r.row.status!=="submitted"){ msg("แคชเชียร์ยังไม่กด “ส่งฟอร์ม” ของวันที่ "+beDate(date),"#b45309"); return; }
+      /* คุณหลิงเคาะ 26 ต.ค.69 ไม่ต้องล็อก: เจ้าของ/การเงินดึงร่างที่ยังไม่กดส่งได้ (มีข้อมูลแล้ว) · แคชเชียร์ยังต้องกดส่งฟอร์มก่อน */
+      var draft=r.row.status!=="submitted", boss=(typeof ROLE!=="undefined")&&(ROLE==="owner"||ROLE==="finance");
+      if(draft&&!boss){ msg("แคชเชียร์ยังไม่กด “ส่งฟอร์ม” ของวันที่ "+beDate(date)+useXl,"#b45309"); return; }
       if(r.miss.length||r.bad.length){ msg("ยังดึงไม่ได้: "+(r.bad.length?"เลขบิลผิดรูปแบบ "+esc(r.bad.join(", "))+" ":"")+(r.miss.length?"ไม่พบใน ACC "+esc(r.miss.join(", ")):""),"#b91c1c"); return; }
       var buf=XLSX.write(r.wb,{type:"array",bookType:"xlsx"});
       var file=new File([buf],fileName(date),{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-      var inp=el("f_form"), dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files;
+      var inp=el("f_form"); if(!inp||inp.disabled){ msg("ช่องอัปฟอร์มถูกปิดอยู่ — ดึงไม่ได้","#b91c1c"); return; }
+      var dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files;
       inp.dispatchEvent(new Event("change",{bubbles:true}));
-      msg("✓ ดึงฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (ส่งโดย "+esc(r.row.submitted_role||"-")+")","#15803d");
+      msg(draft? "✓ ดึงร่างฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (แคชเชียร์ยังไม่กดส่ง) — ตรวจยอดก่อนกดยืนยัน · ถ้ายังไม่ครบ ให้แก้ฟอร์มแล้วกด ✕ ดึงใหม่"
+               : "✓ ดึงฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (ส่งโดย "+esc(r.row.submitted_role||"-")+")", draft?"#b45309":"#15803d");
     }catch(err){ msg("ดึงไม่สำเร็จ: "+esc((err&&err.message)||err),"#b91c1c"); }
   }
   /* ช่วงทดลองคู่ขนาน: เทียบไฟล์ Excel ที่อัป กับฟอร์มในโปรแกรมของวันเดียวกัน */

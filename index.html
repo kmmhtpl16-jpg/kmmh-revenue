@@ -25,6 +25,7 @@
   .drop{ flex:1; min-width:200px; background:#fff; border:2px dashed #cbd5c0; border-radius:12px; padding:16px; text-align:center; cursor:pointer; transition:.15s; }
   .drop:hover{ border-color:#16a34a; background:#f0fdf4; }
   .drop.on{ border-style:solid; border-color:#16a34a; background:#f0fdf4; }
+  .drop.hov{ border-color:#16a34a; background:#dcfce7; }
   .drop .ic{ font-size:26px; } .drop .nm{ font-weight:800; font-size:15px; margin-top:4px; }
   .drop .hint{ font-size:12px; color:#78716c; margin-top:3px; }
   .drop .fn{ font-size:12px; color:#16a34a; margin-top:6px; word-break:break-all; font-weight:700; }
@@ -2539,6 +2540,20 @@ async function matchPending(id){
 }
 
 readFile(document.getElementById("f_form"),"form",n=>{setFn("fn_form",n,"form");document.getElementById("d_form").classList.add("on");});
+/* 26 ต.ค.69: ลากไฟล์มาวางในกล่องอัปได้ — เดิมกล่องเป็น label ไม่มีตัวรับ drop ลากไฟล์มาวางแล้วไฟล์ไม่เข้าโปรแกรม (เคสคุณหลิงอัปฟอร์ม 24/10 ซ้ำ)
+   ส่งไฟล์เข้าช่อง input ของกล่องนั้นแล้วยิง change = ทางเดียวกับคลิกเลือกไฟล์ทุกอย่าง · วางนอกกล่อง = ไม่ให้เบราว์เซอร์เปิดไฟล์ทับหน้าเว็บ */
+const dragHasFile=e=>!!(e.dataTransfer&&Array.prototype.indexOf.call(e.dataTransfer.types||[],"Files")>=0);
+document.querySelectorAll("label.drop").forEach(function(d){ const inp=d.querySelector('input[type="file"]'); if(!inp) return;
+  const okExt=n=>{ const acc=String(inp.accept||"").toLowerCase().split(",").map(s=>s.trim()).filter(Boolean); return !acc.length||acc.some(x=>String(n||"").toLowerCase().endsWith(x)); };
+  d.addEventListener("dragover",function(e){ if(!dragHasFile(e)) return; e.preventDefault(); d.classList.add("hov"); });
+  d.addEventListener("dragleave",function(){ d.classList.remove("hov"); });
+  d.addEventListener("drop",function(e){ if(!dragHasFile(e)) return; e.preventDefault(); e.stopPropagation(); d.classList.remove("hov");
+    const fs=e.dataTransfer.files; if(!fs||!fs.length||inp.disabled) return;
+    if(!okExt(fs[0].name)){ alert("ไฟล์ "+fs[0].name+" ไม่ใช่ชนิดที่กล่องนี้รับ ("+inp.accept+")"); return; }
+    const dt=new DataTransfer(); dt.items.add(fs[0]); inp.files=dt.files; inp.dispatchEvent(new Event("change",{bubbles:true})); }); });
+const dropOwn=e=>!!(e.target&&e.target.closest&&(e.target.closest("label.drop")||e.target.closest('input[type="file"]'))); /* ช่องเลือกไฟล์ที่มองเห็น (เช่น แนบสลิป) รับ drop เองตามปกติ */
+window.addEventListener("dragover",function(e){ if(dragHasFile(e)&&!dropOwn(e)) e.preventDefault(); });
+window.addEventListener("drop",function(e){ if(dragHasFile(e)&&!dropOwn(e)) e.preventDefault(); });
 /* ทางสำรอง: วันไหนคลาวด์ยังไม่มี (ตัวดึงวิ่งทุกเช้า) อัปไฟล์เครื่องแบบเดิมได้ — เพิ่ม 23 ก.ย. 69 */
 readFile(document.getElementById("f_pos"),"pos",n=>{setFn("fn_pos",n,"pos");document.getElementById("d_acc").classList.add("on");});
 /* ไฟล์เครื่องที่อัปแทน — จำไว้ในเครื่องนี้ รีเฟรชหน้าแล้วไม่หาย (เก็บ 2 วัน) */
@@ -2658,7 +2673,7 @@ function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(RO
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>
-<script src="cashierform-pull.js?v=20261022a"></script>
+<script src="cashierform-pull.js?v=20261026a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
 const CASHP_FROM="2026-09-30";

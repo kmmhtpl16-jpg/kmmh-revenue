@@ -79,6 +79,22 @@ table.entry input.ra-lock{background:var(--warn-soft);border-color:transparent;c
 .exg table.entry input{max-width:8em}
 .eg{background:var(--warn-soft);color:var(--ink);border-radius:8px;padding:8px 12px;font-size:.86rem}
 .eg code{font-family:var(--ui);font-weight:700;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+/* ตัวช่วยบิลเก่า: เลือกบิลค้างตามลูกค้า */
+.pk{border:1px solid var(--line);border-radius:10px;background:var(--soft);padding:12px;display:flex;flex-direction:column;gap:10px}
+.pk h3{margin:0;font-size:.98rem}
+.pk .row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.pk select,.pk input[type=date],.pk input.pkpay{border:1px solid var(--line);border-radius:6px;padding:5px 7px;background:var(--paper);color:var(--ink);font:inherit;max-width:100%}
+.pk input.pkpay{width:10em;text-align:right}
+.pk .mbtn{padding:3px 10px;font-size:.82rem}
+.pk table{width:100%;border-collapse:collapse;font-size:.88rem;background:var(--paper)}
+.pk th{text-align:left;font-size:.76rem;font-weight:600;color:var(--muted);padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.pk td{padding:3px 6px;border-bottom:1px solid var(--soft);vertical-align:middle}
+.pk td.r,.pk th.r{text-align:right}
+.pk tr.paid td{color:var(--muted);background:var(--soft)}
+.pk tr.on td{background:var(--accent-soft)}
+.pk .pksum{font-weight:700;border-radius:8px;padding:6px 10px}
+.pk .pksum.ok{background:var(--ok-soft);color:var(--ok)} .pk .pksum.bad{background:var(--bad-soft);color:var(--bad)} .pk .pksum.mute{background:var(--paper);color:var(--muted)}
+.pk .tblwrap{max-height:420px;overflow:auto}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
 /* บิลเก่า / หน้าสรุป (ตาราง UPK): ตารางกว้างกว่า 300px → ที่ไม่พอวางคู่กัน ให้เรียงบนลงล่างแทนแถบเลื่อนซ้ายขวา */
 .cols.wide{grid-template-columns:repeat(auto-fit,minmax(min(560px,100%),1fr))}
@@ -301,7 +317,7 @@ let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 let BADAMT={};
 let _chqBusy=false; const CHQ_TOK=new WeakMap(); let _chqSeq=0;
 async function loadDay(date){
-  const tok=++_loadTok; _loadOk=false; _copyNote=''; BADAMT={}; ['subOk','rsOk','cpOk'].forEach(id=>{ const so=document.getElementById(id); if(so) so.remove(); }); if(DATA.date) renderAll(); YYMM=date.slice(2,4)==='26'?String(+date.slice(0,4)+543).slice(2)+date.slice(5,7):'';
+  const tok=++_loadTok; _loadOk=false; _copyNote=''; BADAMT={}; pkReset(); ['subOk','rsOk','cpOk'].forEach(id=>{ const so=document.getElementById(id); if(so) so.remove(); }); if(DATA.date) renderAll(); YYMM=date.slice(2,4)==='26'?String(+date.slice(0,4)+543).slice(2)+date.slice(5,7):'';
   document.getElementById('dTxt').textContent=''; setChip('syncChip','mute','กำลังโหลด…'); setChip('saveChip','mute','');
   try{
     if(TRIAL){
@@ -468,8 +484,117 @@ function paneXfer(R){
   ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${billCell('xfer',i,r,R)}<td style="width:8em">${amtInput('xfer',i,'kp',r.kp)}</td><td style="width:8em">${amtInput('xfer',i,'ks',r.ks)}</td>${stCell('xfer',i,R)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td colspan="3">รวม</td><td style="text-align:right">${totTxt('xfer',tk)}</td><td style="text-align:right">${totTxt('xfer',ts)}</td><td></td></tr></tfoot></table></div></div>`;
 }
+/* ---------- ตัวช่วยบิลเก่า: เลือกบิลค้างตามลูกค้า (งาน inbox 20261026-1411 · คุณหลิงเลือก 26 ต.ค.69) ----------
+   เลือกลูกค้า → บิลค้างจาก ACC (rev_cashier_form_open_bills = acc_bills + acc_bill_outstanding ยอดค้างจริงหลังหัก CN/มัดจำ/รับชำระ)
+   → ติ๊กทีละใบ / เลือกทั้งหมด / เลือกช่วงวันที่ → ยอดที่ลูกค้าจ่ายต้องเท่าผลรวมที่ติ๊กพอดี ถึงกดเพิ่มลงตารางได้ (ไม่ตรง = แดง ให้ติ๊กใบที่ลูกค้าไม่ได้จ่ายออก)
+   ผลที่เพิ่ม = แถว {bill, amt} ในกล่องบิลเก่าเงินสด/โอน แบบเดียวกับพิมพ์ทีละบิล — ไม่มีทางตัดบิลใหม่ ไม่เปลี่ยนสถานะบิลในฐาน
+   บิลที่จ่ายครบแล้ว = สีเทา เลือกไม่ได้ · บิลที่อยู่ในฟอร์มนี้แล้ว = เลือกซ้ำไม่ได้ · ยังพิมพ์ทีละบิลในตารางได้เสมอ (จ่ายบางส่วน / บิลที่ยังไม่ซิงก์)
+   ตัวช่วยอ่านไม่ได้หรือพัง = ขึ้นข้อความในกล่องตัวช่วย ตารางกรอกทีละบิลใช้ได้ตามเดิม */
+let PK={open:false,ch:'oldc',date:null,cus:'',list:null,bills:null,billsCode:'',trunc:false,synced:null,sel:new Set(),payRaw:'',from:'',to:'',err:'',busy:false,note:'',tok:0};
+function pkReset(){ PK={open:PK.open,ch:PK.ch,date:null,cus:'',list:null,bills:null,billsCode:'',trunc:false,synced:null,sel:new Set(),payRaw:'',from:'',to:'',err:'',busy:false,note:'',tok:PK.tok+1}; }
+const r2=n=>Math.round(n*100)/100;
+/* เลขบิลที่อยู่ในฟอร์มวันนี้แล้ว (ทุกกล่อง) — กันเพิ่มซ้ำ */
+function pkInForm(){ const s=new Set(); ['scash','xfer','credit','oldc','oldx','upk'].forEach(k=>(S[k]||[]).forEach(r=>{ const b=normBill(r.bill); if(b) s.add(b); })); return s; }
+async function pkLoad(code){
+  const date=DATA.date, tok=++PK.tok; PK.busy=true; PK.err=''; renderAll();
+  try{
+    const r=await sb.rpc('rev_cashier_form_open_bills',code?{p_date:date,p_code:code}:{p_date:date});
+    if(r.error) throw r.error; if(!r.data) throw new Error('ไม่มีสิทธิ์อ่าน หรือยังไม่มีข้อมูล');
+    /* ผลที่กลับมาช้า (เปลี่ยนวัน/เปลี่ยนลูกค้า/ยกเลิกลูกค้าไปแล้ว) ทิ้ง · Codex r1 #2 */
+    if(tok!==PK.tok||date!==DATA.date||(code&&code!==PK.cus)) return;
+    const d=r.data; PK.date=date; PK.synced=d.synced_at||null;
+    if(code){ if(!Array.isArray(d.bills)) throw new Error('ข้อมูลบิลผิดรูปแบบ'); PK.billsCode=code; PK.trunc=d.truncated===true;
+      PK.bills=d.bills.filter(b=>Array.isArray(b)&&validBill(normBill(b[0]))).map(b=>({no:normBill(b[0]),date:String(b[1]||'').slice(0,10),total:+b[2]||0,out:r2(+b[3]||0),cn:+b[4]||0,dep:+b[5]||0,rc:b[6]?String(b[6]):'',other:b[7]?String(b[7]):''}));
+      PK.sel=new Set(); PK.from=''; PK.to=''; }
+    else{ if(!Array.isArray(d.customers)) throw new Error('ข้อมูลลูกค้าผิดรูปแบบ');
+      PK.list=d.customers.filter(c=>Array.isArray(c)&&c[0]).map(c=>({code:String(c[0]),name:String(c[1]||''),n:+c[2]||0,amt:+c[3]||0})); }
+  }catch(err){ if(tok===PK.tok) PK.err='ตัวช่วยอ่านบิลค้างไม่ได้ ('+(err.message||err)+') — พิมพ์เลขบิลทีละใบในตารางด้านล่างได้ตามเดิม'; }
+  finally{ if(tok===PK.tok){ PK.busy=false; renderAll(); } }
+}
+function pkSelectable(b,inForm){ return b.out>0.009&&!inForm.has(b.no); }
+function pkTotals(){ const inForm=pkInForm(); let n=0,sum=0; (PK.bills||[]).forEach(b=>{ if(PK.sel.has(b.no)&&pkSelectable(b,inForm)){ n++; sum+=b.out; } }); return {n,sum:r2(sum)}; }
+const TH_MON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function pkHTML(){
+  if(!PK.open) return `<div class="pk"><div class="row"><b>ลูกค้าจ่ายบิลเก่าหลายใบ?</b><button class="btn" type="button" id="pk_open">เลือกบิลค้างตามลูกค้า</button><span class="small">เลือกลูกค้า → ติ๊กบิล → ยอดตรงกับเงินที่รับ → เพิ่มลงตารางให้</span></div></div>`;
+  const ed=canEdit(), inForm=pkInForm();
+  let h=`<div class="pk"><div class="row" style="justify-content:space-between"><h3>เลือกบิลค้างตามลูกค้า</h3><button class="btn mbtn" type="button" id="pk_close">ปิดตัวช่วย</button></div>`;
+  if(PK.err) h+=`<div class="pksum bad">${esc(PK.err)}</div>`;
+  if(!PK.list) return h+(PK.busy?'<span class="small">กำลังโหลดรายชื่อลูกค้า…</span>':'')+'</div>';
+  h+=`<div class="row"><label>ลูกค้า <select id="pk_cus"><option value="">— เลือกลูกค้าที่มีบิลค้าง (${PK.list.length} ราย) —</option>${PK.list.map(c=>`<option value="${esc(c.code)}" ${c.code===PK.cus?'selected':''}>${esc(shortName(c.name)||c.name)} · ค้าง ${c.n} ใบ ${fmt(c.amt)}</option>`).join('')}</select></label>
+    <span>รับเป็น <label><input type="radio" name="pk_ch" value="oldc" ${PK.ch==='oldc'?'checked':''}> เงินสด</label> <label><input type="radio" name="pk_ch" value="oldx" ${PK.ch==='oldx'?'checked':''}> โอน/เช็ค</label></span></div>`;
+  if(PK.synced) h+=`<span class="small">ยอดค้างจาก ACC ซิงก์ล่าสุด ${esc(new Date(PK.synced).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))} · บิลที่ยังไม่ซิงก์ หรือจ่ายบางส่วน ให้พิมพ์ทีละบิลในตารางด้านล่าง</span>`;
+  if(PK.note) h+=`<div class="pksum ok">${esc(PK.note)}</div>`;
+  if(!PK.cus||!PK.bills) return h+(PK.busy&&PK.cus?'<span class="small">กำลังโหลดบิล…</span>':'')+'</div>';
+  const open=PK.bills.filter(b=>pkSelectable(b,inForm));
+  const months=[...new Set(open.map(b=>b.date.slice(0,7)))].sort();
+  h+=`<div class="row"><button class="btn mbtn" type="button" id="pk_all">เลือกทั้งหมด (${open.length} ใบ)</button><button class="btn mbtn" type="button" id="pk_none">ล้างที่ติ๊ก</button>
+    ${months.map(m=>{ const n=open.filter(b=>b.date.startsWith(m)).length; return `<button class="btn mbtn" type="button" data-pkmon="${esc(m)}">บิล ${esc(TH_MON[+m.slice(5,7)-1]||m)} ${(+m.slice(0,4)+543)%100} (${n})</button>`; }).join('')}</div>
+    ${PK.trunc?'<div class="pksum bad">บิลค้างของลูกค้านี้มีมากเกิน 1,000 ใบ — แสดงไม่ครบ ให้พิมพ์บิลที่ไม่เห็นทีละใบในตารางด้านล่าง</div>':''}
+    <div class="row"><span>เลือกช่วงวันที่</span><input type="date" id="pk_from" value="${esc(PK.from)}" aria-label="ตั้งแต่วันที่"> ถึง <input type="date" id="pk_to" value="${esc(PK.to)}" aria-label="ถึงวันที่"><button class="btn mbtn" type="button" id="pk_range">เลือกบิลในช่วงนี้</button></div>`;
+  h+=`<div class="tblwrap"><table><thead><tr><th></th><th>วันที่บิล</th><th>เลขบิล</th><th class="r">ยอดบิล</th><th class="r">ยอดค้าง</th><th>หมายเหตุ</th></tr></thead><tbody>`;
+  PK.bills.forEach((b,i)=>{
+    const can=pkSelectable(b,inForm), on=can&&PK.sel.has(b.no), notes=[];
+    if(b.out<=0.009) notes.push(b.rc?'จ่ายครบแล้ว '+b.rc:'ACC ตัดครบแล้ว');
+    else{ if(inForm.has(b.no)) notes.push('อยู่ในฟอร์มนี้แล้ว');
+      if(b.cn) notes.push('หักใบลดหนี้ '+fmt(b.cn)); if(b.dep) notes.push('หักมัดจำ '+fmt(b.dep));
+      if(b.rc) notes.push('จ่ายบางส่วนแล้ว '+b.rc);
+      if(b.other) notes.push('⚠ ลงฟอร์มวันที่ '+b.other.split(',').map(d=>dmy(d)).join(', ')+' แล้ว'); }
+    h+=`<tr class="${b.out<=0.009?'paid':on?'on':''}"><td>${can?`<input type="checkbox" data-pkb="${i}" ${on?'checked':''} aria-label="เลือกบิล ${esc(b.no)}">`:''}</td><td>${esc(dmy(b.date))}</td><td>${esc(b.no)}</td><td class="r">${fmt(b.total)}</td><td class="r">${b.out>0.009?fmt(b.out):'—'}</td><td class="small">${esc(notes.join(' · '))}</td></tr>`;
+  });
+  if(!PK.bills.length) h+=`<tr><td colspan="6" class="small">ไม่พบบิลของลูกค้านี้</td></tr>`;
+  h+=`</tbody></table></div>`;
+  const st=pkStatus();
+  h+=`<div class="row"><label>ยอดที่ลูกค้าจ่าย <input class="pkpay${st.payOk?'':' badamt'}" id="pk_pay" value="${esc(PK.payRaw)}" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+    <span id="pk_sum" class="pksum ${st.cls}">${st.txt}</span>
+    <button class="btn pri" type="button" id="pk_add" ${st.match&&ed?'':'disabled'}>${st.btn}</button></div>
+    <span class="small" id="pk_hint" ${st.hint?'':'hidden'}>ถ้าลูกค้าได้ส่วนลด หรือจ่ายไม่เต็มใบ ให้พิมพ์บิลนั้นทีละใบในตารางด้านล่าง (ใส่ยอดที่รับจริง)</span>`;
+  return h+'</div>';
+}
+/* ผลเทียบ "ยอดที่ลูกค้าจ่าย" กับผลรวมที่ติ๊ก — คิดจากข้อความในช่อง (PK.payRaw) ทุกครั้ง ไม่มีค่ายืนยันแยกที่อาจค้างเก่า (Codex r1 #1) */
+function pkStatus(){
+  const p=parseAmt(PK.payRaw), payOk=p.ok, pay=p.ok&&p.v!==''?p.v:null, t=pkTotals();
+  const diff=pay==null?null:r2(pay-t.sum), match=t.n>0&&pay!=null&&Math.abs(diff)<0.009;
+  const txt=`ติ๊ก ${t.n} ใบ รวม ${fmt(t.sum)}`+(!payOk?' · ยอดที่พิมพ์ไม่ถูกต้อง: '+esc(p.why):pay==null?' · ใส่ยอดที่ลูกค้าจ่าย':match?' · ตรงกับเงินที่รับ ✓':` · ${diff<0?'ติ๊กเกิน':'ติ๊กขาด'} ${fmt(Math.abs(diff))} — ติ๊กบิลที่ลูกค้าไม่ได้จ่ายออก`);
+  return {t,pay,payOk,match,txt,cls:match?'ok':(t.n&&pay!=null)||!payOk?'bad':'mute',hint:pay!=null&&!match&&t.n>0,
+    btn:`เพิ่ม ${t.n} บิลลงตาราง ${PK.ch==='oldx'?'บิลเก่า-โอน':'บิลเก่า-เงินสด'}`};
+}
+/* ระหว่างพิมพ์ยอด: อัปเดตแค่ผลเทียบ + ปุ่ม (ไม่วาดหน้าใหม่ — กดปุ่มเพิ่มต่อได้ทันทีโดยไม่หลุดคลิก) */
+function pkLive(){ const st=pkStatus(), s=document.getElementById('pk_sum'), b=document.getElementById('pk_add'), py=document.getElementById('pk_pay'), hi=document.getElementById('pk_hint');
+  if(s){ s.className='pksum '+st.cls; s.innerHTML=st.txt; } if(b){ b.disabled=!(st.match&&canEdit()); b.textContent=st.btn; } if(py) py.classList.toggle('badamt',!st.payOk); if(hi) hi.hidden=!st.hint; }
+function pkAdd(){
+  if(!canEdit()) { renderAll(); return; }
+  if(!PK.bills||PK.date!==DATA.date||!PK.cus||PK.billsCode!==PK.cus) { setChip('saveChip','warn','ตัวช่วย: รายการบิลไม่ตรงกับวัน/ลูกค้าที่เลือก — เลือกลูกค้าใหม่'); renderAll(); return; }
+  const inForm=pkInForm(), pick=PK.bills.filter(b=>PK.sel.has(b.no)&&pkSelectable(b,inForm));
+  /* ตรวจยอดจากค่าในช่องตอนกดปุ่มจริงๆ */
+  const el=document.getElementById('pk_pay'); if(el) PK.payRaw=el.value;
+  const sum=r2(pick.reduce((s,b)=>s+b.out,0)), pp=parseAmt(PK.payRaw);
+  if(!pick.length||!pp.ok||pp.v===''||Math.abs(r2(pp.v-sum))>=0.009){ renderAll(); return; }
+  const k=PK.ch==='oldx'?'oldx':'oldc';
+  pick.forEach(b=>S[k].push({bill:b.no,amt:b.out}));
+  PK.note=`เพิ่ม ${pick.length} บิล รวม ${fmt(sum)} ลงตาราง${k==='oldx'?'บิลเก่า-โอน':'บิลเก่า-เงินสด'}แล้ว — ตรวจในตารางด้านล่าง (แก้/ลบทีละแถวได้)`;
+  PK.sel=new Set(); PK.payRaw='';
+  renderAll(); scheduleSave();
+}
+function pkBind(){
+  const $=id=>document.getElementById(id);
+  const op=$('pk_open'); if(op) op.onclick=()=>{ PK.open=true; PK.note=''; if(!PK.list||PK.date!==DATA.date){ PK.list=null; PK.bills=null; PK.cus=''; pkLoad(null); } else renderAll(); };
+  const cl=$('pk_close'); if(cl) cl.onclick=()=>{ PK.open=false; renderAll(); };
+  const cu=$('pk_cus'); if(cu) cu.onchange=()=>{ PK.tok++; PK.busy=false; PK.cus=cu.value; PK.bills=null; PK.billsCode=''; PK.trunc=false; PK.note=''; PK.sel=new Set(); if(PK.cus) pkLoad(PK.cus); else renderAll(); };
+  document.querySelectorAll('#panes input[name=pk_ch]').forEach(r=>r.onchange=()=>{ PK.ch=r.value==='oldx'?'oldx':'oldc'; renderAll(); });
+  document.querySelectorAll('#panes [data-pkb]').forEach(cb=>cb.onchange=()=>{ const b=PK.bills&&PK.bills[+cb.dataset.pkb]; if(!b) return; if(cb.checked) PK.sel.add(b.no); else PK.sel.delete(b.no); PK.note=''; renderAll(); });
+  const inForm=pkInForm(), openB=()=>(PK.bills||[]).filter(b=>pkSelectable(b,inForm));
+  const al=$('pk_all'); if(al) al.onclick=()=>{ PK.sel=new Set(openB().map(b=>b.no)); PK.note=''; renderAll(); };
+  const no=$('pk_none'); if(no) no.onclick=()=>{ PK.sel=new Set(); renderAll(); };
+  document.querySelectorAll('#panes [data-pkmon]').forEach(b=>b.onclick=()=>{ const m=b.dataset.pkmon; PK.sel=new Set(openB().filter(x=>x.date.startsWith(m)).map(x=>x.no)); PK.from=m+'-01'; PK.to=bkkShift(bkkShift(m+'-01',32).slice(0,7)+'-01',-1); PK.note=''; renderAll(); });
+  const fr=$('pk_from'), to=$('pk_to'); if(fr) fr.onchange=()=>{ PK.from=fr.value; }; if(to) to.onchange=()=>{ PK.to=to.value; };
+  const rg=$('pk_range'); if(rg) rg.onclick=()=>{ PK.from=fr?fr.value:PK.from; PK.to=to?to.value:PK.to; if(!PK.from&&!PK.to) return; PK.sel=new Set(openB().filter(x=>(!PK.from||x.date>=PK.from)&&(!PK.to||x.date<=PK.to)).map(x=>x.no)); PK.note=''; renderAll(); };
+  const py=$('pk_pay'); if(py){ py.oninput=()=>{ PK.payRaw=py.value; pkLive(); }; py.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); PK.payRaw=py.value; pkLive(); } }; }
+  const ad=$('pk_add'); if(ad) ad.onclick=pkAdd;
+}
 function paneOld(R){
+  let pk=''; try{ pk=pkHTML(); }catch(e){ pk=`<div class="pk"><div class="pksum bad">ตัวช่วยเลือกบิลขัดข้อง — พิมพ์เลขบิลทีละใบในตารางด้านล่างได้ตามเดิม</div></div>`; }
   return `<div class="pane"><h2>บิลเก่า (ลูกค้ามาจ่ายบิลวันก่อน)</h2><p class="hint">เลขบิลวันก่อน + ยอดที่รับวันนี้ · ถ้าพิมพ์บิลของวันนี้ลงที่นี่ โปรแกรมจะเตือน</p>
+  ${pk}
   <div class="cols wide">${paneBillAmt('oldc','เงินสด','',R).replace('<div class="pane">','<div>')}${paneBillAmt('oldx','โอนเข้าบัญชี','',R).replace('<div class="pane">','<div>')}</div></div>`;
 }
 function chSel(k,i,v){return `<select id="${k}_ch_${i}" data-k="${k}" data-i="${i}" data-f="ch"><option value="cash" ${v!=='xfer'?'selected':''}>เงินสด</option><option value="xfer" ${v==='xfer'?'selected':''}>โอน</option></select>`}
@@ -780,6 +905,7 @@ function bind(){
   document.querySelectorAll('#panes [data-depedit]').forEach(el=>el.onclick=()=>{const [k,i]=el.dataset.depedit.split(':');openDep(k,+i)});
   document.querySelectorAll('#panes [data-go2]').forEach(b=>b.onclick=()=>{cur=b.dataset.go2;renderAll()});
   const ci=document.getElementById('cnt_amt_0');if(ci){const f=()=>{if(!canEdit()){renderAll();return}const p=parseAmt(ci.value);if(!p.ok){amtErr(ci,p.why);return}const had=!!BADAMT.cnt_amt_0;delete BADAMT['cnt_amt_0'];ci.classList.remove('badamt');const v=p.v;if(v===S.count){ if(had) renderAll(); return; }ci.defaultValue=ci.value;S.count=v;renderAll();scheduleSave()};ci.onchange=f;ci.onblur=()=>{if(ci.isConnected)f()};ci.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();f()}}}
+  try{ pkBind(); }catch(_e){} /* ตัวช่วยบิลเก่าพัง ไม่กระทบช่องกรอกอื่น */
   const ph=document.getElementById('phIn');
   if(ph)ph.onchange=()=>{const f=ph.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{S.photo=rd.result;renderAll()};rd.readAsDataURL(f)};
 }

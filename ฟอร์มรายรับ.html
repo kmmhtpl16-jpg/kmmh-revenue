@@ -85,6 +85,7 @@ table.entry input.ra-lock{background:var(--warn-soft);border-color:transparent;c
 .pk .row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
 .pk select,.pk input[type=date],.pk input.pkpay{border:1px solid var(--line);border-radius:6px;padding:5px 7px;background:var(--paper);color:var(--ink);font:inherit;max-width:100%}
 .pk input.pkpay{width:10em;text-align:right}
+.pk input.pkq{border:1px solid var(--line);border-radius:6px;padding:5px 9px;background:var(--paper);color:var(--ink);font:inherit;width:16em;max-width:100%}
 .pk .mbtn{padding:3px 10px;font-size:.82rem}
 .pk table{width:100%;border-collapse:collapse;font-size:.88rem;background:var(--paper)}
 .pk th{text-align:left;font-size:.76rem;font-weight:600;color:var(--muted);padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -514,13 +515,19 @@ async function pkLoad(code){
 function pkSelectable(b,inForm){ return b.out>0.009&&!inForm.has(b.no); }
 function pkTotals(){ const inForm=pkInForm(); let n=0,sum=0; (PK.bills||[]).forEach(b=>{ if(PK.sel.has(b.no)&&pkSelectable(b,inForm)){ n++; sum+=b.out; } }); return {n,sum:r2(sum)}; }
 const TH_MON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+/* ช่องค้นหาลูกค้า (คุณหลิงขอ 26 ต.ค.69): กรองรายชื่อตามชื่อเต็ม/ชื่อย่อ/รหัส ไม่สนตัวพิมพ์ · ลูกค้าที่เลือกอยู่แสดงเสมอ แม้ไม่ตรงคำค้น */
+function pkMatch(c,q){ q=String(q||'').trim().toLowerCase(); if(!q) return true; return (c.name+' '+shortName(c.name)+' '+c.code).toLowerCase().includes(q); }
+function pkCusOpts(){ const L=(PK.list||[]).filter(c=>c.code===PK.cus||pkMatch(c,PK.q)), q=String(PK.q||'').trim();
+  const head=q?`— พบ ${L.filter(c=>pkMatch(c,q)).length} ราย จาก ${(PK.list||[]).length} —`:`— เลือกลูกค้าที่มีบิลค้าง (${(PK.list||[]).length} ราย) —`;
+  return `<option value="">${esc(head)}</option>`+L.map(c=>`<option value="${esc(c.code)}" ${c.code===PK.cus?'selected':''}>${esc(shortName(c.name)||c.name)} · ค้าง ${c.n} ใบ ${fmt(c.amt)}</option>`).join(''); }
+function pkPickCus(code){ PK.tok++; PK.busy=false; PK.cus=code; PK.bills=null; PK.billsCode=''; PK.trunc=false; PK.note=''; PK.sel=new Set(); if(PK.cus) pkLoad(PK.cus); else renderAll(); }
 function pkHTML(){
   if(!PK.open) return `<div class="pk"><div class="row"><b>ลูกค้าจ่ายบิลเก่าหลายใบ?</b><button class="btn" type="button" id="pk_open">เลือกบิลค้างตามลูกค้า</button><span class="small">เลือกลูกค้า → ติ๊กบิล → ยอดตรงกับเงินที่รับ → เพิ่มลงตารางให้</span></div></div>`;
   const ed=canEdit(), inForm=pkInForm();
   let h=`<div class="pk"><div class="row" style="justify-content:space-between"><h3>เลือกบิลค้างตามลูกค้า</h3><button class="btn mbtn" type="button" id="pk_close">ปิดตัวช่วย</button></div>`;
   if(PK.err) h+=`<div class="pksum bad">${esc(PK.err)}</div>`;
   if(!PK.list) return h+(PK.busy?'<span class="small">กำลังโหลดรายชื่อลูกค้า…</span>':'')+'</div>';
-  h+=`<div class="row"><label>ลูกค้า <select id="pk_cus"><option value="">— เลือกลูกค้าที่มีบิลค้าง (${PK.list.length} ราย) —</option>${PK.list.map(c=>`<option value="${esc(c.code)}" ${c.code===PK.cus?'selected':''}>${esc(shortName(c.name)||c.name)} · ค้าง ${c.n} ใบ ${fmt(c.amt)}</option>`).join('')}</select></label>
+  h+=`<div class="row"><input id="pk_q" class="pkq" value="${esc(PK.q||'')}" placeholder="🔍 พิมพ์ค้นหาชื่อร้าน / รหัส" autocomplete="off" aria-label="ค้นหาลูกค้า"><label>ลูกค้า <select id="pk_cus">${pkCusOpts()}</select></label>
     <span>รับเป็น <label><input type="radio" name="pk_ch" value="oldc" ${PK.ch==='oldc'?'checked':''}> เงินสด</label> <label><input type="radio" name="pk_ch" value="oldx" ${PK.ch==='oldx'?'checked':''}> โอน/เช็ค</label></span></div>`;
   if(PK.synced) h+=`<span class="small">ยอดค้างจาก ACC ซิงก์ล่าสุด ${esc(new Date(PK.synced).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))} · บิลที่ยังไม่ซิงก์ หรือจ่ายบางส่วน ให้พิมพ์ทีละบิลในตารางด้านล่าง</span>`;
   if(PK.note) h+=`<div class="pksum ok">${esc(PK.note)}</div>`;
@@ -579,7 +586,11 @@ function pkBind(){
   const $=id=>document.getElementById(id);
   const op=$('pk_open'); if(op) op.onclick=()=>{ PK.open=true; PK.note=''; if(!PK.list||PK.date!==DATA.date){ PK.list=null; PK.bills=null; PK.cus=''; pkLoad(null); } else renderAll(); };
   const cl=$('pk_close'); if(cl) cl.onclick=()=>{ PK.open=false; renderAll(); };
-  const cu=$('pk_cus'); if(cu) cu.onchange=()=>{ PK.tok++; PK.busy=false; PK.cus=cu.value; PK.bills=null; PK.billsCode=''; PK.trunc=false; PK.note=''; PK.sel=new Set(); if(PK.cus) pkLoad(PK.cus); else renderAll(); };
+  const cu=$('pk_cus'); if(cu) cu.onchange=()=>pkPickCus(cu.value);
+  /* พิมพ์ค้นหา = กรองรายการในกล่องเลือกทันที (ไม่วาดหน้าใหม่ ช่องค้นหาไม่หลุด) · Enter = เลือกรายแรกที่ตรง */
+  const qi=$('pk_q'); if(qi){ qi.oninput=()=>{ PK.q=qi.value; if(cu) cu.innerHTML=pkCusOpts(); };
+    /* Enter ระหว่างพิมพ์ผ่าน IME / ช่องค้นหาว่าง = ไม่เลือกให้ (กันเปลี่ยนลูกค้าแล้วติ๊กที่ทำไว้หาย · Codex r2-search) */
+    qi.onkeydown=e=>{ if(e.key!=='Enter'||e.isComposing||e.keyCode===229) return; e.preventDefault(); if(!String(PK.q||'').trim()) return; const f=(PK.list||[]).find(c=>pkMatch(c,PK.q)); if(f&&f.code!==PK.cus) pkPickCus(f.code); }; }
   document.querySelectorAll('#panes input[name=pk_ch]').forEach(r=>r.onchange=()=>{ PK.ch=r.value==='oldx'?'oldx':'oldc'; renderAll(); });
   document.querySelectorAll('#panes [data-pkb]').forEach(cb=>cb.onchange=()=>{ const b=PK.bills&&PK.bills[+cb.dataset.pkb]; if(!b) return; if(cb.checked) PK.sel.add(b.no); else PK.sel.delete(b.no); PK.note=''; renderAll(); });
   const inForm=pkInForm(), openB=()=>(PK.bills||[]).filter(b=>pkSelectable(b,inForm));

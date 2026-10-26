@@ -1863,11 +1863,22 @@ async function renderDay(date, edit){
         var _dmap={}; (_dq2.data||[]).forEach(function(d0){ _dmap[normRA(d0.deposit_no)]=d0; });
         var _dids=(_dq2.data||[]).map(function(d0){ return d0.id; });
         var _uses=[]; if(_dids.length){ var _uq=await sb.from("rev_deposit_uses").select("deposit_id,bill_no,amount").in("deposit_id",_dids); _uses=(_uq.data||[]); }
-        var Q7=String.fromCharCode(39), _bad=0;
+        var Q7=String.fromCharCode(39), _bad=0, _soft=0;
+        /* 26 ต.ค.69 (คุณหลิง 24 ต.ค. "ต้องแจ้งว่า จับคู่เลขได้แล้ว รอตรวจสอบยอดเงินถูกไหม"): ทะเบียนมัดจำหน้าเว็บยังไม่มี แต่ ACC มีใบมัดจำ + ผูกกับบิลนี้แล้ว
+           = จับคู่เลขได้แล้ว เหลือตรวจว่าเงินเข้าบัญชีจริง (ไปเลือกจากยอดเงินรอจับคู่) · เตือนเบากว่ากรณีที่ ACC ไม่มีใบมัดจำเลย · อ่าน ACC ไม่ได้ = ข้อความเดิม */
+        var _accRA={}, _lastStmt=null, _d2=function(s){ var p=String(s||"").slice(0,10).split("-"); return p.length===3?(+p[2])+"/"+(+p[1]):""; };
+        try{ var _aq=await sb.rpc("rev_cashier_form_acc",{p_date:date,p_extra:_raNos}); var _ad=(_aq&&!_aq.error&&_aq.data)||null;
+          if(_ad){ (_ad.deps||[]).forEach(function(d){ _accRA[normRA(d[0])]={date:d[1],amt:+d[4]||0,bills:{}}; });
+            (_ad.uses||[]).forEach(function(u){ var a=_accRA[normRA(u[0])]; if(a) a.bills[normBill(u[1])]=Math.round(((a.bills[normBill(u[1])]||0)+(+u[2]||0))*100)/100; }); } }catch(e){ _accRA={}; }
+        try{ var _lq=await sb.from("rev_daily").select("date").not("bank_rows","is",null).neq("bank_rows","[]").order("date",{ascending:false}).limit(1); _lastStmt=(_lq&&!_lq.error&&_lq.data&&_lq.data[0])?String(_lq.data[0].date).slice(0,10):null; }catch(e){}
         var _raRows=_raX.map(function(x){
           var amt=Math.round((((+x.knv||0)+(+x.ksk||0)))*100)/100, bill=normBill(x.bill), dep=_dmap[normRA(x.ra)]; x={bill:x.bill,knv:x.knv,ksk:x.ksk,cust:x.cust,ra:normRA(x.ra)};
           var head='<td style="white-space:nowrap"><b>'+esc(bill)+'</b></td><td style="font-size:12px">'+esc(x.cust||'')+'</td><td class="num">'+TH(amt)+'</td>';
-          if(!dep){ _bad++;
+          if(!dep){ var _ac=_accRA[x.ra];
+            if(_ac && _ac.bills[bill]!=null){ _soft++;
+              var _sn=_lastStmt? ('สเตทเมนต์ล่าสุด '+_d2(_lastStmt)+(_ac.date&&_lastStmt<String(_ac.date).slice(0,10)?' — ยังไม่ถึงวันที่ใบมัดจำ ('+_d2(_ac.date)+') รอนำเข้าสเตทเมนต์':'')) : 'ยังไม่มีสเตทเมนต์';
+              return '<tr style="background:#eff6ff">'+head+'<td style="color:#1d4ed8;font-size:12.5px">🔗 จับคู่เลขได้แล้ว: ใบมัดจำ '+esc(x.ra)+' ↔ '+esc(bill)+' (ใน ACC) — ⏳ รอตรวจยอดเงินเข้า '+TH(amt)+' ว่าเข้าบัญชีจริงไหม<div class="muted" style="font-size:11.5px">'+esc(_sn)+'</div></td><td style="font-size:12px;color:#4338ca">ไปที่ 💎 ยอดเงินรอจับคู่ → ▾ เลือก → 💰 ยอดมัดจำ</td></tr>'; }
+            _bad++;
             return '<tr style="background:#fef2f2">'+head+'<td style="color:#b91c1c;font-size:12.5px">\u26a0 ยังไม่มีใบมัดจำ '+esc(x.ra)+' ในทะเบียน \u2014 เงินก้อนนี้ยังไม่ถูกบันทึกเป็นมัดจำ</td><td style="font-size:12px;color:#4338ca">ไปที่ \ud83d\udc8e ยอดเงินรอจับคู่ \u2192 \u25be เลือก \u2192 \ud83d\udcb0 ยอดมัดจำ</td></tr>'; }
           var used=_uses.filter(function(u){ return u.deposit_id===dep.id && normBill(u.bill_no)===bill; }).reduce(function(t,u){ return t+num(u.amount); },0);
           var rem=Math.round((num(dep.amount)-num(dep.used_amount))*100)/100;
@@ -1876,8 +1887,11 @@ async function renderDay(date, edit){
           _bad++;
           return '<tr style="background:#fffbeb">'+head+'<td style="color:#b45309;font-size:12.5px">\u26a0 ยังไม่ได้หักมัดจำ '+esc(x.ra)+' (ใบนี้เหลือ '+TH(rem)+')</td><td><button class="btn sec" style="padding:2px 9px;margin:0" onclick="useDeposit('+Q7+dep.id+Q7+','+rem+','+Q7+bill+Q7+','+Math.min(amt,rem)+')">หักมัดจำ</button></td></tr>';
         }).join("");
-        html+='<div style="margin-top:10px;border:1px solid '+(_bad?'#fecaca':'#bbf7d0')+';background:'+(_bad?'#fef2f2':'#f0fdf4')+';border-radius:8px;padding:8px">'+
-          '<div style="font-weight:700;font-size:13px;color:'+(_bad?'#b91c1c':'#15803d')+'">'+(_bad?('\u26a0 บิลที่ตัดมัดจำ \u2014 ยังหาเงินเข้าไม่เจอ '+_bad+' บิล'):'\u2713 บิลที่ตัดมัดจำ \u2014 ผูกเงินมัดจำครบแล้ว')+'</div>'+
+        var _bc=_bad?'#fecaca':_soft?'#bfdbfe':'#bbf7d0', _bg=_bad?'#fef2f2':_soft?'#eff6ff':'#f0fdf4', _fc=_bad?'#b91c1c':_soft?'#1d4ed8':'#15803d';
+        var _ttl=_bad? ('⚠ บิลที่ตัดมัดจำ — ยังหาเงินเข้าไม่เจอ '+_bad+' บิล'+(_soft?' · ⏳ จับคู่เลขแล้ว รอตรวจยอดเงิน '+_soft+' บิล':''))
+               : _soft? ('⏳ บิลที่ตัดมัดจำ — จับคู่เลขได้แล้ว รอตรวจยอดเงิน '+_soft+' บิล') : '✓ บิลที่ตัดมัดจำ — ผูกเงินมัดจำครบแล้ว';
+        html+='<div style="margin-top:10px;border:1px solid '+_bc+';background:'+_bg+';border-radius:8px;padding:8px">'+
+          '<div style="font-weight:700;font-size:13px;color:'+_fc+'">'+_ttl+'</div>'+
           '<div class="muted" style="font-size:12px;margin:2px 0 4px">บิลกลุ่มนี้ไม่มีเงินโอนเข้าบัญชีในวันนี้ เพราะลูกค้าจ่ายด้วยมัดจำที่วางไว้ก่อนหน้า \u2014 ต้องมีใบมัดจำในทะเบียนก่อน แล้วกด "หักมัดจำ" ผูกกับบิลทีละใบ (มัดจำจะลดลงตามยอดที่หัก)</div>'+
           '<table><thead><tr><th>เลขบิล</th><th>ลูกค้า</th><th class="num">ยอดที่ตัดมัดจำ</th><th>สถานะ</th><th></th></tr></thead><tbody>'+_raRows+'</tbody></table></div>';
       }

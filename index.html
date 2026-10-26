@@ -654,7 +654,9 @@ function buildBillAudit(form,pos){
     pool.filter(p=>p.used&&p.mixed).forEach(p=>{ out.bills=out.bills.filter(x=>normBill(x.bill)!==normBill(p.bill)); });
     pool.filter(p=>!p.used&&!p.mixed).forEach(p=>{ const near=orphan.find(v=>Math.abs(p.amt-v)<=BA_TOL);
       if(near!=null) out.cash.push({bill:p.bill,tot:p.amt,form:near,diff:r2c(p.amt-near),kind:"wrong"});
-      else out.cash.push({bill:p.bill,tot:p.amt,kind:"missing"}); });
+      else { /* 26 ต.ค.69: บิลยอดเท่ากันหลายใบ ฟอร์มมีน้อยกว่า — ไม่รู้ว่าใบไหนขาด บอกทั้งกลุ่ม (เดิมชี้ใบท้ายๆ ใบเดียว เคส 24/10 ชี้ 1049 ทั้งที่ส่วนเกินคือ 00010) */
+        const same=pool.filter(q=>!q.mixed&&q.amt===p.amt);
+        out.cash.push(same.length>1? {bill:p.bill,tot:p.amt,kind:"missing",grpN:same.length,grpM:rc.filter(v=>r2c(v)===p.amt).length,grpBills:same.map(q=>q.bill)} : {bill:p.bill,tot:p.amt,kind:"missing"}); } });
     orphan.filter(v=>!pool.some(p=>!p.used&&!p.mixed&&Math.abs(p.amt-v)<=BA_TOL)).forEach(v=>{
       if(!out.cash.some(c=>c.form===v)) out.cash.push({amt:v,kind:"nobill"}); });
   }
@@ -729,7 +731,10 @@ function billAuditHtml(a){
       : '<tr><td>'+esc(c.cust)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.got)+'</td><td>'+sign(c.diff)+'</td></tr>'; });
     h+='</tbody></table></div>'; }
   if(a.cash.length){ h+='<div style="margin:12px 0 8px"><b>เงินสดลูกค้าปลีก (ชีท “ง-ส คุณ1”)</b></div><div class="scroll"><table><thead><tr><th>บิล</th><th class="num">ยอดจริง</th><th class="num">ฟอร์มลง</th><th>ผล</th></tr></thead><tbody>';
-    a.cash.forEach(c=>{ h+= c.kind==="wrong" ? '<tr><td>'+esc(c.bill)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.form)+'</td><td>'+sign(c.diff)+'</td></tr>'
+    const _grpShown={};
+    a.cash.forEach(c=>{ if(c.kind==="missing"&&c.grpN){ if(_grpShown[c.tot]) return; _grpShown[c.tot]=1; } /* กลุ่มยอดเดียวกันขาดหลายใบ แสดงแถวเดียว */
+      h+= c.kind==="wrong" ? '<tr><td>'+esc(c.bill)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.form)+'</td><td>'+sign(c.diff)+'</td></tr>'
+      : c.kind==="missing" && c.grpN ? '<tr><td>'+esc((c.grpBills||[c.bill]).join(", "))+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">—</td><td><b style="color:#b91c1c">บิลยอด '+TH(c.tot)+' มี '+c.grpN+' ใบ ฟอร์มมี '+c.grpM+' ครั้ง</b> <span class="muted">— ไม่รู้ว่าใบไหน ตรวจทุกใบ</span></td></tr>'
       : c.kind==="missing" ? '<tr><td>'+esc(c.bill)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">—</td><td><b style="color:#b91c1c">ไม่มีรายการในฟอร์ม</b></td></tr>'
       : '<tr><td class="muted">(ไม่มีบิลคู่)</td><td class="num">—</td><td class="num">'+TH(c.amt)+'</td><td><b style="color:#b45309">เงินก้อนนี้เป็นของบิลไหน?</b></td></tr>'; });
     h+='</tbody></table></div>'; }
@@ -1297,7 +1302,9 @@ function collectDetail(){
      และ xferBill() เทียบเลขบิลตรงๆ ไม่ได้ · มัดจำที่มีเลขบิลแล้ว = หักจากบิลไปแล้ว ไม่ใช่มัดจำค้าง */
   xfer:(((DATA.form&&DATA.form.xfer)||[]).map(function(x){ const b=normBill(x.bill);
     return {bill:b, knv:x.knv, ksk:x.ksk, ra:(normRA(x.ra||raOf(x.bill))||null),
-            cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[b])||"")}; })), bill_audit:(DATA._billAudit||null), recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
+            cust:((DATA.pos&&DATA.pos.billCust&&DATA.pos.billCust[b])||"")}; })), bill_audit:(DATA._billAudit||null),
+  /* 26 ต.ค.69: ยอดในชีต "ง-ส คุณ1" ทีละแถว — การ์ดตัดบิล (cutbill v0.9.5) เทียบกับบิล ACC ปัจจุบันเองทุกครั้ง พักเฉพาะใบที่ชี้ตัวได้ */
+  retail_cash:((DATA.form&&Array.isArray(DATA.form.retailCash)&&DATA.form.retailCash.every(function(v){ return typeof v==="number"&&isFinite(v); }))? DATA.form.retailCash.slice() : null), /* แถวไหนไม่ใช่ตัวเลข = ไม่เก็บทั้งชุด (การ์ดถือว่าไม่มีข้อมูล → พักกองปลีกแบบเดิม) */ recon_ok:(DATA._auditMsg?DATA._auditMsg.ok1:null), saved_at:new Date().toISOString() };
 }
 function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function renderDetail(d){
@@ -2683,7 +2690,7 @@ function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(RO
 </script>
 <script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261024b"></script>
-<script src="cutbill.js?v=20261026a"></script>
+<script src="cutbill.js?v=20261026b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>

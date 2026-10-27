@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>HQ แชทกลุ่ม — กิจมั่งมีโฮม</title>
+<meta name="theme-color" content="#132139">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js" integrity="sha384-dl/4LkSyQ4uEucc48NM6VDZLAjLLq9yMzZ5JLXumBq7Ld33XBof73hseOqPhO89+" crossorigin="anonymous"></script>
+<script src="revauth.js?v=2"></script>
+<!-- HQ แชทกลุ่ม ขั้น ① (อ่านอย่างเดียว) · 27 ต.ค. 69
+     - เจ้าของคนเดียว: ล็อกอินด้วย PIN ผ่าน RevAuth (Edge Function login) แล้วต้องได้บทบาท owner
+     - ข้อมูลอยู่หลัง RLS is_owner() — ไม่ล็อกอินหรือไม่ใช่เจ้าของ ฐานข้อมูลไม่ส่งข้อความใดๆ มา
+     - ไม่มีช่องพิมพ์ส่ง · ปักหมุด/โน๊ต/อัลบั้ม ยังปิด (ขั้น ②–④) -->
+<style>
+:root{
+  --bg:#0F1A2E; --bar:#132139; --line:#22324F; --chip:#1C2B45; --bubble:#1C2B45; --day:#18263F;
+  --ink:#EEF2F8; --muted:#A9B6CB; --dim:#8798B3; --amber:#F2A93B; --amber-ink:#1A1206; --err:#F28B82;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans Thai',system-ui,-apple-system,sans-serif;-webkit-text-size-adjust:100%}
+button{font-family:inherit;color:inherit}
+a{color:var(--amber)}
+.app{display:flex;flex-direction:column;height:100%;max-width:640px;margin:0 auto}
+.top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 8px 10px 12px;background:var(--bar);border-bottom:1px solid var(--line)}
+.hq{width:40px;height:40px;border-radius:12px;background:var(--amber);color:var(--amber-ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+.ttl{display:flex;flex-direction:column;flex:1;min-width:0}
+.ttl b{font-size:16px}
+.ttl span{font-size:12px;color:var(--muted)}
+.ibtn{width:44px;height:44px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;border-radius:12px;cursor:pointer}
+.ibtn:active{background:var(--chip)}
+.tools{display:flex;gap:8px;padding:10px 12px;background:var(--bar)}
+.tool{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;background:var(--chip);border:none;font-size:13px;font-weight:500;opacity:.45;cursor:not-allowed;white-space:nowrap}
+.list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:14px 14px 18px;display:flex;flex-direction:column;gap:14px}
+.list>*{max-width:100%;min-width:0;flex-shrink:0}
+.daysep{align-self:center;font-size:12px;color:var(--muted);background:var(--day);padding:3px 12px;border-radius:999px}
+.msg{display:flex;gap:10px;align-items:flex-start;width:100%}
+.av{width:42px;height:42px;border-radius:50%;border:2px solid var(--amber);object-fit:cover;flex-shrink:0;background:var(--chip)}
+.mcol{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.mcol>*{max-width:100%;min-width:0}
+.who{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.who b{font-size:14px;font-weight:600}
+.who span{font-size:12px;color:var(--muted)}
+.bub{background:var(--bubble);border-radius:4px 16px 16px 16px;padding:10px 12px;font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.bub b{font-weight:700;color:#fff}
+.bub.clip{max-height:340px;overflow:hidden;-webkit-mask-image:linear-gradient(#000 80%,transparent);mask-image:linear-gradient(#000 80%,transparent)}
+.more{align-self:flex-start;border:none;background:none;color:var(--amber);font-size:13px;font-weight:600;padding:4px 0;min-height:32px;cursor:pointer}
+.meta{font-size:11px;color:var(--dim)}
+.foot{display:flex;align-items:center;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--line)}
+.ro{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;padding:6px 14px;border-radius:22px;background:var(--chip);color:var(--muted);font-size:13px;line-height:1.4}
+.soon{font-size:11px;color:var(--dim);text-align:center;padding:0 12px 8px;background:var(--bar)}
+.empty,.note{color:var(--muted);font-size:13px;text-align:center;padding:24px 8px}
+.note.err{color:var(--err)}
+/* ประตู PIN */
+.gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+.gbox{width:100%;max-width:340px;background:var(--bar);border:1px solid var(--line);border-radius:18px;padding:22px 18px;display:flex;flex-direction:column;gap:12px;align-items:center}
+.gbox h1{font-size:18px;margin:4px 0 0}
+.gbox p{margin:0;font-size:13px;color:var(--muted);text-align:center}
+.gbox input{width:100%;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:22px;letter-spacing:8px;text-align:center;font-family:inherit}
+.gbox input:focus{outline:2px solid var(--amber);outline-offset:1px}
+.pbtn{width:100%;min-height:46px;border-radius:12px;border:none;background:var(--amber);color:var(--amber-ink);font-weight:700;font-size:15px;cursor:pointer}
+.perr{min-height:18px;font-size:13px;color:var(--err);text-align:center}
+.hide{display:none!important}
+/* รายชื่อสมาชิก */
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:15}
+.sbox{width:100%;max-width:640px;max-height:80%;overflow-y:auto;background:var(--bar);border-radius:18px 18px 0 0;padding:14px 14px calc(16px + env(safe-area-inset-bottom))}
+.shead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.shead b{font-size:15px}
+.mem{display:flex;align-items:center;gap:12px;min-height:56px;border-bottom:1px solid var(--line)}
+.mem:last-child{border-bottom:none}
+.mem .av{width:40px;height:40px}
+.mem div{display:flex;flex-direction:column}
+.mem b{font-size:14px;font-weight:600}
+.mem span{font-size:12px;color:var(--muted)}
+.lnk{border:none;background:none;color:var(--muted);font-size:13px;text-decoration:underline;min-height:40px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="gate" id="gate">
+  <div class="gbox">
+    <div class="hq" aria-hidden="true">HQ</div>
+    <h1>HQ แชทกลุ่ม</h1>
+    <p id="gateMsg">สำหรับเจ้าของเท่านั้น · ใส่ PIN</p>
+    <input id="pinInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="PIN" onkeydown="if(event.key==='Enter')submitPin()">
+    <button class="pbtn" id="pinBtn" onclick="submitPin()">เข้าห้อง</button>
+    <div class="perr" id="pinErr" role="alert"></div>
+    <button class="lnk hide" id="gateOut" onclick="logout()">ออกจากระบบ / เปลี่ยนบัญชี</button>
+  </div>
+</div>
+
+<div class="app" id="app" aria-hidden="true">
+  <div class="top">
+    <div class="hq" aria-hidden="true">HQ</div>
+    <div class="ttl"><b>KMMH COMMAND HQ</b><span id="sub">สมาชิก 8 คน + เจ้าของ</span></div>
+    <button class="ibtn" aria-label="โหลดใหม่" onclick="load()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+    <button class="ibtn" aria-label="สมาชิกในห้อง" onclick="openMembers()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M18 14c2 .7 3 2.8 3 6"/></svg>
+    </button>
+  </div>
+  <div class="tools" aria-label="เครื่องมือห้อง (ยังไม่เปิดใช้)">
+    <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>ปักหมุด</button>
+    <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>โน๊ต</button>
+    <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>อัลบั้ม</button>
+  </div>
+  <div class="soon">ปักหมุด · โน๊ต · อัลบั้ม เปิดใช้ในขั้นถัดไป</div>
+  <div class="list" id="list" aria-live="polite"><div class="note">กำลังโหลด…</div></div>
+  <div class="foot">
+    <div class="ro">ห้องนี้อ่านอย่างเดียว · ผู้ช่วยโพสต์รายงานให้อัตโนมัติ</div>
+  </div>
+</div>
+
+<div class="sheet hide" id="members" onclick="if(event.target===this)closeMembers()">
+  <div class="sbox" role="dialog" aria-label="สมาชิกในห้อง">
+    <div class="shead"><b>สมาชิก 8 คน + เจ้าของ</b><button class="ibtn" aria-label="ปิด" onclick="closeMembers()">✕</button></div>
+    <div id="memList"></div>
+    <div style="text-align:center;margin-top:8px"><button class="lnk" onclick="logout()">ออกจากระบบ</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- สมาชิก (ชื่อ/ตำแหน่ง/สีขอบ ตามใบงาน 27 ต.ค.) ---------- */
+var MEMBERS={
+  cos:   {name:"เลขา",    title:"หัวหน้าทีม / ผู้ประสานงาน", color:"#F2A93B"},
+  corn:  {name:"ข้าวโพด", title:"ฝ่ายการเงิน",               color:"#F5D04C"},
+  pak:   {name:"ผักชี",   title:"ฝ่ายจัดซื้อ/สต๊อก/วงกบ",    color:"#5BBF6A"},
+  mali:  {name:"พริกไทย", title:"ฝ่ายบุคคล (HR)",            color:"#F4F1E8"},
+  fah:   {name:"ขิง",     title:"ฝ่ายจัดส่ง/ขนส่ง",          color:"#F08A3C"},
+  tonkla:{name:"ต้นกล้า", title:"ดูแลท่าทราย & รุ่งชัย",      color:"#9BD35A"},
+  not:   {name:"เกาลัด",  title:"ฝ่ายระบบ/IT",               color:"#3BB8F2"},
+  ploy:  {name:"หอมแดง",  title:"ฝ่ายการตลาด/Shopee",        color:"#F27BA6"}
+};
+var AV_DIR="hq-avatars/";
+
+/* ---------- Supabase + ล็อกอิน (แบบเดียวกับหน้ารายได้: PIN → Edge Function login · ไม่มี PIN ในโค้ด) ---------- */
+var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+/* ดูตัวอย่างในเครื่อง (localhost เท่านั้น) — ไม่สร้าง client ไม่ต่อฐานเลย (r2 · Codex r1 #5) */
+var PREVIEW=(location.hostname==="localhost"||location.hostname==="127.0.0.1") && /[?&]preview=1\b/.test(location.search);
+var sb=null; if(!PREVIEW){ try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); }catch(e){} }
+var PIN_BUSY=false, READY=false;
+
+function $(id){ return document.getElementById(id); }
+function showGate(msg,isDeny){
+  READY=false;
+  $("gate").classList.remove("hide"); $("app").setAttribute("aria-hidden","true");
+  $("list").innerHTML="";                          /* ไม่ทิ้งข้อความไว้บนจอเมื่อสิทธิ์หลุด */
+  $("gateMsg").textContent=msg||"สำหรับเจ้าของเท่านั้น · ใส่ PIN";
+  $("gateOut").classList.toggle("hide",!isDeny);
+  $("pinInput").classList.toggle("hide",!!isDeny); $("pinBtn").classList.toggle("hide",!!isDeny);
+}
+function enter(){
+  READY=true;
+  $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden");
+  load();
+}
+function useRole(r){
+  if(r==="owner"){ enter(); return; }
+  showGate("หน้านี้สำหรับเจ้าของเท่านั้น — บัญชีนี้เข้าไม่ได้",true);
+}
+async function submitPin(){
+  if(PIN_BUSY) return;
+  var el=$("pinInput"), v=(el.value||"").trim(); el.value="";
+  var pe=$("pinErr"); pe.textContent="กำลังตรวจ PIN…";
+  if(!window.RevAuth){ pe.textContent="โหลดระบบล็อกอินไม่ได้ ลองรีเฟรชหน้า"; return; }
+  PIN_BUSY=true; var res; try{ res=await RevAuth.login(sb,SB_URL,SB_KEY,v); }finally{ PIN_BUSY=false; }
+  if(!res.ok){ pe.textContent=res.msg; el.focus(); return; }
+  pe.textContent="";
+  /* บทบาทอ่านจากฐานซ้ำ (ไม่เชื่อค่าที่ตอบตอนล็อกอินอย่างเดียว) */
+  useRole(await RevAuth.currentRole(sb));
+}
+async function logout(){ if(window.RevAuth) await RevAuth.logout(sb); location.reload(); }
+
+/* ---------- แสดงข้อความ ---------- */
+var TZ="Asia/Bangkok";
+function dayKey(d){ return d.toLocaleDateString("en-CA",{timeZone:TZ}); }
+function dayLabel(d){
+  var k=dayKey(d), now=new Date(), today=dayKey(now), yest=dayKey(new Date(now.getTime()-864e5));
+  if(k===today) return "วันนี้";
+  if(k===yest) return "เมื่อวาน";
+  return d.toLocaleDateString("th-TH",{timeZone:TZ,weekday:"short",day:"numeric",month:"short"});
+}
+function hhmm(d){ return d.toLocaleTimeString("th-TH",{timeZone:TZ,hour:"2-digit",minute:"2-digit",hour12:false}); }
+
+/* ข้อความแบบ Telegram HTML: ยอมแค่ <b> <i> · ที่เหลือเป็นตัวอักษรล้วน (สร้างด้วย textNode ไม่ใช้ innerHTML) */
+function decodeEnt(s){ return s.replace(/&(lt|gt|quot|amp);/g,function(_m,e){ return {lt:"<",gt:">",quot:'"',amp:"&"}[e]; }); }
+function fillBody(el,body,format){
+  body=String(body==null?"":body);
+  if(format!=="tg_html"){ el.textContent=body; return; }
+  var re=/<(\/?)(b|i)>/g, stack=[el], last=0, m;
+  function txt(s){ if(s) stack[stack.length-1].appendChild(document.createTextNode(decodeEnt(s))); }
+  while((m=re.exec(body))){
+    txt(body.slice(last,m.index)); last=re.lastIndex;
+    if(!m[1]){ var n=document.createElement(m[2]); stack[stack.length-1].appendChild(n); stack.push(n); }
+    else if(stack.length>1 && stack[stack.length-1].tagName.toLowerCase()===m[2]) stack.pop();
+  }
+  txt(body.slice(last));
+}
+function avatar(id,m){
+  var img=document.createElement("img");
+  img.className="av"; img.alt=""; img.width=42; img.height=42; img.loading="lazy";
+  img.src=AV_DIR+id+".webp"; img.style.borderColor=m.color;
+  img.onerror=function(){ this.onerror=null; this.removeAttribute("src"); };
+  return img;
+}
+function msgNode(r){
+  var m=MEMBERS[r.sender]||{name:r.sender==="owner"?"คุณหลิง":"ระบบ",title:"",color:"#4A5D80"};
+  var d=new Date(r.posted_at);
+  var row=document.createElement("div"); row.className="msg";
+  row.appendChild(avatar(r.sender,m));
+  var col=document.createElement("div"); col.className="mcol";
+  var who=document.createElement("div"); who.className="who";
+  var b=document.createElement("b"); b.textContent=m.name; who.appendChild(b);
+  if(m.title){ var t=document.createElement("span"); t.textContent=m.title; who.appendChild(t); }
+  col.appendChild(who);
+  var bub=document.createElement("div"); bub.className="bub"; fillBody(bub,r.body,r.body_format); col.appendChild(bub);
+  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=hhmm(d); col.appendChild(meta);
+  row.appendChild(col);
+  return {row:row,bub:bub,col:col,meta:meta};
+}
+function render(rows){
+  var list=$("list"); list.innerHTML="";
+  if(!rows.length){ list.innerHTML='<div class="empty">ยังไม่มีรายงานในห้อง</div>'; return; }
+  var lastDay="";
+  rows.forEach(function(r){
+    var d=new Date(r.posted_at), k=dayKey(d);
+    if(k!==lastDay){ var s=document.createElement("div"); s.className="daysep"; s.textContent=dayLabel(d); list.appendChild(s); lastDay=k; }
+    var n=msgNode(r); list.appendChild(n.row);
+    /* ข้อความยาว: ย่อไว้ กดอ่านต่อ */
+    if(n.bub.scrollHeight>380){
+      n.bub.classList.add("clip");
+      var mb=document.createElement("button"); mb.className="more"; mb.textContent="อ่านต่อ";
+      mb.onclick=function(){ n.bub.classList.remove("clip"); mb.remove(); };
+      n.col.insertBefore(mb,n.meta);
+    }
+  });
+  list.scrollTop=list.scrollHeight;
+}
+
+/* ---------- โหลด ---------- */
+var LOADING=false;
+/* ตรวจบทบาทจากฐานซ้ำก่อนโหลดทุกครั้ง (กลับเข้าแท็บ / ทุก 5 นาที / กดโหลดใหม่) — ถูกลดสิทธิ์หรือตัด session
+   จะปิดหน้าข้อมูลในรอบตรวจถัดไป · ฐานข้อมูลปฏิเสธเองตั้งแต่คำขอแรกหลังตัด (r2 · Codex r1 #3, r2 #4) */
+async function stillOwner(){
+  var r=null; try{ r=await RevAuth.currentRole(sb); }catch(e){}
+  if(r==="owner") return true;
+  if(r) showGate("หน้านี้สำหรับเจ้าของเท่านั้น — บัญชีนี้เข้าไม่ได้",true); else showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่");
+  return false;
+}
+async function load(){
+  if(!READY || LOADING || !sb) return;
+  LOADING=true;
+  try{
+    if(!(await stillOwner())) return;
+    /* ดึงรายงานใหม่เข้าห้อง (ฟังก์ชันฝั่งฐานตรวจว่าเป็นเจ้าของเอง) — พลาดก็ยังแสดงข้อความเดิม */
+    var s=await sb.rpc("hq_chat_sync");
+    if(s.error && (s.error.code==="42501" || s.error.status===401 || s.error.status===403)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    var q=await sb.from("hq_chat_messages")
+      .select("id,sender,kind,body,body_format,posted_at")
+      .eq("room","hq").order("posted_at",{ascending:false}).order("id",{ascending:false}).limit(60);
+    if(!READY) return;   /* ระหว่างรอ สิทธิ์หลุดไปแล้ว — ไม่วาดข้อความ */
+    if(q.error){ $("list").innerHTML='<div class="note err">โหลดข้อความไม่ได้ ลองกดโหลดใหม่</div>'; return; }
+    render((q.data||[]).slice().reverse());
+  }catch(e){
+    console.warn("hqchat.load",e);
+    $("list").innerHTML='<div class="note err">เชื่อมต่อไม่ได้ ลองกดโหลดใหม่</div>';
+  }finally{ LOADING=false; }
+}
+document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") load(); });
+setInterval(function(){ if(document.visibilityState==="visible") load(); }, 5*60*1000);
+
+/* ---------- สมาชิก ---------- */
+function openMembers(){
+  var box=$("memList"); box.innerHTML="";
+  Object.keys(MEMBERS).forEach(function(id){
+    var m=MEMBERS[id], row=document.createElement("div"); row.className="mem";
+    row.appendChild(avatar(id,m));
+    var t=document.createElement("div"), b=document.createElement("b"), s=document.createElement("span");
+    b.textContent=m.name; s.textContent=m.title; t.appendChild(b); t.appendChild(s); row.appendChild(t);
+    box.appendChild(row);
+  });
+  $("members").classList.remove("hide");
+}
+function closeMembers(){ $("members").classList.add("hide"); }
+
+/* ---------- เริ่ม: มี session เดิมที่ยังใช้ได้ → เข้าเลย (บทบาทอ่านจากฐาน) ---------- */
+(async function(){
+  /* ดูตัวอย่างในเครื่อง: ใช้ไฟล์ข้อมูลในเครื่อง (ไฟล์นี้ไม่ขึ้นเว็บจริง) */
+  if(PREVIEW){
+    try{ var p=await (await fetch("preview-data.json",{cache:"no-store"})).json();
+      $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden"); render(p); return; }catch(e){ console.warn(e); }
+  }
+  if(!sb || !window.RevAuth){ $("pinErr").textContent="เชื่อมต่อฐานข้อมูลไม่ได้ ลองรีเฟรชหน้า"; return; }
+  var r=await RevAuth.currentRole(sb);
+  if(r) useRole(r); else $("pinInput").focus();
+})();
+</script>
+</body>
+</html>

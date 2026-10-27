@@ -2705,11 +2705,11 @@ async function taskAlertRun(){
   }catch(e){ console.error("taskAlertRun", e); }
 }
 
-function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
+function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
 <script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261024b"></script>
-<script src="cutbill.js?v=20261027a"></script>
+<script src="cutbill.js?v=20261027b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>
@@ -3098,7 +3098,7 @@ function cpShrink(file){ return new Promise(function(res){
 let CUT=null;
 function cutRow(x,kind){
   const tag = x.src? '<span class="cut-tag ct-ok">'+esc(x.src)+'</span>' : x.why? '<span class="cut-tag '+(kind==="s"?"ct-skip":"ct-hold")+'">'+esc(x.why)+'</span>'
-            : x.ap? '<span class="cut-tag ct-ok">'+(x.ap.approved_role===CUT_AUTO_ROLE?'🤖 กฎอัตโนมัติอนุมัติ · ':'')+esc(x.ap.method)+(x.ap.rc_no?' · '+esc(x.ap.rc_no):'')+'</span>' : '';
+            : x.ap? '<span class="cut-tag ct-ok">'+(x.ap.approved_role===CUT_AUTO_ROLE?'🤖 กฎอัตโนมัติอนุมัติ · ':x.ap.approved_role===CUT_RECHECK_ROLE?'🔄 คำนวณใหม่อนุมัติ · ':'')+esc(x.ap.method)+(x.ap.rc_no?' · '+esc(x.ap.rc_no):'')+'</span>' : '';
   return '<div class="cut-row"><div><b>'+esc(String(x.b.no).replace(/^KM\d{4}-/,""))+'</b> · '+esc(x.b.name)+'<div>'+tag+'</div></div><div class="r">'+TH(x.b.out||x.b.tot)+'</div></div>';
 }
 /* v0.5.5 (21 ต.ค.69): รายละเอียดอยู่ใน popup แล้ว — แสดงทีละบิล รวมลูกค้าปลีก (เดิมรวมเป็นแถวเดียว เห็นเหตุผลแค่บิลแรก) */
@@ -3129,6 +3129,123 @@ async function cutAutoRun(date,R){
   const got=(r.data||[]); st.n=got.length; st.sum=got.reduce(function(s,x){return s+(+x.amount||0);},0);
   return st;
 }
+/* v0.7.6 (27 ต.ค.69 · งาน inbox 20261027-1345 · คุณหลิงเลือกทาง "ตอนเปิดหน้าตรวจรายได้")
+   คำนวณการ์ดตัดบิลใหม่เองเบื้องหลัง — เจ้าของเปิดหน้าตรวจรายได้ (หน้าไหนก็ได้) → ไล่ 7 วันล่าสุดที่ "ตรวจแล้ว" ด้วยสูตรเดียวกับการ์ด (RevCut.compute + autoPick)
+   · ใบที่ตอนนี้พร้อมตัดแต่ยังไม่มีรายการ → อนุมัติให้ (approved_role = auto-recheck · หลักฐานบอกว่าคำนวณใหม่เพราะอะไร)
+   · ใบที่กฎอัตโนมัติ (auto-rule/auto-recheck) อนุมัติไว้ ยังไม่ตัด แต่ตอนนี้ถูกพัก → ถอยเป็น cancelled + เหตุผล "ถอยอัตโนมัติ" (คุณหลิงอนุมัติเองไว้ = ไม่แตะ แค่เตือน)
+   · ใบที่เคยถอยอัตโนมัติ แล้วกลับมาพร้อมตัด → อนุมัติคืน · ห้ามแตะใบที่ตัดแล้ว (status cut) ทุกกรณี
+   ใช้สวิตช์ autocut เดียวกับการ์ด · ข้อมูลวันไหนไม่ครบ (autoPick ไม่ ok) = ไม่ทำอะไรกับวันนั้น · รันซ้ำได้ ไม่เกิดแถวซ้ำ (bill_no unique + เงื่อนไขสถานะเดิม)
+   ห่างกันอย่างน้อย 30 นาทีต่อเครื่อง (localStorage) · ไม่ขวางหน้า (รันหลังหน้าโหลด 10 วิ ทีละวัน) */
+const CUT_RECHECK_ROLE="auto-recheck", CUT_AUTO_ROLES=[CUT_AUTO_ROLE,CUT_RECHECK_ROLE], CUT_BACK_NOTE="ถอยอัตโนมัติ";
+/* แก้ยอดใบที่กฎอัตโนมัติอนุมัติไว้ ให้ตรงการ์ดตอนนี้ — เปิด/ปิดตามที่คุณหลิงเลือก (true = แก้ให้เอง · false = เตือนอย่างเดียว) */
+const CUT_RECHECK_FIX_AMOUNT=true;
+let _cutRecheckBusy=false;
+/* ก่อนเขียน "ทุกคำสั่ง": สวิตช์ autocut ยังเปิด + วันนั้นยัง "ตรวจแล้ว" (กันผลคำนวณเก่าไปเขียนหลังคุณหลิงปิดตัดเอง/แก้ผลตรวจระหว่างทาง · Codex r1/r2) */
+async function cutRecheckStillOk(date){
+  if(ROLE!=="owner"||!(await cutAutoOn())) return false;
+  const q=await sb.from("rev_audit").select("status").eq("date",date).maybeSingle();
+  return !q.error && !!q.data && q.data.status==="ตรวจแล้ว";
+}
+async function cutRecheckDay(date, stamp, lockOk){
+  const res={date:date, add:[], fix:[], back:[], reback:[], warn:[], skip:null};
+  const R=await RevCut.compute(date);
+  if(!R||!R.D||R.D.date!==date){ res.skip="ผลคำนวณไม่ใช่วันที่นี้"; return res; }
+  const P=RevCut.autoPick(R);
+  if(!P.ok){ res.skip=P.why; return res; }
+  if(!R.apprCheck){ res.skip="ตัวคัดบิลรุ่นเก่า (ไม่มี apprCheck) — ไม่ทำอะไรกับวันนี้"; return res; }
+  /* เหตุผลที่คำนวณใหม่: ยอดเครื่องเปลี่ยนหลังตรวจ — ทางเดียวกับธง 🚩 accDrift (rev_audit.machine_net ตอนยืนยัน เทียบยอด ACC ตอนนี้) · view acc_audited_drift หน้าเว็บอ่านไม่ได้ */
+  let why="คำนวณใหม่อัตโนมัติ "+stamp;
+  try{ const [aq,dq]=await Promise.all([sb.from("rev_audit").select("machine_net").eq("date",date).maybeSingle(), accDayRpc(date)]);
+    const was=aq&&aq.data&&aq.data.machine_net, now=dq&&dq.data&&dq.data.net;
+    if(was!=null&&now!=null){ const df=Math.round((+now-(+was))*100)/100; if(Math.abs(df)>0.009) why+=" · ยอด ACC เปลี่ยนหลังตรวจ "+(df>0?"+":"−")+TH(Math.abs(df))+" ("+TH(+was)+" → "+TH(+now)+")"; } }catch(_e){}
+  const ok=async function(){ if(lockOk&&!lockOk()) return false; const s=await cutRecheckStillOk(date); return s && !(lockOk&&!lockOk()); }; /* ตรวจล็อกทั้งก่อนและหลังรอ (Codex r3) */
+  const r2x=function(v){ return Math.round((+v||0)*100)/100; };
+  /* 1) ใบใหม่ที่พร้อมตัด (autoPick ชุดเดียวกับการ์ด) */
+  const rows=P.rows.filter(function(x){ return x.bill_date===date; }).map(function(x){ return Object.assign({},x,{approved_role:CUT_RECHECK_ROLE, evidence:why+" · "+(x.evidence||"")}); });
+  if(rows.length){ if(!(await ok())){ res.skip="หยุดก่อนเขียน: สวิตช์ตัดเองปิด/วันนี้ไม่อยู่ในสถานะตรวจแล้ว/อีกแท็บรับงานไป"; return res; }
+    const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true}).select("bill_no,amount");
+    if(r.error) throw r.error; (r.data||[]).forEach(function(x){ res.add.push(x.bill_no+" "+TH(+x.amount)); }); }
+  /* 2) ใบที่อนุมัติไว้ (ยังไม่ตัด) — ผลคิดตอนนี้อยู่ที่ R.apprCheck (cutbill v0.9.7)
+     ไม่ผ่านแล้ว (พัก / ไม่ต้องตัด) → กฎอัตโนมัติถอยเป็น cancelled + เหตุผล · ยังผ่านแต่ยอด/วิธีจ่ายเปลี่ยน → แก้ให้ตรงการ์ด (ถ้าเปิด CUT_RECHECK_FIX_AMOUNT)
+     ใบที่คุณหลิงอนุมัติเอง → ไม่แตะ แค่เตือน · ACC ค้าง 0 แล้ว (done) → ไม่ทำอะไร
+     ทุกคำสั่งมีเงื่อนไข status/role/ยอดเดิม/วิธีจ่ายเดิม — แถวที่เปลี่ยนไปแล้ว (ตัดแล้ว/คนแก้/อีกเครื่องแก้) จะไม่ถูกเขียนทับ */
+  const AC=R.apprCheck;
+  for(const a of (R.D.appr||[])){
+    if(!a||a.status!=="approved"||!AC[a.bill_no]) continue;
+    const c=AC[a.bill_no], auto=CUT_AUTO_ROLES.indexOf(a.approved_role)>=0;
+    if(c.st==="?"){ res.warn.push(a.bill_no+" ("+(c.why||"ตรวจไม่ได้")+" — ไม่ถอย/ไม่แก้ ให้คุณหลิงดู)"); continue; }
+    if(c.st==="h"||c.st==="s"){
+      const msg=(c.st==="s"?"ไม่ต้องตัด: ":"")+(c.why||"พักไว้");
+      if(!auto){ res.warn.push(a.bill_no+" (คุณหลิงอนุมัติไว้ แต่ตอนนี้"+(c.st==="s"?"":"พัก")+": "+msg+")"); continue; }
+      if(!(await ok())){ res.skip="หยุดก่อนเขียน"; return res; }
+      const u=await sb.from("rev_cut_approvals").update({status:"cancelled",cut_note:CUT_BACK_NOTE+" "+stamp+": "+msg}).eq("bill_no",a.bill_no).eq("status","approved").in("approved_role",CUT_AUTO_ROLES).eq("amount",a.amount).eq("method",a.method).select("bill_no");
+      if(u.error) throw u.error; if(u.data&&u.data.length) res.back.push(a.bill_no);
+    } else if((c.st==="t"||c.st==="c") && (Math.abs(r2x(a.amount)-r2x(c.out))>0.009 || (c.method&&c.method!==a.method))){
+      const say=a.bill_no+" ("+(auto?"กฎอนุมัติ":"คุณหลิงอนุมัติ")+" "+TH(+a.amount)+" "+(a.method||"")+" แต่การ์ดตอนนี้ "+TH(c.out)+" "+(c.method||"")+")";
+      if(!auto||!CUT_RECHECK_FIX_AMOUNT){ res.warn.push(say); continue; }
+      if(c.grp&&c.retail){ res.warn.push(say+" — ลูกค้าปลีกโอนก้อนเดียวหลายบิล รอคุณหลิง"); continue; }
+      if(["เงินสด","เงินโอน","เงินโอน + เงินสด"].indexOf(c.method)<0||!(r2x(c.out)>0.01)){ res.warn.push(say+" — ไม่อยู่ในกฎ รอคุณหลิง"); continue; }
+      if(!(await ok())){ res.skip="หยุดก่อนเขียน"; return res; }
+      const u=await sb.from("rev_cut_approvals").update({amount:r2x(c.out), method:c.method, evidence:why+" · แก้ยอดอนุมัติ "+TH(+a.amount)+" → "+TH(c.out)+" · "+(c.src||""), approved_role:CUT_RECHECK_ROLE, approved_at:new Date().toISOString()})
+        .eq("bill_no",a.bill_no).eq("status","approved").in("approved_role",CUT_AUTO_ROLES).eq("amount",a.amount).eq("method",a.method).select("bill_no");
+      if(u.error) throw u.error; if(u.data&&u.data.length) res.fix.push(a.bill_no+" "+TH(+a.amount)+"→"+TH(c.out));
+    }
+  }
+  /* 3) ใบที่เคยถอยอัตโนมัติ แล้วกลับมาพร้อมตัด → อนุมัติคืน — ใช้ autoPick ชุดเดียวกับการ์ด (ทำเหมือนแถวที่ถอยไม่มีอยู่)
+     ใบที่คุณหลิงยกเลิกเอง (cut_note ไม่ขึ้นต้น "ถอยอัตโนมัติ" / role ไม่ใช่อัตโนมัติ) ไม่แตะ */
+  const backed=(R.D.appr||[]).filter(function(a){ return a&&a.status==="cancelled"&&String(a.cut_note||"").indexOf(CUT_BACK_NOTE)===0&&CUT_AUTO_ROLES.indexOf(a.approved_role)>=0; });
+  if(backed.length){
+    const bset={}; backed.forEach(function(a){ bset[a.bill_no]=a; });
+    const P2=RevCut.autoPick(Object.assign({},R,{D:Object.assign({},R.D,{appr:(R.D.appr||[]).filter(function(a){ return !(a&&bset[a.bill_no]); })})}));
+    for(const x of (P2.ok?P2.rows:[])){
+      const a=bset[x.bill_no]; if(!a||x.bill_date!==date) continue;
+      if(!(await ok())){ res.skip="หยุดก่อนเขียน"; return res; }
+      const u=await sb.from("rev_cut_approvals").update({amount:x.amount, method:x.method, customer:x.customer, evidence:why+" · กลับมาพร้อมตัด · "+(x.evidence||""), status:"approved", approved_role:CUT_RECHECK_ROLE, approved_at:new Date().toISOString(), cut_note:null})
+        .eq("bill_no",x.bill_no).eq("status","cancelled").in("approved_role",CUT_AUTO_ROLES).eq("cut_note",a.cut_note).eq("amount",a.amount).eq("method",a.method).select("bill_no");
+      if(u.error) throw u.error; if(u.data&&u.data.length) res.reback.push(x.bill_no);
+    }
+  }
+  return res;
+}
+/* ล็อกข้ามแท็บแบบมีเจ้าของ: เขียน token แล้วอ่านกลับหลัง 400 มิลลิวินาที — ไม่ใช่ของเรา = อีกแท็บได้ไป · ต่ออายุทุกวัน · ปลดเฉพาะของตัวเอง
+   (ถ้าสองแท็บแข่งกันจริงก็ยังปลอดภัย: upsert ไม่ซ้ำ + ทุก update มีเงื่อนไขค่าเดิม) */
+const CUT_RECHECK_LOCK="rev_cut_recheck_lock";
+function _rkGet(){ try{ const v=JSON.parse(localStorage.getItem(CUT_RECHECK_LOCK)||"null"); return v&&v.t&&v.at?v:null; }catch(_e){ return null; } }
+async function cutRecheck(force){
+  if(_cutRecheckBusy) return null; _cutRecheckBusy=true; /* ตั้งก่อน await แรก (Codex r2) */
+  const tok=Math.random().toString(36).slice(2)+Date.now();
+  const mine=function(){ const v=_rkGet(); return !!v&&v.t===tok; };
+  const out={at:new Date().toISOString(), days:[], err:null};
+  try{
+    if(ROLE!=="owner"||!sb||!window.RevCut||!RevCut.compute) return null;
+    let last=0; try{ last=+(localStorage.getItem("rev_cut_recheck_at")||0); }catch(_e){}
+    if(!force && Date.now()-last<30*60*1000) return null;
+    const cur=_rkGet(); if(cur && Date.now()-cur.at<5*60*1000) return null; /* อีกแท็บถือล็อกอยู่ (หมดอายุเอง 5 นาที) */
+    try{ localStorage.setItem(CUT_RECHECK_LOCK,JSON.stringify({t:tok,at:Date.now()})); }catch(_e){ return null; }
+    await new Promise(function(r){ setTimeout(r,400); }); if(!mine()) return null;
+    if(!(await cutAutoOn())) return null;
+    const t=bkkToday(), from=bkkShift(t,-7), to=bkkShift(t,-1);
+    const q=await sb.from("rev_audit").select("date,status").gte("date",from).lte("date",to).eq("status","ตรวจแล้ว").order("date");
+    if(q.error) throw q.error;
+    const stamp=new Date().toLocaleString("th-TH",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
+    for(const row of (q.data||[])){
+      if(ROLE!=="owner"||!mine()) break;
+      try{ localStorage.setItem(CUT_RECHECK_LOCK,JSON.stringify({t:tok,at:Date.now()})); }catch(_e){}
+      try{ out.days.push(await cutRecheckDay(row.date, stamp, mine)); }catch(e){ out.days.push({date:row.date, err:(e&&e.message)||String(e)}); }
+    }
+  }catch(e){ out.err=(e&&e.message)||String(e); }
+  finally{ _cutRecheckBusy=false; try{ if(mine()) localStorage.removeItem(CUT_RECHECK_LOCK); }catch(_e){} }
+  window._cutRecheckLast=out;
+  /* นับเวลาเฉพาะรอบที่ไม่มีวันไหนพัง — พังกลางทาง = เปิดหน้าใหม่ลองใหม่ได้ทันที */
+  if(!out.err && out.days.length && !out.days.some(function(d){ return d.err; })){ try{ localStorage.setItem("rev_cut_recheck_at",String(Date.now())); }catch(_e){} }
+  const changed=out.days.filter(function(d){ return (d.add&&d.add.length)||(d.fix&&d.fix.length)||(d.back&&d.back.length)||(d.reback&&d.reback.length); });
+  const warned=out.days.filter(function(d){ return d.err||(d.warn&&d.warn.length); });
+  if(changed.length) console.info("cutRecheck เปลี่ยน",changed);
+  if(warned.length||out.err) console.warn("cutRecheck เตือน/พัง",out.err,warned);
+  if(changed.length||warned.length){ try{ renderCut(); }catch(_e){} }
+  return out;
+}
+function cutRecheckSoon(){ if(ROLE==="owner") setTimeout(function(){ cutRecheck(false).catch(function(e){ console.warn("cutRecheck",e); }); },10000); }
 async function renderCut(_again){
   if(!_again) window._cutAutoLast=null;
   const card=document.getElementById("cutCard"); if(!card) return;
@@ -3153,7 +3270,7 @@ async function renderCut(_again){
      (R.appr.length?_cp("cc-appr","🕒 อนุมัติแล้ว รอตัด "+R.appr.length):'')+
      _cp("cc-skip","➖ ไม่ต้องตัด "+R.s.length)+_cp("cc-done","✔ ตัดแล้ว "+(R.done.length+R.cut.length))+'</div>';
   if(miss.length) h+='<div class="muted" style="color:#b45309">⚠ '+miss.join(" · ")+' — บิลเงินโอนที่หาเงินไม่เจอจะถูกพักไว้</div>';
-  const _nAuto=R.appr.filter(function(x){ return x.ap&&x.ap.approved_role===CUT_AUTO_ROLE; }).length;
+  const _nAuto=R.appr.filter(function(x){ return x.ap&&CUT_AUTO_ROLES.indexOf(x.ap.approved_role)>=0; }).length;
   if(ROLE==="owner"){
     let al='';
     if(!AU.on) al='🤖 ตัดอัตโนมัติ: <b>ปิดอยู่</b> — ใบพร้อมตัดต้องกดอนุมัติเอง';
@@ -3161,6 +3278,10 @@ async function renderCut(_again){
     else if(!AU.ok) al='🤖 ตัดอัตโนมัติ: <span style="color:#b45309">วันนี้ยังไม่บันทึกให้เอง — '+esc(AU.why)+'</span>';
     else al='🤖 ตัดอัตโนมัติ: เปิดอยู่'+(AU.n?' · เพิ่งอนุมัติให้เอง <b>'+AU.n+' บิล · '+TH(AU.sum)+'</b>':'')+(_nAuto?' · อนุมัติโดยกฎ รอตัด '+_nAuto+' บิล':'')+((AU.skip||[]).length?' · <span style="color:#c2410c">รอคุณหลิงกดเอง '+AU.skip.length+' บิล</span>':'');
     h+='<div class="muted" style="margin-top:2px">'+al+'</div>';
+    /* v0.7.6: ผลคำนวณใหม่อัตโนมัติรอบล่าสุดของวันที่เปิดอยู่ (เปลี่ยนอะไร / เตือนอะไร) */
+    const _rk=(window._cutRecheckLast&&window._cutRecheckLast.days||[]).filter(function(x){ return x&&x.date===date; })[0];
+    if(_rk){ const _ch=[].concat((_rk.add||[]).map(function(s){ return "อนุมัติ "+s; }),(_rk.fix||[]).map(function(s){ return "แก้ยอด "+s; }),(_rk.back||[]).map(function(s){ return "ถอย "+s; }),(_rk.reback||[]).map(function(s){ return "อนุมัติคืน "+s; }));
+      if(_ch.length||(_rk.warn||[]).length||_rk.err) h+='<div class="muted" style="margin-top:2px">🔄 คำนวณใหม่อัตโนมัติ: '+(_ch.length?esc(_ch.join(" · ")):'ไม่มีใบเปลี่ยน')+((_rk.warn||[]).length?' · <span style="color:#c2410c">'+esc(_rk.warn.join(" · "))+'</span>':'')+(_rk.err?' · <span style="color:#b91c1c">พัง: '+esc(_rk.err)+'</span>':'')+'</div>'; }
   }
   h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืน'+(R.refund&&R.refund.on?'':'ตามใบลดหนี้')+' '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
   /* v0.5.6 (22 ต.ค.69): มัดจำรับเงินสดวันนี้ + ด่านเงินสดของวัน — แสดงบรรทัดเดียว (เดิมแปะซ้ำทุกบิลในรายการพักไว้) */
@@ -3241,7 +3362,7 @@ async function cutCancel(autoOnly){
   if(!confirm("ยกเลิกการอนุมัติ"+(autoOnly?"ที่กฎอัตโนมัติทำ":"")+"ของวันที่ "+beDate(CUT.D.date)+" (เฉพาะบิลที่ยังไม่ได้ตัด)?\nบิลที่ยกเลิกแล้ว กฎอัตโนมัติจะไม่อนุมัติซ้ำ — ต้องกดอนุมัติเองถ้าจะตัด")) return;
   /* v0.5.6: เก็บแถวไว้เป็น cancelled (เดิมลบทิ้ง) — กันกฎอัตโนมัติอนุมัติซ้ำตอนเปิดการ์ดรอบถัดไป */
   let q=sb.from("rev_cut_approvals").update({status:"cancelled",cut_note:"เจ้าของยกเลิกการอนุมัติ "+new Date().toLocaleString("th-TH")}).eq("bill_date",CUT.D.date).eq("status","approved");
-  if(autoOnly) q=q.eq("approved_role",CUT_AUTO_ROLE);
+  if(autoOnly) q=q.in("approved_role",CUT_AUTO_ROLES); /* v0.7.6: รวมที่คำนวณใหม่อนุมัติ (auto-recheck) */
   const r=await q;
   window._cutAutoLast=null; /* ข้อความ "เพิ่งอนุมัติให้เอง" ไม่ค้างหลังยกเลิก */
   if(r.error){ alert("ยกเลิกไม่สำเร็จ: "+r.error.message); return; }

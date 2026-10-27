@@ -38,9 +38,9 @@
     {id:"debt",label:"ลูกหนี้ลงบัญชี",icon:"debt",roles:"cfo",href:"ลูกหนี้ลงบัญชี.html"},
     {id:"stmt",label:"รายการเดินบัญชี K+/กสิกร",icon:"stmt",roles:"fo",href:"การเงินบริษัท.html#income"},
     {grp:"ช่องทางขาย"},
-    {id:"shopee",label:"Shopee",icon:"cart",roles:"fo",href:"shopee.html",kids:[
-      {id:"sh-pay",label:"ออเดอร์ Shopee",href:"shopee.html#pay",roles:"fo"},
-      {id:"sh-fee",label:"ค่าธรรมเนียม",href:"shopee.html#fee",roles:"fo"},
+    {id:"shopee",label:"Shopee",icon:"cart",roles:"cfos",href:"shopee.html",kids:[
+      {id:"sh-pay",label:"ออเดอร์ Shopee",href:"shopee.html#pay"},
+      {id:"sh-fee",label:"ค่าธรรมเนียม",href:"shopee.html#fee"},
       {id:"sh-pack",label:"ค่าแพ็ค",href:"shopee.html#pack"},
       {id:"sh-pnl",label:"กำไร-ขาดทุน",href:"shopee.html#pnl",roles:"o"},
       {id:"sh-rtn",label:"ตีกลับ / ยกเลิก",href:"shopee.html#rtn"}]},
@@ -52,7 +52,8 @@
       {id:"fin-gross",label:"กำไรขั้นต้น",href:"การเงินบริษัท.html#gross"}]},
     {id:"dash",label:"Dashboard สรุปรายได้",icon:"chart",roles:"o",href:"Dashboard-สรุปรายได้.html"}
   ];
-  var ROLE_KEY={cashier:"c",finance:"f",owner:"o"};
+  /* staff = หน้า Shopee รวม employee/hr/cashier เป็นมุมมองพนักงาน (shopee.html useRole) → เห็นเฉพาะเมนู Shopee */
+  var ROLE_KEY={cashier:"c",finance:"f",owner:"o",staff:"s"};
   function role(){ var r=null; try{ r=window.ROLE||localStorage.getItem("rev_role"); }catch(e){} return ROLE_KEY[r]||null; }
   function can(x,r){ return !x.roles || (r && x.roles.indexOf(r)>=0); }
   function page(){ var p=decodeURIComponent(location.pathname.split("/").pop()||"index.html"); return p||"index.html"; }
@@ -169,7 +170,7 @@
     });
     return h;
   }
-  var RN={c:"แคชเชียร์",f:"การเงิน",o:"เจ้าของ"};
+  var RN={c:"แคชเชียร์",f:"การเงิน",o:"เจ้าของ",s:"พนักงาน"};
   /* แถบล่างมือถือ (แบบ ก): [id, ป้าย, ไอคอน, ลิงก์, เมนูที่นับว่า "อยู่หน้านี้"] */
   var BAR={
     c:[["form","ฟอร์ม","form","ฟอร์มรายรับ.html",["form"]],
@@ -183,7 +184,8 @@
     o:[["audit","ตรวจ","check","index.html",["audit","audit-day","audit-dep","audit-cut","audit-hist","audit-pend","form"]],
        ["debt","ลูกหนี้","debt","ลูกหนี้ลงบัญชี.html",["debt"]],
        ["fin","การเงิน","bank","การเงินบริษัท.html",["fin","fin-exp","fin-mon","fin-cash","fin-gross","stmt"]],
-       ["dash","Dashboard","chart","Dashboard-สรุปรายได้.html",["dash"]]]
+       ["dash","Dashboard","chart","Dashboard-สรุปรายได้.html",["dash"]]],
+    s:[["shopee","Shopee","cart","shopee.html",["shopee","sh-pay","sh-fee","sh-pack","sh-pnl","sh-rtn"]]]
   };
   var pendN=0;
   function drawMob(r,cur){

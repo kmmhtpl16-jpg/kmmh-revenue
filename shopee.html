@@ -180,7 +180,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     <div id="creditMsg" style="margin-top:8px"></div>
   </div>
 
-  <div id="creditCard" class="card r-fin hide">
+  <div id="creditCard" class="card r-credit hide">
     <div class="row" style="justify-content:space-between;align-items:center">
       <h3 style="margin:0">🔗 เชื่อมกับหน้าลูกหนี้ลงบัญชี (SHOPEE)</h3>
       <button class="btn ghost sm" onclick="creditSync(true)">↻ ตรวจ/ตัดชำระเดี๋ยวนี้</button>
@@ -189,7 +189,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   </div>
 
   <div id="dash" class="hide">
-    <!-- 🔍 ค้นหารายออเดอร์ — ไม่มี class r-fin โดยตั้งใจ: พนักงาน Shopee ต้องเช็คออเดอร์เองได้
+    <!-- 🔍 ค้นหารายออเดอร์ — ทุก role ที่ล็อกอินเห็น: พนักงาน Shopee ต้องเช็คออเดอร์เองได้
          ค้นทุกเดือนเสมอ (ไม่ผูกกับ monthPick) เพราะลูกค้าโทรถามบิลเก่าข้ามเดือนบ่อย -->
     <div class="card" id="findCard">
       <h3>🔍 ค้นหาออเดอร์ / เลขบิล</h3>
@@ -206,16 +206,15 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
         <button class="btn ghost sm" onclick="reload()">↻ โหลดใหม่</button>
       </div>
       <div class="kpis" id="headKpis" style="margin-top:10px">
-        <div class="kpi wide r-fin"><div class="hd"><div class="lb">ยอดขายรวม</div><div class="vl" id="kSale">–</div></div><div class="ksub" id="kSaleSub"></div></div>
-        <div class="kpi c2 r-fin"><div class="lb">Shopee จ่ายแล้ว<br>(ยอดเต็ม)</div><div class="vl" id="kPaid" style="color:var(--g2)">–</div><div class="ksub" id="kPaidSub"></div></div>
-        <div class="kpi c2 r-fin"><div class="lb">ยังรอ Shopee จ่าย<br>(ยอดเต็ม)</div><div class="vl" id="kWait" style="color:var(--amb)">–</div><div class="ksub" id="kWaitSub"></div></div>
+        <div class="kpi wide"><div class="hd"><div class="lb">ยอดขายรวม</div><div class="vl" id="kSale">–</div></div><div class="ksub" id="kSaleSub"></div></div>
+        <div class="kpi c2"><div class="lb">Shopee จ่ายแล้ว<br>(ยอดเต็ม)</div><div class="vl" id="kPaid" style="color:var(--g2)">–</div><div class="ksub" id="kPaidSub"></div></div>
+        <div class="kpi c2"><div class="lb">ยังรอ Shopee จ่าย<br>(ยอดเต็ม)</div><div class="vl" id="kWait" style="color:var(--amb)">–</div><div class="ksub" id="kWaitSub"></div></div>
         <div class="kpi c1"><div class="lb">ออเดอร์</div><div class="vl" id="kOrd">–</div><div class="ksub" id="kOrdSub"></div></div>
-        <div class="kpi c1 r-fin"><div class="lb">ต้นทุนค่าแพ็ค /<br>ค่าใช้จ่าย</div><div class="vl" id="kPack" style="color:var(--o2)">–</div><div class="ksub" id="kPackSub"></div></div>
+        <div class="kpi c1"><div class="lb">ต้นทุนค่าแพ็ค /<br>ค่าใช้จ่าย</div><div class="vl" id="kPack" style="color:var(--o2)">–</div><div class="ksub" id="kPackSub"></div></div>
       </div>
     </div>
 
-    <!-- 🚩 การ์ดตามเรื่อง — ไม่มี class r-fin โดยตั้งใจ: พนักงาน Shopee (แคชเชียร์) ต้องเห็น
-         เพราะธงเตือนเดิมทั้งหมดอยู่ในแท็บ ① ซึ่งแคชเชียร์ไม่มีสิทธิ์เปิด -->
+    <!-- 🚩 การ์ดตามเรื่อง — ทุก role ที่ล็อกอินเห็น (พนักงาน Shopee/แคชเชียร์ด้วย) -->
     <div class="card" id="alertCard">
       <div class="row" style="justify-content:space-between;align-items:center">
         <h3 style="margin:0">🚩 ออเดอร์ที่ต้องตามเรื่อง <span id="alertCount"></span></h3>
@@ -225,17 +224,17 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="tabs">
-      <div class="tab on r-fin" data-t="pay" onclick="tab('pay')">① ออเดอร์ Shopee</div>
-      <div class="tab r-fin" data-t="fee" onclick="tab('fee')">② ค่าธรรมเนียม</div>
+      <div class="tab on" data-t="pay" onclick="tab('pay')">① ออเดอร์ Shopee</div>
+      <div class="tab" data-t="fee" onclick="tab('fee')">② ค่าธรรมเนียม</div>
       <div class="tab" data-t="pack" onclick="tab('pack')">③ ค่าแพ็ค</div>
       <div class="tab r-owner" data-t="pnl" onclick="tab('pnl')">④ กำไร-ขาดทุน 🔒</div>
       <div class="tab" data-t="rtn" onclick="tab('rtn')">↩ ตีกลับ/ยกเลิก</div>
     </div>
 
-    <div class="card r-fin" id="tab_pay"><h3>① รายการออเดอร์ Shopee</h3>
+    <div class="card" id="tab_pay"><h3>① รายการออเดอร์ Shopee</h3>
       <div class="row" style="margin-bottom:8px"><label><input type="checkbox" id="pay_hidePaid" onchange="render()"> ซ่อนที่รับเงินแล้ว</label> <label><input type="checkbox" id="pay_unbilled" onchange="render()"> เฉพาะที่ยังไม่ออกบิล</label></div>
       <div id="payBox"></div></div>
-    <div class="card hide r-fin" id="tab_fee"><h3>② ค่าธรรมเนียม</h3>
+    <div class="card hide" id="tab_fee"><h3>② ค่าธรรมเนียม</h3>
       <div class="row" style="margin-bottom:8px"><label>ค่าธรรมเนียมที่คาดไว้:</label>
         <input id="expPct" type="number" step="0.1" value="27" style="max-width:70px" onchange="render()"> <span class="muted">%</span>
         <label style="margin-left:10px"><input type="checkbox" id="fee_hidePaid" onchange="render()"> ซ่อนที่รับเงินแล้ว</label> <label><input type="checkbox" id="fee_unbilled" onchange="render()"> เฉพาะที่ยังไม่ออกบิล</label></div>
@@ -264,7 +263,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 "use strict";
 /* ---------- PIN ---------- */
 /* 🔐 ไม่มี PIN ในโค้ด — ตรวจที่ Edge Function login แล้วใช้ role ที่ระบบตอบ
-   owner = ทุกแท็บ · finance = ไม่เห็นกำไร-ขาดทุน · employee/hr = "staff" เห็นเฉพาะแท็บที่ไม่ใช่การเงิน (ตาราง shopee_*) */
+   owner = ทุกแท็บ · finance/employee/hr/cashier = ทุกแท็บยกเว้น ④ กำไร-ขาดทุน (ตาราง shopee_* RLS = authenticated)
+   ส่วนที่เขียนตาราง rev_* (การ์ดลูกหนี้ .r-credit · creditSync · ใบลดหนี้/ออกบิลเอง canCN) = finance/owner เท่านั้น ตาม RLS rev_* */
 var ROLE=null, PIN_BUSY=false;
 async function logout(){ if(window.RevAuth) await RevAuth.logout(sb); location.reload(); }
 async function submitPin(){
@@ -278,11 +278,11 @@ async function submitPin(){
 function useRole(r){
   ROLE=(r==="owner"||r==="finance")?r:"staff"; document.getElementById("gate").style.display="none";
   document.querySelectorAll(".r-owner").forEach(function(e){e.classList.toggle("gated",ROLE!=="owner");});
-  document.querySelectorAll(".r-fin").forEach(function(e){e.classList.toggle("gated",!(ROLE==="finance"||ROLE==="owner"));});
-  CURTAB=(ROLE==="finance"||ROLE==="owner")?"pay":"pack";
+  document.querySelectorAll(".r-credit").forEach(function(e){e.classList.toggle("gated",!canCN());});
+  CURTAB="pay";
   reload();
 }
-function canSee(t){ if(t==="pnl") return ROLE==="owner"; if(t==="pay"||t==="fee") return ROLE==="finance"||ROLE==="owner"; return true; }
+function canSee(t){ if(t==="pnl") return ROLE==="owner"; return true; }
 /* ---------- Supabase ---------- */
 var SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
 var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
@@ -451,13 +451,13 @@ document.getElementById("f_acc").addEventListener("change",async function(e){
     // รวมออเดอร์ซ้ำข้ามไฟล์
     var mm={}; all.forEach(function(o){ if(!mm[o.order_no]) mm[o.order_no]=o; else { mm[o.order_no].billed_amount=r2(num(mm[o.order_no].billed_amount)+num(o.billed_amount)); } });
     var r=await upsertOrders(Object.values(mm));
-    msg.innerHTML='<div class="okbox">✓ บิลขาย: จับได้ '+Object.keys(mm).length+' ออเดอร์ บันทึกแล้ว</div>'; await creditSync(false);
+    msg.innerHTML='<div class="okbox">✓ บิลขาย: จับได้ '+Object.keys(mm).length+' ออเดอร์ บันทึกแล้ว</div>'; if(canCN()) await creditSync(false);
   }catch(err){ msg.innerHTML='<div class="errbox">บิล acc-billing: '+esc(err.message)+'</div>'; }
 });
 document.getElementById("f_pay").addEventListener("change",async function(e){
   var f=e.target.files[0]; if(!f) return; setFn("fn_pay",f.name); var msg=document.getElementById("upMsg"); msg.textContent="กำลังอ่านไฟล์รายรับ…";
   try{ var wb=await readWB(f); var list=parsePayout(wb); var r=await upsertOrders(list);
-    msg.innerHTML='<div class="okbox">✓ รายรับ: '+list.length+' ออเดอร์ (เงินเข้า+ค่าธรรมเนียมจริง) บันทึกแล้ว</div>'; await creditSync(false);
+    msg.innerHTML='<div class="okbox">✓ รายรับ: '+list.length+' ออเดอร์ (เงินเข้า+ค่าธรรมเนียมจริง) บันทึกแล้ว</div>'; if(canCN()) await creditSync(false);
   }catch(err){ msg.innerHTML='<div class="errbox">ไฟล์รายรับ: '+esc(err.message)+'</div>'; }
 });
 document.getElementById("f_ord").addEventListener("change",async function(e){
@@ -855,7 +855,7 @@ function render(){
   renderAlerts();
   renderPay(rows,all); renderFee(rows); renderPack(rows,m,retCount); renderPnl(rows,m,retCount); renderRtn();
   findRun();
-  if(!_creditBoot && (ROLE==="finance"||ROLE==="owner")){ _creditBoot=true; setTimeout(function(){ creditSync(false); },300); }
+  if(!_creditBoot && canCN()){ _creditBoot=true; setTimeout(function(){ creditSync(false); },300); }
 }
 var _creditBoot=false;
 
@@ -908,6 +908,7 @@ function cnBtn(o,amt,why){
     ',\''+String(why).replace(/'/g,"")+'\')">📝 ออกใบลดหนี้</button>';
 }
 async function creditNote(orderNo,amt,why){
+  if(!canCN()) return; /* เขียน rev_credit_bills = finance/owner เท่านั้น */
   var o=(ALL||[]).filter(function(x){return x.order_no===orderNo;})[0];
   if(!o||!o.bill_no) return;
   var b=await sb.from("rev_credit_bills").select("*").eq("bill_no",o.bill_no).maybeSingle();
@@ -1101,7 +1102,7 @@ function renderPay(rows,all){
   if(!list.length) h+='<tr><td colspan="6" class="muted">— ไม่มีรายการ —</td></tr>';
   list.forEach(function(o){ var d=daysSince(o.order_date||o.bill_date), part=isPartial(o), ret=o.return_status&&!part, no=String(o.order_no).replace(/'/g,"");
     var mark=o.paid?'💰 ':(ret?'↩ ':(part?'↩ ':''));
-    var billCell=ret?('<span class="chip '+(o.return_status==="claim"?"warn":"gray")+'">'+esc(retLabel(o))+'</span>'):(o.billed?'<span class="chip ok">'+esc(o.bill_no||"บิลแล้ว")+'</span>':'<span class="chip warn">ยังไม่ออกบิล</span> <button class="pen" title="ออกบิลเอง (กรอกเลขบิล acc-billing)" onclick="openBill(\''+no+'\')">✏️</button>');
+    var billCell=ret?('<span class="chip '+(o.return_status==="claim"?"warn":"gray")+'">'+esc(retLabel(o))+'</span>'):(o.billed?'<span class="chip ok">'+esc(o.bill_no||"บิลแล้ว")+'</span>':'<span class="chip warn">ยังไม่ออกบิล</span>'+(canCN()?' <button class="pen" title="ออกบิลเอง (กรอกเลขบิล acc-billing)" onclick="openBill(\''+no+'\')">✏️</button>':''));
     if(part) billCell+=' <span class="chip amb" title="'+esc(retQtyText(o))+'">↩ คืนบางส่วน '+fmt(retAmt(o))+'</span>';
     if(o.bill_date) billCell+='<div class="muted" style="font-size:11px">วันบิล '+beDate(o.bill_date)+'</div>';
     var money=o.paid?'<span class="chip ok">💰 รับแล้ว</span>':(ret?'—':(d>20?'<span style="color:var(--red);font-weight:700">รอ '+d+' วัน</span>':'รอ '+d+' วัน'));
@@ -1531,6 +1532,7 @@ window.pushToFinance=async function(){
 };
 var _billNo=null;
 function openBill(no){
+  if(!canCN()) return; /* ออกบิลเอง = finance/owner เท่านั้น */
   _billNo=no;
   var o=(ALL||[]).find(function(x){return String(x.order_no).replace(/'/g,"")===no;});
   document.getElementById("billOrd").textContent=no;
@@ -1545,6 +1547,7 @@ function openBill(no){
 function billReasonChg(){ var oth=document.getElementById("billReason").value==="อื่นๆ"; document.getElementById("billOther").classList.toggle("hide",!oth); }
 function closeBill(){ document.getElementById("billMask").classList.add("hide"); _billNo=null; }
 async function saveBill(){
+  if(!canCN()) return;
   var errEl=document.getElementById("billErr");
   var bno=(document.getElementById("billNoInp").value||"").trim();
   var reason=document.getElementById("billReason").value;

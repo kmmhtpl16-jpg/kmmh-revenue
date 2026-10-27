@@ -7,6 +7,12 @@
 <meta name="robots" content="noindex, nofollow">
 <title>HQ แชทกลุ่ม — กิจมั่งมีโฮม</title>
 <meta name="theme-color" content="#132139">
+<!-- ไอคอนหน้าโฮม iPhone "HQ แชท" (ต้องมีถึงจะเด้งเตือนได้) · แยกจากไอคอน HQ เดิม -->
+<link rel="manifest" href="hq-chat.webmanifest">
+<link rel="apple-touch-icon" href="hq-icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HQ แชท">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
@@ -15,7 +21,9 @@
 <!-- HQ แชทกลุ่ม ขั้น ① (อ่านอย่างเดียว) · 27 ต.ค. 69
      - เจ้าของคนเดียว: ล็อกอินด้วย PIN ผ่าน RevAuth (Edge Function login) แล้วต้องได้บทบาท owner
      - ข้อมูลอยู่หลัง RLS is_owner() — ไม่ล็อกอินหรือไม่ใช่เจ้าของ ฐานข้อมูลไม่ส่งข้อความใดๆ มา
-     - ไม่มีช่องพิมพ์ส่ง · ปักหมุด/โน๊ต/อัลบั้ม ยังปิด (ขั้น ②–④) -->
+     - ไม่มีช่องพิมพ์ส่ง · ปักหมุด/โน๊ต/อัลบั้ม ยังปิด (ขั้น ②–④)
+     เด้งเตือน (27 ต.ค.): ปุ่มกระดิ่ง → เปิด/ปิดเตือนเครื่องนี้ · service worker hq-sw.js scope "chat" (คุมแค่หน้านี้)
+     ข้อความเตือนสร้างในฐาน ไม่มียอดเงิน · กุญแจ VAPID สาธารณะด้านล่าง (ส่วนลับอยู่ใน Supabase เท่านั้น) -->
 <style>
 :root{
   --bg:#0F1A2E; --bar:#132139; --line:#22324F; --chip:#1C2B45; --bubble:#1C2B45; --day:#18263F;
@@ -77,6 +85,18 @@ a{color:var(--amber)}
 .mem b{font-size:14px;font-weight:600}
 .mem span{font-size:12px;color:var(--muted)}
 .lnk{border:none;background:none;color:var(--muted);font-size:13px;text-decoration:underline;min-height:40px;cursor:pointer}
+/* เด้งเตือน */
+.ibtn .dot{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.ibtn{position:relative}
+.ntxt{font-size:13px;color:var(--muted);line-height:1.6;margin:4px 0 12px}
+.ntxt b{color:var(--ink)}
+.nbtn{width:100%;min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--chip);color:var(--ink);font-weight:600;font-size:14px;margin-top:8px;cursor:pointer}
+.nbtn.pri{background:var(--amber);border-color:var(--amber);color:var(--amber-ink)}
+.nbtn:disabled{opacity:.5;cursor:default}
+.nmsg{min-height:20px;font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+.nmsg.err{color:var(--err)}
+.dev{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;border-bottom:1px solid var(--line);font-size:13px}
+.dev span{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -99,6 +119,10 @@ a{color:var(--amber)}
     <button class="ibtn" aria-label="โหลดใหม่" onclick="load()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
     </button>
+    <button class="ibtn" aria-label="การแจ้งเตือน" onclick="openNotify()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="dot hide" id="bellDot" aria-hidden="true"></span>
+    </button>
     <button class="ibtn" aria-label="สมาชิกในห้อง" onclick="openMembers()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M18 14c2 .7 3 2.8 3 6"/></svg>
     </button>
@@ -120,6 +144,15 @@ a{color:var(--amber)}
     <div class="shead"><b>สมาชิก 8 คน + เจ้าของ</b><button class="ibtn" aria-label="ปิด" onclick="closeMembers()">✕</button></div>
     <div id="memList"></div>
     <div style="text-align:center;margin-top:8px"><button class="lnk" onclick="logout()">ออกจากระบบ</button></div>
+  </div>
+</div>
+
+<div class="sheet hide" id="notify" onclick="if(event.target===this)closeNotify()">
+  <div class="sbox" role="dialog" aria-label="การแจ้งเตือน">
+    <div class="shead"><b>การแจ้งเตือน</b><button class="ibtn" aria-label="ปิด" onclick="closeNotify()">✕</button></div>
+    <div id="nBody"></div>
+    <div class="nmsg" id="nMsg" role="status"></div>
+    <div id="nDevs"></div>
   </div>
 </div>
 
@@ -151,6 +184,7 @@ function showGate(msg,isDeny){
   READY=false;
   $("gate").classList.remove("hide"); $("app").setAttribute("aria-hidden","true");
   $("list").innerHTML="";                          /* ไม่ทิ้งข้อความไว้บนจอเมื่อสิทธิ์หลุด */
+  $("nDevs").innerHTML=""; $("notify").classList.add("hide"); $("members").classList.add("hide");
   $("gateMsg").textContent=msg||"สำหรับเจ้าของเท่านั้น · ใส่ PIN";
   $("gateOut").classList.toggle("hide",!isDeny);
   $("pinInput").classList.toggle("hide",!!isDeny); $("pinBtn").classList.toggle("hide",!!isDeny);
@@ -159,6 +193,7 @@ function enter(){
   READY=true;
   $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden");
   load();
+  refreshBell();
 }
 function useRole(r){
   if(r==="owner"){ enter(); return; }
@@ -175,7 +210,17 @@ async function submitPin(){
   /* บทบาทอ่านจากฐานซ้ำ (ไม่เชื่อค่าที่ตอบตอนล็อกอินอย่างเดียว) */
   useRole(await RevAuth.currentRole(sb));
 }
-async function logout(){ if(window.RevAuth) await RevAuth.logout(sb); location.reload(); }
+async function logout(){
+  /* ถอนเครื่องนี้จากการเตือนก่อนออก (ฐานหยุดส่งเองอยู่แล้วเมื่อ session หายไป — นี่เป็นชั้นเสริม) */
+  try{
+    var id=myDevId();
+    if(sb && id) await sb.rpc("hq_push_unregister",{p_id:Number(id)});
+    var sub=await currentSub(); if(sub) await sub.unsubscribe();
+    setMyDevId("");
+  }catch(e){ console.warn("logout push",e); }
+  if(window.RevAuth) await RevAuth.logout(sb);
+  location.reload();
+}
 
 /* ---------- แสดงข้อความ ---------- */
 var TZ="Asia/Bangkok";
@@ -288,6 +333,134 @@ function openMembers(){
   $("members").classList.remove("hide");
 }
 function closeMembers(){ $("members").classList.add("hide"); }
+
+/* ---------- เด้งเตือน (Web Push) ---------- */
+var VAPID_PUBLIC="BCqjqKW2CF5fKzlnTJZxqBrVm14V4RwZGKAkGNkw0ksHyyHucuq8B4YVedPVvVBEq5loqRmceJbOz2fTvbj6QHw";   /* กุญแจสาธารณะ (ไม่ลับ) · สร้าง 27 ต.ค. 69 · คู่กับ VAPID_PRIVATE_KEY ใน Supabase Secrets */
+var PUSH_READY=VAPID_PUBLIC.indexOf("__")!==0;
+var SW_SCOPE="chat";                  /* คุมเฉพาะ …/chat* ไม่คุมหน้ารายได้อื่น */
+function isStandalone(){ return window.navigator.standalone===true || !!(window.matchMedia && matchMedia("(display-mode: standalone)").matches); }
+function isIOS(){ return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1); }
+function pushSupported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+function b64uToBytes(s){ s=String(s).replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="="; var raw=atob(s), a=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
+function deviceLabel(){
+  var ua=navigator.userAgent, k=isIOS()?(/iPad/.test(ua)?"iPad":"iPhone"):(/Android/.test(ua)?"Android":"คอมพิวเตอร์");
+  return k+" · เปิดเมื่อ "+new Date().toLocaleDateString("th-TH",{timeZone:TZ,day:"numeric",month:"short"});
+}
+function nMsg(t,err){ var m=$("nMsg"); m.textContent=t||""; m.classList.toggle("err",!!err); }
+function nText(t){ var e=document.createElement("p"); e.className="ntxt"; e.textContent=t; $("nBody").appendChild(e); }
+function nButton(label,pri,fn){
+  var b=document.createElement("button"); b.className="nbtn"+(pri?" pri":""); b.textContent=label;
+  b.onclick=async function(){ b.disabled=true; try{ await fn(); }catch(e){ console.warn(e); nMsg("ทำไม่สำเร็จ ลองใหม่",true); } finally{ b.disabled=false; } };
+  $("nBody").appendChild(b);
+}
+async function currentSub(){
+  if(!pushSupported()) return null;
+  try{ var r=await navigator.serviceWorker.getRegistration(SW_SCOPE); return r ? await r.pushManager.getSubscription() : null; }catch(e){ return null; }
+}
+async function readyReg(){
+  var reg=await navigator.serviceWorker.register("hq-sw.js",{scope:SW_SCOPE});
+  if(!reg.active){
+    await new Promise(function(res){
+      var w=reg.installing||reg.waiting; if(!w) return res();
+      w.addEventListener("statechange",function(){ if(w.state==="activated") res(); });
+      setTimeout(res,8000);
+    });
+  }
+  return reg;
+}
+function myDevId(){ try{ return localStorage.getItem("hqpush_dev")||""; }catch(e){ return ""; } }
+function setMyDevId(v){ try{ if(v) localStorage.setItem("hqpush_dev",String(v)); else localStorage.removeItem("hqpush_dev"); }catch(e){} }
+/* ตรวจสถานะจริงจากฐาน (ผูกเครื่องเดิมกับ session ปัจจุบัน) แล้วใช้ผลเดียวกันวาดกระดิ่งและหน้าต่างเตือน · คืน true = เครื่องนี้รับเตือนอยู่ */
+async function refreshBell(){
+  var show=false, bound=false;
+  if(READY && PUSH_READY && pushSupported() && Notification.permission!=="denied"){
+    var sub=await currentSub();
+    /* ล็อกอินใหม่ → ผูกเครื่องเดิมกับ session ปัจจุบัน (r3) · เฉพาะเครื่องที่ยังอยู่ในรายชื่อ — ถูกลบแล้วไม่กลับมาเอง (r4) */
+    if(sub && sb){
+      try{
+        var r=await sb.rpc("hq_push_rebind",{p_endpoint:sub.endpoint});
+        if(!r.error && r.data){ setMyDevId(r.data); bound=true; }
+        else if(!r.error){ setMyDevId(""); }
+      }catch(e){ console.warn("push rebind",e); }
+    }
+    show=!bound;
+  }
+  $("bellDot").classList.toggle("hide",!show);
+  return bound;
+}
+
+async function openNotify(){ $("notify").classList.remove("hide"); nMsg(""); await renderNotify(); }
+function closeNotify(){ $("notify").classList.add("hide"); }
+async function renderNotify(){
+  $("nBody").innerHTML="";
+  if(!PUSH_READY){ nText("ระบบเด้งเตือนยังไม่เปิดใช้"); }
+  else if(!pushSupported()){
+    if(isIOS() && !isStandalone()) nText("iPhone เด้งเตือนได้เมื่อเปิดจากไอคอนหน้าโฮมเท่านั้น: กดปุ่มแชร์ (สี่เหลี่ยมมีลูกศรขึ้น) → \"เพิ่มไปยังหน้าจอโฮม\" → เปิดไอคอน \"HQ แชท\" แล้วใส่ PIN อีกครั้ง จากนั้นกดกระดิ่งนี้");
+    else nText("เบราว์เซอร์นี้ไม่รองรับการเด้งเตือน");
+  } else if(Notification.permission==="denied"){
+    nText("เครื่องนี้ปิดการแจ้งเตือนของ HQ แชทไว้ · เปิดได้ที่ ตั้งค่า → การแจ้งเตือน → HQ แชท");
+  } else if(await refreshBell()){
+    nText("เครื่องนี้รับเตือนอยู่ · คำเตือนบอกแค่หัวข้อ ไม่มียอดเงิน กดแล้วเปิดแชท");
+    nButton("ส่งทดสอบ",true,sendTest);
+    nButton("ปิดเตือนเครื่องนี้",false,disablePush);
+  } else {
+    nText("เปิดแล้ว ผู้ช่วยโพสต์รายงานเมื่อไหร่ เครื่องนี้จะเด้งเตือน (บอกแค่หัวข้อ ไม่มียอดเงิน)");
+    nButton("เปิดเตือนเครื่องนี้",true,enablePush);
+  }
+  await renderDevices();
+}
+async function enablePush(){
+  if(!(await stillOwner())) return;
+  var perm=await Notification.requestPermission();
+  if(perm!=="granted"){ nMsg("ไม่ได้อนุญาตการแจ้งเตือน",true); return renderNotify(); }
+  var reg=await readyReg();
+  var sub=await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToBytes(VAPID_PUBLIC)});
+  var j=sub.toJSON();
+  var r=await sb.rpc("hq_push_register",{p_endpoint:j.endpoint,p_p256dh:j.keys&&j.keys.p256dh,p_auth:j.keys&&j.keys.auth,p_label:deviceLabel()});
+  if(r.error){
+    try{ await sub.unsubscribe(); }catch(e){}
+    nMsg(r.error.code==="42501"?"สิทธิ์หมดอายุ ใส่ PIN ใหม่":(r.error.code==="P0001"?String(r.error.message||"").replace(/^hq_push:\s*/,""):"ลงทะเบียนไม่สำเร็จ ลองใหม่"),true);
+    return renderNotify();
+  }
+  setMyDevId(r.data);
+  await renderNotify();
+  nMsg("เปิดเตือนแล้ว ลองกด \"ส่งทดสอบ\"");
+}
+async function disablePush(){
+  var sub=await currentSub(), id=myDevId();
+  if(id) await sb.rpc("hq_push_unregister",{p_id:Number(id)});
+  if(sub){ try{ await sub.unsubscribe(); }catch(e){} }
+  setMyDevId("");
+  await renderNotify();
+  nMsg("ปิดเตือนเครื่องนี้แล้ว");
+}
+async function sendTest(){
+  var r=await sb.rpc("hq_push_test");
+  if(r.error) nMsg(r.error.code==="P0001"?String(r.error.message||"").replace(/^hq_push:\s*/,""):"ส่งทดสอบไม่สำเร็จ",true);
+  else if(r.data===false) nMsg("เข้าคิวแล้ว แต่ระบบเตือนยังปิดสวิตช์อยู่ (รอห้อง Code เปิด)");
+  else nMsg("ส่งแล้ว รอสักครู่ — ถ้าไม่เด้งใน 1 นาที บอกห้อง Code");
+}
+async function renderDevices(){
+  var box=$("nDevs"); box.innerHTML="";
+  if(!sb || !READY) return;
+  var q=await sb.from("hq_push_devices").select("id,label,created_at,last_ok_at").order("id");
+  if(q.error || !q.data || !q.data.length) return;
+  var h=document.createElement("p"); h.className="ntxt"; h.textContent="เครื่องที่รับเตือน ("+q.data.length+")"; box.appendChild(h);
+  var mine=myDevId();
+  q.data.forEach(function(d){
+    var row=document.createElement("div"); row.className="dev";
+    var t=document.createElement("div"); t.textContent=(d.label||"เครื่องไม่ระบุชื่อ")+(String(d.id)===mine?" (เครื่องนี้)":"");
+    var s=document.createElement("span"); s.textContent=d.last_ok_at?" · ส่งถึงล่าสุด "+hhmm(new Date(d.last_ok_at)):" · ยังไม่เคยส่งถึง"; t.appendChild(s);
+    var b=document.createElement("button"); b.className="lnk"; b.textContent="ลบ";
+    b.onclick=async function(){
+      b.disabled=true;
+      var r=await sb.rpc("hq_push_unregister",{p_id:d.id});
+      if(!r.error && String(d.id)===mine){ var sub=await currentSub(); if(sub){ try{ await sub.unsubscribe(); }catch(e){} } setMyDevId(""); }
+      await renderNotify();
+    };
+    row.appendChild(t); row.appendChild(b); box.appendChild(row);
+  });
+}
 
 /* ---------- เริ่ม: มี session เดิมที่ยังใช้ได้ → เข้าเลย (บทบาทอ่านจากฐาน) ---------- */
 (async function(){

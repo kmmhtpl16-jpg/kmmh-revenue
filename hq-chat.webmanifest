@@ -1,0 +1,13 @@
+{
+  "name": "HQ แชท — กิจมั่งมีโฮม",
+  "short_name": "HQ แชท",
+  "start_url": "chat.html",
+  "scope": "chat",
+  "display": "standalone",
+  "background_color": "#0F1A2E",
+  "theme_color": "#132139",
+  "icons": [
+    { "src": "hq-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "hq-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

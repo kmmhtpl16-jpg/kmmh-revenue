@@ -37,7 +37,7 @@ a{color:var(--amber)}
 .top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 8px 10px 12px;background:var(--bar);border-bottom:1px solid var(--line)}
 .hq{width:40px;height:40px;border-radius:12px;background:var(--amber);color:var(--amber-ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
 .ttl{display:flex;flex-direction:column;flex:1;min-width:0}
-.ttl b{font-size:16px}
+.ttl b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ttl span{font-size:12px;color:var(--muted)}
 .ibtn{width:44px;height:44px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;border-radius:12px;cursor:pointer}
 .ibtn:active{background:var(--chip)}
@@ -45,6 +45,14 @@ a{color:var(--amber)}
 .tool{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;background:var(--chip);border:none;font-size:13px;font-weight:500;opacity:.45;cursor:not-allowed;white-space:nowrap}
 .list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:14px 14px 18px;display:flex;flex-direction:column;gap:14px}
 .list>*{max-width:100%;min-width:0;flex-shrink:0}
+.tool.on{opacity:1;cursor:pointer}
+.pcount{color:var(--amber);font-weight:600}
+.pinbar{display:flex;align-items:center;gap:10px;margin:0 12px 6px;padding:10px 12px;border-radius:12px;background:#2A2414;border:1px solid #5C4A1E;color:#F6E7C8;text-decoration:none;font-size:13px;line-height:1.4}
+.pinbar span{flex:1}
+.pinbar em{font-style:normal;font-size:12px;color:var(--amber);font-weight:600;white-space:nowrap}
+.prow{display:flex;align-items:center;gap:10px;min-height:52px;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:14px}
+.prow span{flex:1}
+.prow em{font-style:normal;font-size:12px;color:var(--amber)}
 .daysep{align-self:center;font-size:12px;color:var(--muted);background:var(--day);padding:3px 12px;border-radius:999px}
 .msg{display:flex;gap:10px;align-items:flex-start;width:100%}
 .av{width:42px;height:42px;border-radius:50%;border:2px solid var(--amber);object-fit:cover;flex-shrink:0;background:var(--chip)}
@@ -112,7 +120,7 @@ a{color:var(--amber)}
   </div>
 </div>
 
-<div class="app" id="app" aria-hidden="true">
+<div class="app" id="app" aria-hidden="true" inert>
   <div class="top">
     <div class="hq" aria-hidden="true">HQ</div>
     <div class="ttl"><b>KMMH COMMAND HQ</b><span id="sub">สมาชิก 8 คน + เจ้าของ</span></div>
@@ -127,12 +135,13 @@ a{color:var(--amber)}
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M18 14c2 .7 3 2.8 3 6"/></svg>
     </button>
   </div>
-  <div class="tools" aria-label="เครื่องมือห้อง (ยังไม่เปิดใช้)">
-    <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>ปักหมุด</button>
+  <div class="tools" aria-label="เครื่องมือห้อง">
+    <button class="tool on" id="pinBtn2" onclick="openPins()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>ปักหมุด <b class="pcount" id="pinCount"></b></button>
     <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>โน๊ต</button>
     <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>อัลบั้ม</button>
   </div>
-  <div class="soon">ปักหมุด · โน๊ต · อัลบั้ม เปิดใช้ในขั้นถัดไป</div>
+  <div class="soon">โน๊ต · อัลบั้ม เปิดใช้ในขั้นถัดไป</div>
+  <a class="pinbar hide" id="pinbar" rel="noopener"></a>
   <div class="list" id="list" aria-live="polite"><div class="note">กำลังโหลด…</div></div>
   <div class="foot">
     <div class="ro">ห้องนี้อ่านอย่างเดียว · ผู้ช่วยโพสต์รายงานให้อัตโนมัติ</div>
@@ -178,20 +187,23 @@ var SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
 var PREVIEW=(location.hostname==="localhost"||location.hostname==="127.0.0.1") && /[?&]preview=1\b/.test(location.search);
 var sb=null; if(!PREVIEW){ try{ sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}}); }catch(e){} }
 var PIN_BUSY=false, READY=false;
+var GEN=0;   /* รุ่นการเข้าห้อง: เปลี่ยนทุกครั้งที่ปิด/เปิดประตู — ผลคำขอรุ่นเก่าห้ามวาด (Codex ② r3) */
 
 function $(id){ return document.getElementById(id); }
 function showGate(msg,isDeny){
-  READY=false;
-  $("gate").classList.remove("hide"); $("app").setAttribute("aria-hidden","true");
+  READY=false; GEN++;
+  $("gate").classList.remove("hide"); $("app").setAttribute("aria-hidden","true"); $("app").inert=true;   /* กันคีย์บอร์ด/โฟกัสด้านหลัง */
   $("list").innerHTML="";                          /* ไม่ทิ้งข้อความไว้บนจอเมื่อสิทธิ์หลุด */
   $("nDevs").innerHTML=""; $("notify").classList.add("hide"); $("members").classList.add("hide");
+  PINS=[]; $("pinbar").classList.add("hide"); $("pinbar").textContent=""; $("pinCount").textContent="";
   $("gateMsg").textContent=msg||"สำหรับเจ้าของเท่านั้น · ใส่ PIN";
   $("gateOut").classList.toggle("hide",!isDeny);
   $("pinInput").classList.toggle("hide",!!isDeny); $("pinBtn").classList.toggle("hide",!!isDeny);
 }
 function enter(){
-  READY=true;
-  $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden");
+  READY=true; GEN++;
+  LOADING=false;   /* คำขอรุ่นเก่าที่ค้าง (ถ้ามี) จะทิ้งผลเองด้วย GEN — ไม่ให้มันขวางการโหลดรอบใหม่ */
+  $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden"); $("app").inert=false;
   load();
   refreshBell();
 }
@@ -292,8 +304,9 @@ function render(rows){
 var LOADING=false;
 /* ตรวจบทบาทจากฐานซ้ำก่อนโหลดทุกครั้ง (กลับเข้าแท็บ / ทุก 5 นาที / กดโหลดใหม่) — ถูกลดสิทธิ์หรือตัด session
    จะปิดหน้าข้อมูลในรอบตรวจถัดไป · ฐานข้อมูลปฏิเสธเองตั้งแต่คำขอแรกหลังตัด (r2 · Codex r1 #3, r2 #4) */
-async function stillOwner(){
+async function stillOwner(g){
   var r=null; try{ r=await RevAuth.currentRole(sb); }catch(e){}
+  if(g!==undefined && g!==GEN) return false;   /* ผลตรวจรุ่นเก่า — ห้ามไปปิดประตูของรอบใหม่ (Codex ② r4) */
   if(r==="owner") return true;
   if(r) showGate("หน้านี้สำหรับเจ้าของเท่านั้น — บัญชีนี้เข้าไม่ได้",true); else showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่");
   return false;
@@ -301,27 +314,72 @@ async function stillOwner(){
 async function load(){
   if(!READY || LOADING || !sb) return;
   LOADING=true;
+  var g=GEN;
   try{
-    if(!(await stillOwner())) return;
+    if(!(await stillOwner(g)) || g!==GEN) return;
     /* ดึงรายงานใหม่เข้าห้อง (ฟังก์ชันฝั่งฐานตรวจว่าเป็นเจ้าของเอง) — พลาดก็ยังแสดงข้อความเดิม */
     var s=await sb.rpc("hq_chat_sync");
-    if(s.error && (s.error.code==="42501" || s.error.status===401 || s.error.status===403)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(g!==GEN) return;
+    if(authErr(s.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
     var q=await sb.from("hq_chat_messages")
       .select("id,sender,kind,body,body_format,posted_at")
       .eq("room","hq").order("posted_at",{ascending:false}).order("id",{ascending:false}).limit(60);
-    if(!READY) return;   /* ระหว่างรอ สิทธิ์หลุดไปแล้ว — ไม่วาดข้อความ */
+    if(!READY || g!==GEN) return;   /* ระหว่างรอ สิทธิ์หลุด/เข้าใหม่แล้ว — ไม่วาดผลรุ่นเก่า */
+    if(authErr(q.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }   /* r2 (Codex ② r1 #2) */
     if(q.error){ $("list").innerHTML='<div class="note err">โหลดข้อความไม่ได้ ลองกดโหลดใหม่</div>'; return; }
     render((q.data||[]).slice().reverse());
+    await loadPins(g);
   }catch(e){
     console.warn("hqchat.load",e);
-    $("list").innerHTML='<div class="note err">เชื่อมต่อไม่ได้ ลองกดโหลดใหม่</div>';
-  }finally{ LOADING=false; }
+    if(g===GEN && READY) $("list").innerHTML='<div class="note err">เชื่อมต่อไม่ได้ ลองกดโหลดใหม่</div>';
+  }finally{ if(g===GEN) LOADING=false; }   /* คำขอรุ่นเก่าไม่ปลดล็อกของรอบใหม่ */
+}
+/* ---------- ขั้น ② หมุดบิลพัก: 1 หมุดต่อวันบิล · นับสดจากฐาน · ตัดสินครบแล้วหายเอง ---------- */
+var PINS=[];
+var PIN_LINK_RE=/^https:\/\/kmmhtpl16-jpg\.github\.io\/kmmh-revenue\/index\.html\?cut=\d{4}-\d{2}-\d{2}$/;
+function dmy(s){ var p=String(s||"").split("-"); return p.length===3 ? (p[2]+"/"+p[1]) : ""; }
+function pinText(p){ return p.audited ? ("บิลพักรอคุณหลิง "+p.held+" ใบ (บิลวันที่ "+dmy(p.bill_day)+")") : ("บิลวันที่ "+dmy(p.bill_day)+" ยังไม่ได้ตรวจ"); }
+function safeLink(u){ return PIN_LINK_RE.test(String(u||"")) ? String(u) : "index.html"; }   /* ลิงก์จากฐานต้องเป็นหน้าตรวจรายได้เท่านั้น */
+function authErr(e){ return !!e && (e.code==="42501" || e.status===401 || e.status===403); }
+async function loadPins(g){
+  if(!sb || !READY || g!==GEN) return;
+  var r=await sb.rpc("hq_chat_pins");
+  if(!READY || g!==GEN) return;                                        /* สิทธิ์หลุด/เข้าใหม่ระหว่างรอ — ไม่วาด */
+  if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; } /* r2 (Codex ② r1 #2): ปิดหน้าทั้งหมด ไม่ใช่แค่หมุด */
+  showPins(r.error ? [] : (r.data||[]));
+}
+function showPins(list){
+  PINS=(list||[]).filter(function(p){ return !p.audited || Number(p.held)>0; });
+  var bar=$("pinbar"), c=$("pinCount");
+  c.textContent=PINS.length ? String(PINS.length) : "";
+  if(!PINS.length){ bar.classList.add("hide"); bar.removeAttribute("href"); return; }
+  bar.textContent="";
+  bar.insertAdjacentHTML("beforeend",'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>');
+  var t=document.createElement("span"); t.textContent=pinText(PINS[0]); bar.appendChild(t);
+  var e=document.createElement("em");
+  if(PINS.length>1){ e.textContent="ดูทั้งหมด "+PINS.length; bar.removeAttribute("href"); bar.onclick=function(ev){ ev.preventDefault(); openPins(); }; }
+  else { e.textContent="เปิดการ์ด ›"; bar.href=safeLink(PINS[0].link); bar.onclick=null; }
+  bar.appendChild(e);
+  bar.classList.remove("hide");
+}
+function openPins(){
+  var box=$("memList"); box.innerHTML="";
+  $("members").querySelector(".shead b").textContent="ปักหมุด ("+PINS.length+")";
+  if(!PINS.length){ var n=document.createElement("p"); n.className="ntxt"; n.textContent="ไม่มีบิลพักค้าง"; box.appendChild(n); }
+  PINS.forEach(function(p){
+    var a=document.createElement("a"); a.className="prow"; a.href=safeLink(p.link); a.rel="noopener";
+    var t=document.createElement("span"); t.textContent="📌 "+pinText(p); a.appendChild(t);
+    var e=document.createElement("em"); e.textContent="เปิดการ์ด ›"; a.appendChild(e);
+    box.appendChild(a);
+  });
+  $("members").classList.remove("hide");
 }
 document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") load(); });
 setInterval(function(){ if(document.visibilityState==="visible") load(); }, 5*60*1000);
 
 /* ---------- สมาชิก ---------- */
 function openMembers(){
+  $("members").querySelector(".shead b").textContent="สมาชิก 8 คน + เจ้าของ";
   var box=$("memList"); box.innerHTML="";
   Object.keys(MEMBERS).forEach(function(id){
     var m=MEMBERS[id], row=document.createElement("div"); row.className="mem";
@@ -467,7 +525,9 @@ async function renderDevices(){
   /* ดูตัวอย่างในเครื่อง: ใช้ไฟล์ข้อมูลในเครื่อง (ไฟล์นี้ไม่ขึ้นเว็บจริง) */
   if(PREVIEW){
     try{ var p=await (await fetch("preview-data.json",{cache:"no-store"})).json();
-      $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden"); render(p); return; }catch(e){ console.warn(e); }
+      $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden"); $("app").inert=false; render(p);
+      try{ showPins(await (await fetch("preview-pins.json",{cache:"no-store"})).json()); }catch(_e){}
+      return; }catch(e){ console.warn(e); }
   }
   if(!sb || !window.RevAuth){ $("pinErr").textContent="เชื่อมต่อฐานข้อมูลไม่ได้ ลองรีเฟรชหน้า"; return; }
   var r=await RevAuth.currentRole(sb);

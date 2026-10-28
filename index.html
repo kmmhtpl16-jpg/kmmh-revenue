@@ -257,6 +257,11 @@
     </div>
     <div class="muted" id="pend_msg" style="margin-top:6px"></div>
   </div>
+  <div class="card r-fin" id="chqcard" style="display:none">
+    <h2>🧾 ทะเบียนเช็ครับ <span class="badge info" id="chqcount">…</span></h2>
+    <div class="muted" style="margin-bottom:10px">เช็คที่แคชเชียร์ลงในฟอร์มรายรับ (บิลเก่า-โอน ติ๊กเช็ค) — ตัดบิลวันที่รับเช็คแล้ว · ที่นี่ติดตามเงินเข้า: สเตทเมนต์มี "เช็คเลขที่ …" = ขึ้นเงินแล้ว · เกิน 7 วันหลังวันที่บนเช็คยังไม่ขึ้น = เตือน · เช็คเด้ง = กดบันทึก แล้วยกเลิกใบเสร็จใน ACC ให้บิลกลับมาค้าง</div>
+    <div id="chqlist" class="muted">กำลังโหลด…</div>
+  </div>
 </div>
 <script>
 
@@ -1685,6 +1690,8 @@ async function reconfNote(date){
 }
 async function markHoliday(date){ if(!sb) return; await sb.from("rev_audit").upsert([{date, status:"วันหยุด"}],{onConflict:"date"}); loadMonthStatus(); showDayDetail(date); }
 async function unmarkHoliday(date){ if(!sb) return; await sb.from("rev_audit").delete().eq("date",date); loadMonthStatus(); showDayDetail(date); }
+/* 28 ต.ค.69 (Codex r14): ค่าข้อความที่ต่อเข้า onclick='…' — escape backslash ของ JS แล้ว escape HTML ของ attribute (ค่าที่ฟังก์ชันได้รับ = ค่าเดิมทุกตัวอักษร) */
+function _jsa(x){ return esc(String(x==null?"":x).replace(/\\/g,"\\\\")); }
 function escAttr(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function recalcRem(inp){ const tr=inp.closest("tr"); if(!tr) return; const aEl=tr.querySelector(".k-amt"), cEl=tr.querySelector(".k-cash"); const amt=aEl?(parseFloat(aEl.value)||0):0; const cash=cEl?(parseFloat(cEl.value)||0):0; const rem=tr.querySelector(".k-rem"); if(rem) rem.textContent=TH(amt-cash); }
 function cnRowHtml(c,edit,_deps,_all){ c=c||{}; const amt=parseFloat(c.amt)||0, cash=parseFloat(c.cash)||0, rem=amt-cash;
@@ -1756,7 +1763,7 @@ async function renderDay(date, edit){
   const _otherAcct=((pq&&pq.data)?pq.data:[]).filter(function(x){return x.source==="รับเข้าบัญชีอื่น"||/บัญชีอื่น|เกินรายงาน|เกินสเตทเมนต์/.test(x.ref||"");}); const _otherAcctSum=Math.round(_otherAcct.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
   const _kIn=(au&&au.kplus_today!=null)||(da&&da.kplus_total!=null); const _bIn=(au&&au.bank_dep_today!=null)||(da&&da.bank_dep_total!=null); const _need=[]; if(!_kIn)_need.push("K+"); if(!_bIn)_need.push("สเตทเมนต์"); const _waitBadge=(au&&au.status!=="วันหยุด"&&_need.length&&!(au.detail&&au.detail.recon_ok===false))?(' <span style="float:right;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:999px;padding:2px 11px;font-size:12px;font-weight:700">⏳ รออัป'+_need.join("/")+'</span>'):'';
   let html='<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:10px"><b>📄 รายละเอียดวันที่ '+beDate(date)+'</b>'+_waitBadge+(edit?' <span style="color:#c2410c;font-weight:700">· ✏️ กำลังแก้ไข</span>':'');
-  if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้</div>'; (function(){ var _dep=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(!_dep.length) return; var Q7=String.fromCharCode(39); function _norm(s){ return String(s||'').replace(/['\"]/g,'').slice(0,60); } html+='<div style="margin:8px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⚠️ วันหยุดแต่มีเงินโอนเข้า '+_dep.length+' รายการ รวม '+TH(_dep.reduce(function(s,r){return s+(+r.dep||0);},0))+' — ยังไม่ออกบิล ดันเข้ารอจับคู่</b>'+_dep.map(function(r){ var _pp=((pq&&pq.data)?pq.data:[]).find(function(pp){return pp.source!=="รับเข้าบัญชีอื่น"&&Math.abs((parseFloat(pp.amount)||0)-(+r.dep||0))<=1;}); var act=_pp?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pp.matched_bill_no?(' · บิล '+esc(_pp.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q7+_norm(r.detail).slice(0,40)+Q7+','+Q7+date+Q7+')">ดันเข้ารอจับคู่</button><button class="btn sec" style="padding:2px 8px;margin-left:4px;border-color:#fca5a5;color:#b91c1c" onclick="markRefund('+(+r.dep||0)+','+Q7+_norm(r.detail)+Q7+','+Q7+date+Q7+')">🔁 เงินคืน</button>'); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; })(); html+='<div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
+  if(au && au.status==="วันหยุด"){ html+='<div style="color:#1d4ed8;margin-top:6px">🏖️ ทำเครื่องหมายเป็น <b>วันหยุด</b> ไว้</div>'; (function(){ var _dep=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(!_dep.length) return; var Q7=String.fromCharCode(39); function _norm(s){ return String(s||'').replace(/['\"]/g,'').slice(0,60); } html+='<div style="margin:8px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⚠️ วันหยุดแต่มีเงินโอนเข้า '+_dep.length+' รายการ รวม '+TH(_dep.reduce(function(s,r){return s+(+r.dep||0);},0))+' — ยังไม่ออกบิล ดันเข้ารอจับคู่</b>'+_dep.map(function(r){ var _pp=((pq&&pq.data)?pq.data:[]).find(function(pp){return pp.source!=="รับเข้าบัญชีอื่น"&&Math.abs((parseFloat(pp.amount)||0)-(+r.dep||0))<=1;}); var act=_pp?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pp.matched_bill_no?(' · บิล '+esc(_pp.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q7+_jsa(_norm(r.detail).slice(0,40))+Q7+','+Q7+date+Q7+')">ดันเข้ารอจับคู่</button><button class="btn sec" style="padding:2px 8px;margin-left:4px;border-color:#fca5a5;color:#b91c1c" onclick="markRefund('+(+r.dep||0)+','+Q7+_jsa(_norm(r.detail))+Q7+','+Q7+date+Q7+')">🔁 เงินคืน</button>'); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; })(); html+='<div style="text-align:right;margin-top:10px"><button class="btn sec r-fin" style="padding:4px 11px;margin-right:6px" onclick="unmarkHoliday(\''+date+'\')">ยกเลิกวันหยุด</button><button class="btn sec" style="padding:4px 11px" onclick="document.getElementById(\'dayDetail\').innerHTML=\'\'">ปิด</button></div></div>'; box.innerHTML=html; if(window.applyGating)applyGating(); return; }
   if(au){
     let _ndXfer=[]; try{ const _ndr=await sb.from("rev_audit").select("detail").eq("date",nextISO(date)).maybeSingle(); _ndXfer=(_ndr.data&&_ndr.data.detail&&_ndr.data.detail.xfer)||[]; }catch(e){}
     /* ── ยอดยกมาจากเมื่อวาน (K+ หลัง 15:30 ตัดรอบ: เงินเข้าเมื่อวาน บิลออกวันนี้) ──
@@ -1858,8 +1865,8 @@ async function renderDay(date, edit){
       var _rf=(au.detail&&Array.isArray(au.detail.refunds))?au.detail.refunds.slice():[]; var _used=_rf.map(function(){return false;});
       var _br=[], _refRows=[];
       _all.forEach(function(r){ var nd=_norm(r.detail); var hit=-1; for(var i=0;i<_rf.length;i++){ if(!_used[i] && Math.abs((+_rf[i].amt||0)-(+r.dep||0))<0.01 && (_rf[i].detail||'')===nd){ hit=i; break; } } if(hit>=0){ _used[hit]=true; _refRows.push(r); } else { _br.push(r); } });
-      if(_br.length){ html+='<div style="margin:4px 0 0;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px"><b style="color:#4338ca">💳 เงินโอนเข้าตรง (ไม่ใช่ K+) '+_br.length+' รายการ รวม '+TH(_br.reduce(function(s,r){return s+(+r.dep||0);},0))+' — เช็กว่าตรงบิลไหน ถ้ายังไม่ตรงดันเข้ารอจับคู่</b>'+_br.map(function(r){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +r.dep, 'ksk'); var _pp=(!_mb)?((pq&&pq.data)?pq.data:[]).find(function(pp){return pp.source!=="รับเข้าบัญชีอื่น"&&Math.abs((parseFloat(pp.amount)||0)-(+r.dep||0))<=1;}):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):(_pp?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pp.matched_bill_no?(' · บิล '+esc(_pp.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q6+_norm(r.detail).slice(0,40)+Q6+','+Q6+date+Q6+')">ดันเข้ารอจับคู่</button><button class="btn sec" style="padding:2px 8px;margin-left:4px;border-color:#fca5a5;color:#b91c1c" onclick="markRefund('+(+r.dep||0)+','+Q6+_norm(r.detail)+Q6+','+Q6+date+Q6+')">🔁 เงินคืน</button>')); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; }
-      if(_refRows.length){ html+='<div style="margin:4px 0 0;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:8px"><b style="color:#475569">🔁 เงินคืน (ไม่ใช่รายได้ของร้าน) '+_refRows.length+' รายการ รวม '+TH(_refRows.reduce(function(s,r){return s+(+r.dep||0);},0))+' — แยกออกแล้ว ไม่นับเป็นยอดขาย</b>'+_refRows.map(function(r){ return '<div class="kv"><span style="text-decoration:line-through;color:#94a3b8">'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b style="color:#64748b">'+TH(r.dep)+' <button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="unmarkRefund('+(+r.dep||0)+','+Q6+_norm(r.detail)+Q6+','+Q6+date+Q6+')">เอากลับ</button></b></div>';}).join('')+'</div>'; } })();
+      if(_br.length){ html+='<div style="margin:4px 0 0;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px"><b style="color:#4338ca">💳 เงินโอนเข้าตรง (ไม่ใช่ K+) '+_br.length+' รายการ รวม '+TH(_br.reduce(function(s,r){return s+(+r.dep||0);},0))+' — เช็กว่าตรงบิลไหน ถ้ายังไม่ตรงดันเข้ารอจับคู่</b>'+_br.map(function(r){ /* 28 ต.ค.69: เงินเช็คขึ้นเงิน ("เช็คเลขที่ …") ที่อยู่ในทะเบียนเช็ครับแล้ว = ไม่ต้องดันเข้ารอจับคู่ */ var _cqN=(String(r.detail||'').match(/เช็คเลขที่\s*(\d+)/)||[])[1], _cqR=_cqN?(window._chqList||[]).filter(function(c){ return c.status==="cleared" && c.cleared_date===date && Math.abs((+c.amount||0)-(+r.dep||0))<=1 && String(c.no||'').replace(/^0+/,'')===_cqN.replace(/^0+/,''); })[0]:null; var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), +r.dep, 'ksk'); var _pp=(!_mb)?((pq&&pq.data)?pq.data:[]).find(function(pp){return pp.source!=="รับเข้าบัญชีอื่น"&&Math.abs((parseFloat(pp.amount)||0)-(+r.dep||0))<=1;}):null; var act=_cqR?('<span style="color:#15803d;font-weight:700">🧾 เช็ค '+esc(_cqR.bank)+' '+esc(_cqR.no)+' อยู่ในทะเบียนเช็ครับ — ไม่ต้องดันเข้ารอจับคู่</span>'):_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):(_pp?('<span style="color:#15803d;font-weight:700">✓ ดันเข้ารอจับคู่แล้ว'+(_pp.matched_bill_no?(' · บิล '+esc(_pp.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="pushTransferPending('+(+r.dep||0)+','+Q6+_jsa(_norm(r.detail).slice(0,40))+Q6+','+Q6+date+Q6+')">ดันเข้ารอจับคู่</button><button class="btn sec" style="padding:2px 8px;margin-left:4px;border-color:#fca5a5;color:#b91c1c" onclick="markRefund('+(+r.dep||0)+','+Q6+_jsa(_norm(r.detail))+Q6+','+Q6+date+Q6+')">🔁 เงินคืน</button>')); return '<div class="kv"><span>'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b>'+TH(r.dep)+' '+act+'</b></div>';}).join('')+'</div>'; }
+      if(_refRows.length){ html+='<div style="margin:4px 0 0;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:8px"><b style="color:#475569">🔁 เงินคืน (ไม่ใช่รายได้ของร้าน) '+_refRows.length+' รายการ รวม '+TH(_refRows.reduce(function(s,r){return s+(+r.dep||0);},0))+' — แยกออกแล้ว ไม่นับเป็นยอดขาย</b>'+_refRows.map(function(r){ return '<div class="kv"><span style="text-decoration:line-through;color:#94a3b8">'+esc((r.ch||'')+' · '+(r.detail||'-'))+'</span><b style="color:#64748b">'+TH(r.dep)+' <button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="unmarkRefund('+(+r.dep||0)+','+Q6+_jsa(_norm(r.detail))+Q6+','+Q6+date+Q6+')">เอากลับ</button></b></div>';}).join('')+'</div>'; } })();
     (function(){ if(!da||!da.bank_rows) return; function _party(s){ s=String(s||'').replace(/\++$/,'').trim(); var m=s.match(/X\d+\s+(.+)$/i); return (m?m[1]:s).trim(); }
       var Q7=String.fromCharCode(39); var _SELF=/กิจมั่งมี/;
       var _pl=((pq&&pq.data)?pq.data:[]);
@@ -1971,8 +1978,43 @@ function nameMatch(a,b){ a=normName(a); b=normName(b); if(a.length<2||b.length<2
 async function confirmSuggest(id, bill){ if(!sb) return; const by=prompt("ยืนยันจับคู่บิล "+bill+" — ผู้ยืนยัน:"); if(by===null) return; const {error}=await sb.from("rev_pending").update({status:"matched",matched_bill_no:bill,matched_date:new Date().toISOString().slice(0,10),confirmed_by:(by||"").trim()}).eq("id",id); if(error){ alert("ไม่สำเร็จ: "+error.message); return; }
   try{ var _pr=await sb.from("rev_pending").select("from_name").eq("id",id).single(); var _br=await sb.from("rev_credit_bills").select("customer").eq("bill_no",bill).single(); if(_pr.data&&_br.data) await rememberPayer(_pr.data.from_name,_br.data.customer,bill); }catch(e){}
   loadPending(); }
+/* 28 ต.ค.69 (คุณหลิงสั่ง): ทะเบียนเช็ครับ — อ่านจาก rev_cheque_register (เช็คจากฟอร์มที่ส่งแล้ว + จับเลขเช็คในสเตทเมนต์) · ยังไม่รัน SQL = ซ่อนการ์ด */
+async function loadChequeReg(){
+  const card=document.getElementById("chqcard"), list=document.getElementById("chqlist"), cnt=document.getElementById("chqcount"); if(!card||!list||!sb) return;
+  if(!(ROLE==="finance"||ROLE==="owner")){ card.style.display="none"; return; }
+  const today=new Date(Date.now()+7*3600e3).toISOString().slice(0,10), from=new Date(Date.parse(today)-120*864e5).toISOString().slice(0,10);
+  window._chqList=[]; /* ล้างก่อนโหลด — รายการเก่าห้ามใช้ซ่อนปุ่มดันเข้ารอจับคู่ (Codex r13 #10) */
+  let r; try{ r=await sb.rpc("rev_cheque_register",{p_from:from,p_to:today}); }catch(e){ r={error:e}; }
+  if(r.error){ const m=String(r.error.message||r.error.code||r.error), cd=String(r.error.code||""); if(cd==="PGRST202"||cd==="42883"){ card.style.display="none"; return; } /* ยังไม่รัน SQL */
+    card.style.display=""; list.innerHTML='<span style="color:#b91c1c">โหลดทะเบียนเช็คไม่ได้: '+esc(m)+'</span>'; cnt.textContent="—"; return; }
+  const L=Array.isArray(r.data)?r.data.filter(function(c){ return c&&typeof c==="object"; }):[]; card.style.display=""; window._chqList=L;
+  const pend=L.filter(function(c){ return c.status==="pending"||c.status==="mismatch"||c.status==="ambiguous"; }), over=pend.filter(function(c){ return c.overdue; });
+  cnt.textContent=pend.length?("ยังไม่ขึ้นเงิน "+pend.length+(over.length?" · เกิน 7 วัน "+over.length:"")):"ไม่มีเช็ครอขึ้นเงิน"; cnt.className="badge "+(over.length?"warn":"info");
+  if(!L.length){ list.innerHTML='<span class="muted">ยังไม่มีเช็คในฟอร์มที่ส่งแล้ว (ย้อน 120 วัน)</span>'; return; }
+  const st=function(c){ return c.status==="bounced"?'<b style="color:#b91c1c">❌ เช็คเด้ง</b>'+(c.bounced_at?' <span class="muted">'+beDate(String(c.bounced_at).slice(0,10))+'</span>':'')
+      : c.status==="cleared"?'<b style="color:#15803d">✅ ขึ้นเงินแล้ว '+beDate(c.cleared_date)+'</b>'
+      : c.status==="ambiguous"?'<b style="color:#b45309">⚠ สเตทเมนต์มีเลขเช็คนี้ แต่มีเช็คต่างธนาคารเลขเดียวกันในทะเบียน — ตรวจเอง</b>'+(c.overdue?'<div style="color:#b45309">⏰ เกิน 7 วัน</div>':'')
+      : c.status==="mismatch"?'<b style="color:#b45309">⚠ สเตทเมนต์มีเลขเช็คนี้ แต่ยอด '+TH(c.stmt_hit&&c.stmt_hit.dep)+' ('+beDate(c.stmt_hit&&c.stmt_hit.date)+') ไม่ตรง — ตรวจเอง</b>'+(c.overdue?'<div style="color:#b45309">⏰ เกิน 7 วัน</div>':'')
+      : (c.overdue?'<b style="color:#b45309">⏰ เกิน 7 วันยังไม่ขึ้นเงิน</b>':'<span style="color:#1d4ed8">⏳ รอขึ้นเงิน</span>'); };
+  list.innerHTML='<div class="scroll"><table><thead><tr><th>เช็ค</th><th>วันที่บนเช็ค</th><th>บิล (วันที่รับ)</th><th class="num">ยอด</th><th>สถานะ</th><th></th></tr></thead><tbody>'+L.map(function(c,i){
+    const bills=(c.bills||[]).map(function(b){ return esc(b.bill)+(b.amt!=null?' '+TH(+b.amt):''); }).join("<br>");
+    const warn=(!c.complete?'<div style="color:#b45309;font-size:12px">⚠ ข้อมูลเช็คไม่ครบ (ไม่ขึ้นพร้อมตัด)</div>':'')+(c.dup_forms?'<div style="color:#b91c1c;font-size:12px">⚠ เลขนี้อยู่ในฟอร์มหลายวัน</div>':'')+(c.date_mismatch?'<div style="color:#b91c1c;font-size:12px">⚠ วันที่บนเช็คไม่ตรงกันในแต่ละแถว</div>':'');
+    const btn=(c.status==="pending"||c.status==="mismatch"||c.status==="ambiguous")?'<button class="btn sec" style="padding:2px 8px" onclick="chequeBounce('+i+')">เช็คเด้ง</button>':'';
+    return '<tr><td><b>'+esc(c.bank)+' '+esc(c.no)+'</b>'+warn+'</td><td>'+(c.cheque_date?beDate(c.cheque_date):'—')+'</td><td>'+bills+'<div class="muted" style="font-size:12px">รับ '+beDate(c.form_date)+'</div></td><td class="num">'+TH(+c.amount)+'</td><td>'+st(c)+(c.bounce_note?'<div class="muted" style="font-size:12px">'+esc(c.bounce_note)+'</div>':'')+'</td><td>'+btn+'</td></tr>'; }).join("")+'</tbody></table></div>';
+}
+/* เช็คเด้ง: อ้างแถวจากรายการที่โหลด (ไม่ต่อข้อความจากฐานเข้า onclick) */
+async function chequeBounce(i){
+  const c=(window._chqList||[])[i]; if(!c||!(ROLE==="finance"||ROLE==="owner")||!sb) return;
+  const note=prompt('บันทึก "เช็คเด้ง" '+c.bank+' '+c.no+'\nหมายเหตุ (เช่น เหตุผลจากธนาคาร):');
+  if(note===null) return;
+  if(!confirm('ยืนยันเช็คเด้ง '+c.bank+' '+c.no+' ?\n\nต่อจากนี้ต้องไปยกเลิกใบเสร็จของบิลที่จ่ายด้วยเช็คนี้ใน ACC เอง ให้บิลกลับมาค้าง')) return;
+  const r=await sb.rpc("rev_cheque_bounce_mark",{p_bank:c.bank,p_no:c.no,p_note:note});
+  if(r.error){ alert("บันทึกไม่สำเร็จ: "+r.error.message); return; }
+  alert((r.data&&r.data.already)?"เช็คนี้บันทึกเด้งไว้แล้ว":"✓ บันทึกเช็คเด้งแล้ว — อย่าลืมยกเลิกใบเสร็จใน ACC"); loadChequeReg();
+}
 async function loadPending(){
   try{ if(window.ensureOwnerSession) await ensureOwnerSession(); }catch(e){}
+  try{ loadChequeReg().catch(function(e){ console.warn("loadChequeReg",e); }); }catch(e){}
   const list=document.getElementById("pendlist"), cnt=document.getElementById("pendcount"); if(!list) return;
   if(!sb){ list.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; cnt.textContent="—"; return; }
   const {data,error}=await sb.from("rev_pending").select("*").eq("status","open").order("date",{ascending:true});
@@ -2708,8 +2750,8 @@ async function taskAlertRun(){
 function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
 <script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
-<script src="bell.js?v=20261024b"></script>
-<script src="cutbill.js?v=20261027b"></script>
+<script src="bell.js?v=20261028a"></script>
+<script src="cutbill.js?v=20261028a"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>
@@ -3311,6 +3353,7 @@ async function renderCut(_again){
   if(R.t.length) h+=_sr("✅ พร้อมตัด — เงินโอน", R.t.length+" บิล · "+TH(cutSum(R.t)));
   if(R.c.length) h+=_sr("✅ พร้อมตัด — เงินสด", R.c.length+" บิล · "+TH(cutSum(R.c)));
   if(OB.ready.length) h+=_sr("🧾 บิลเก่า รอตัด", OB.ready.length+" บิล · "+TH(obSum(OB.ready)));
+  if(OB.chqErr) h+='<div class="muted" style="color:#b45309">⚠ โหลดรายการเช็คของวันนี้ไม่ได้ ('+esc(OB.chqErr)+') — บิลที่จ่ายด้วยเช็คยังไม่ขึ้น ลองเปิดใหม่</div>';
   if(R.appr.length+OB.appr.length) h+=_sr("🕒 อนุมัติแล้ว รอเลขาตัด", (R.appr.length+OB.appr.length)+" บิล"+(_nAuto?" (🤖 กฎ "+_nAuto+")":""));
   if(R.h.length) h+=_sr("⏸ พักไว้", R.h.length+" บิล · "+TH(cutSum(R.h)), "ดูว่าทำไม ›");
   if(unk.length) h+=_sr('<span style="color:#b91c1c">🔎 เลขบิลในชีตโอนหาไม่เจอ</span>', unk.length+" รายการ", "ดู ›");

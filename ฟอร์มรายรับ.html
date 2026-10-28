@@ -70,6 +70,10 @@ table.entry input.ra-lock{background:var(--warn-soft);border-color:transparent;c
 .dbox2 h3{margin:0;font-size:1.05rem}
 .dbox2 input{font-size:1.15rem;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);letter-spacing:.03em;text-transform:uppercase}
 .dbox2 input:focus{border-color:var(--accent);outline:none}
+.dbox2 select{font-size:1.05rem;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);color:inherit}
+.dbox2 input[type=date]{text-transform:none;letter-spacing:0}
+.chqtag{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:6px;background:var(--info-soft,#e0f2fe);color:var(--info,#0369a1);font-size:.78rem;font-weight:700;white-space:nowrap}
+.chqtag.bad{background:var(--bad-soft);color:var(--bad)}
 .dprev{border-radius:8px;padding:10px 12px;font-size:.88rem;background:var(--soft)}
 .dprev.ok{background:var(--ok-soft)} .dprev.bad{background:var(--bad-soft);color:var(--bad)} .dprev.warn{background:var(--warn-soft)}
 .dprev dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:4px 0 0}
@@ -243,6 +247,21 @@ table.cmp td.d{font-weight:700}
     <div class="dacts"><button class="btn" id="depCancel">ยกเลิก</button><button class="btn pri" id="depOk" disabled>บันทึก</button></div>
   </div>
 </div>
+<div class="dlg" id="chqDlg" hidden>
+  <div class="dbox2" role="dialog" aria-labelledby="chqT">
+    <h3 id="chqT">ข้อมูลเช็ค</h3>
+    <p class="hint" id="chqSub"></p>
+    <label class="small" for="chqNo"><b>เลขที่เช็ค</b> <span style="color:var(--bad)">*</span></label>
+    <input id="chqNo" inputmode="numeric" maxlength="12" autocomplete="off" spellcheck="false" placeholder="เช่น 10285848">
+    <label class="small" for="chqBank" style="margin-top:6px"><b>ธนาคาร</b> <span style="color:var(--bad)">*</span></label>
+    <select id="chqBank"><option value="">— เลือกธนาคาร —</option></select>
+    <label class="small" for="chqDate" style="margin-top:6px"><b>วันที่บนเช็ค</b> <span style="color:var(--bad)">*</span></label>
+    <input id="chqDate" type="date">
+    <div class="small">เช็คลงวันที่ล่วงหน้า ให้ใส่วันที่ตามหน้าเช็ค</div>
+    <div class="dprev" id="chqPrev" hidden></div>
+    <div class="dacts"><button class="btn" id="chqCancel">ยกเลิก</button><button class="btn pri" id="chqOk">บันทึก</button></div>
+  </div>
+</div>
 <div id="printArea"></div>
 <div class="modal" id="modal" hidden>
   <div class="mbox" role="dialog" aria-label="ปริ้นฟอร์ม">
@@ -332,7 +351,7 @@ async function loadDay(date){
       const e0=(f.data&&f.data.entries), e=(e0&&typeof e0==='object'&&!Array.isArray(e0))?e0:{};
       /* ค่าในแถวเก็บไว้เฉพาะตัวเลข/ข้อความ (ค่า object/array ทิ้ง ไม่ให้ num()/esc() พัง · Codex r2) */
       const prim=v=>typeof v==='number'?(isFinite(v)?v:''):typeof v==='string'?v:'';
-      const arr=v=>Array.isArray(v)?v.filter(r=>r&&typeof r==='object'&&!Array.isArray(r)).map(r=>{const o={};Object.keys(r).forEach(k=>{if(k==='chq')o.chq=r[k]===true;else if(/^(amt|ra|bill|kp|ks|desc|cn|ch|chqImg)$/.test(k))o[k]=prim(r[k])});return o}):[];
+      const arr=v=>Array.isArray(v)?v.filter(r=>r&&typeof r==='object'&&!Array.isArray(r)).map(r=>{const o={};Object.keys(r).forEach(k=>{if(k==='chq')o.chq=r[k]===true;else if(/^(amt|ra|bill|kp|ks|desc|cn|ch|chqImg|chqNo|chqBank|chqDate)$/.test(k))o[k]=prim(r[k])});return o}):[];
       const s={rcash:arr(e.rcash),scash:arr(e.scash),xfer:arr(e.xfer),credit:arr(e.credit),oldc:arr(e.oldc),oldx:arr(e.oldx),upk:arr(e.upk),
          other:arr(e.other),refund:arr(e.refund),photo:null,count:typeof e.count==='number'?(isFinite(e.count)?e.count:''):(typeof e.count==='string'&&e.count!=='')?(parseAmt(e.count).ok?parseAmt(e.count).v:e.count):''};
       /* ใช้เฉพาะวันที่ยืนยันแล้ว (status ตรวจแล้ว) · อ่านไม่สำเร็จ แยกจาก "ยังไม่มี" (Codex r1 #4) */
@@ -375,7 +394,7 @@ const normRow=r=>{ const o={...r}; ['amt','kp','ks'].forEach(f=>{ if(f in o) o[f
 function storedAmtBad(writable){ const all=!writable||TRIAL; const ks={rcash:['amt'],scash:['amt'],xfer:['kp','ks'],credit:['amt'],oldc:['amt'],oldx:['amt'],upk:['amt']}; if(all){ ks.other=['amt']; ks.refund=['amt']; }
   return Object.keys(ks).some(k=>(S[k]||[]).some(r=>ks[k].some(f=>!validStored(r[f]))))||(all&&!validStored(S.count)); }
 function amtProblems(){ return Object.keys(BADAMT).length+(storedAmtBad()?1:0); }
-function entriesOf(){ const pick=a=>(a||[]).filter(r=>Object.entries(r).some(([k,v])=>k!=='raN'&&k!=='ch'&&k!=='chq'&&k!=='chqImg'&&v!==''&&v!=null)).map(normRow);
+function entriesOf(){ const pick=a=>(a||[]).filter(r=>Object.entries(r).some(([k,v])=>k!=='raN'&&k!=='ch'&&k!=='chq'&&k!=='chqImg'&&k!=='chqNo'&&k!=='chqBank'&&k!=='chqDate'&&v!==''&&v!=null)).map(normRow);
   const e={rcash:pick(S.rcash).map(r=>({amt:r.amt,ra:r.ra||''})),scash:pick(S.scash),xfer:pick(S.xfer),credit:pick(S.credit),oldc:pick(S.oldc),oldx:pick(S.oldx),upk:pick(S.upk)};
   if(TRIAL){ e.other=pick(S.other).map(r=>({desc:r.desc||'',amt:r.amt,ch:r.ch==='xfer'?'xfer':'cash'})); e.refund=pick(S.refund).map(r=>({bill:r.bill||'',cn:r.cn||'',amt:r.amt,ch:r.ch==='xfer'?'xfer':'cash'})); e.count=normAmt(S.count); }
   return e; }
@@ -436,7 +455,7 @@ function renderTabs(R){
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{cur=b.dataset.t;renderAll()});
 }
 /* ---------- rows ---------- */
-function rowsWithBlank(arr,blank){const a=arr.slice();const last=a[a.length-1];if(!last||Object.entries(last).some(([k,v])=>k!=='chq'&&k!=='chqImg'&&v!==''&&v!=null&&v!==0))a.push({...blank});return a}
+function rowsWithBlank(arr,blank){const a=arr.slice();const last=a[a.length-1];if(!last||Object.entries(last).some(([k,v])=>k!=='chq'&&k!=='chqImg'&&k!=='chqNo'&&k!=='chqBank'&&k!=='chqDate'&&v!==''&&v!=null&&v!==0))a.push({...blank});return a}
 function billCell(key,i,r,R){
   const info=R.rowInfo[key+':'+i]||{};
   const dep=key==='scash'||key==='xfer';const ra=isRA(r.bill||'');
@@ -455,18 +474,75 @@ function amtInput(key,i,f,v,ph){const bad=BADAMT[`${key}_${f}_${i}`];return `<in
 const CHQ_PATH_RE=/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\/\d{10,16}-chq\.jpg$/;
 /* รูปเช็คต้องอยู่ในโฟลเดอร์ของวันที่ฟอร์มนี้เท่านั้น (Codex v074 #7) */
 const chqOk=p=>CHQ_PATH_RE.test(String(p||''))&&String(p).startsWith(DATA.date+'/');
+/* 28 ต.ค.69 (คุณหลิงสั่ง): ข้อมูลเช็ค เลขที่ + ธนาคาร + วันที่บนเช็ค (บังคับ) + รูป = หลักฐานพอ ตัดบิลวันที่รับเช็คได้เลย (ใบเสร็จประเภทเช็ค) · เงินเข้า = งานการเงินหลังบ้าน (ทะเบียนเช็ครับ)
+   แถวเก็บ chqNo (ตัวเลข) · chqBank (จากรายการ) · chqDate (YYYY-MM-DD) · เช็คใบเดียวจ่ายหลายบิล = หลายแถวเลข+ธนาคารเดียวกัน วันที่บนเช็คต้องตรงกัน · เลขเดียวกันในฟอร์มวันอื่น = ซ้ำ บันทึกไม่ได้ */
+const CHQ_BANKS=['กรุงไทย','กสิกร','กรุงเทพ','ไทยพาณิชย์','กรุงศรี','ทหารไทยธนชาต','ออมสิน','ธ.ก.ส.','UOB','อื่นๆ'];
+const CHQ_NO_RE=/^\d{6,12}$/, ISO_RE=/^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/* วันที่ต้องมีจริง (2026-02-30 ไม่ผ่าน) — ตรงกับที่ฐานตรวจ (Codex r13) */
+const isoReal=d=>ISO_RE.test(String(d||''))&&new Date(d+'T00:00:00Z').toISOString().slice(0,10)===d;
+const chqKey=no=>String(no||'').replace(/^0+/,'');
+const chqInfoOk=r=>!!(r&&CHQ_NO_RE.test(String(r.chqNo||''))&&chqKey(r.chqNo)!==''&&CHQ_BANKS.includes(r.chqBank)&&isoReal(r.chqDate));
+const chqDmy=iso=>{ const p=String(iso||'').split('-'); return p.length===3?`${+p[2]}/${+p[1]}/${String(+p[0]+543).slice(2)}`:''; };
+function chqTag(i,r){ if(!r||!r.chq) return '';
+  return chqInfoOk(r)?`<div class="chqtag">เช็ค ${esc(r.chqBank)} ${esc(r.chqNo)} · ${chqDmy(r.chqDate)}</div>${canEdit()?`<a href="#" class="small" data-chqedit="${i}">แก้ไข</a>`:''}`
+    :`<div class="chqtag bad">ยังไม่กรอกข้อมูลเช็ค</div>${canEdit()?`<a href="#" class="small" data-chqedit="${i}">กรอกข้อมูลเช็ค</a>`:''}`; }
 function chqCells(i,r){
   const has=!!r.chq, img=chqOk(r.chqImg);
   const ph=!has?'':TRIAL?'<span class="small">โหมดทดลองไม่ต้องแนบรูป</span>'
-    :img?`<button class="btn" type="button" data-chqview="${i}" style="padding:2px 8px;font-size:.8rem">ดูรูปเช็ค</button> <label class="btn" style="padding:2px 8px;font-size:.8rem">เปลี่ยนรูป<input type="file" accept="image/*" capture="environment" data-chqup="${i}" hidden></label>`
-    :`<label class="btn" style="padding:2px 8px;font-size:.8rem;border-color:var(--bad);color:var(--bad)">📷 แนบรูปเช็ค<input type="file" accept="image/*" capture="environment" data-chqup="${i}" hidden></label>`;
+    :img?`<button class="btn" type="button" data-chqview="${i}" style="padding:2px 8px;font-size:.8rem">ดูรูปเช็ค</button> <label class="btn" style="padding:2px 8px;font-size:.8rem">📎 เปลี่ยน<input type="file" accept="image/*" capture="environment" data-chqup="${i}" hidden></label>`
+    :`<label class="btn" style="padding:2px 8px;font-size:.8rem;border-color:var(--bad);color:var(--bad)">📎 แนบรูปเช็ค<input type="file" accept="image/*" capture="environment" data-chqup="${i}" hidden></label>`;
   return `<td class="depc"><input type="checkbox" id="oldx_chq_${i}" data-chq="${i}" ${has?'checked':''} aria-label="จ่ายด้วยเช็ค"></td><td>${ph}</td>`;
 }
+let chqCtx=null;
+function openChq(i){ const r=S.oldx[i]; if(!r||!canEdit()) return;
+  chqCtx={i, r, tok:_loadTok, date:DATA.date, wasChq:!!r.chq && chqInfoOk(r)};
+  document.getElementById('chqSub').textContent=`บิล ${r.bill||'—'} · ยอด ${r.amt===''||r.amt==null?'—':fmt(num(r.amt))}`;
+  const sel=document.getElementById('chqBank'); if(sel.options.length<2) CHQ_BANKS.forEach(b=>{ const o=document.createElement('option'); o.value=b; o.textContent=b; sel.appendChild(o); });
+  /* เช็คใบเดียวจ่ายหลายบิล: แถวใหม่ตั้งค่าเริ่มจากเช็คแถวก่อนหน้าในฟอร์ม (แก้ได้) */
+  const prev=chqInfoOk(r)?null:(S.oldx.slice(0,i).reverse().find(x=>x&&x.chq&&chqInfoOk(x))||null);
+  document.getElementById('chqNo').value=chqInfoOk(r)?r.chqNo:(prev?prev.chqNo:'');
+  sel.value=chqInfoOk(r)?r.chqBank:(prev?prev.chqBank:'');
+  document.getElementById('chqDate').value=chqInfoOk(r)?r.chqDate:(prev?prev.chqDate:DATA.date);
+  const pv=document.getElementById('chqPrev'); pv.hidden=true; pv.textContent='';
+  document.getElementById('chqOk').disabled=false;
+  document.getElementById('chqDlg').hidden=false; setTimeout(()=>document.getElementById('chqNo').focus(),30); }
+function chqMsg(t,lv){ const pv=document.getElementById('chqPrev'); pv.className='dprev '+(lv||'bad'); pv.textContent=t; pv.hidden=!t; }
+/* เลข+ธนาคารเดียวกัน เคยลงในฟอร์มวันอื่น = ซ้ำ · อ่านไม่ได้ = ไม่ให้บันทึก (กันลงซ้ำโดยไม่รู้) */
+async function chqDupOther(no,bank){
+  /* อ่านฟอร์มวันอื่นที่มีแถวเช็ค แล้วเทียบเลขแบบตัด 0 หน้า (0010285848 = 10285848) */
+  const q=await sb.from(FORM_TABLE).select('date,oldx:entries->oldx').neq('date',DATA.date).contains('entries',{oldx:[{chq:true}]});
+  if(q.error) throw q.error;
+  return (q.data||[]).filter(f=>Array.isArray(f.oldx)&&f.oldx.some(x=>x&&x.chq===true&&chqKey(x.chqNo)===chqKey(no)&&x.chqBank===bank)).map(f=>f.date); }
+async function closeChq(save){
+  const c=chqCtx; if(!c) return;
+  if(!save){ document.getElementById('chqDlg').hidden=true; chqCtx=null;
+    /* ยกเลิก = เอาติ๊กเช็คออก (ถ้ายังไม่เคยบันทึกข้อมูลเช็คของแถวนี้) · แก้ไขแล้วยกเลิก = คงค่าเดิม */
+    if(!c.wasChq && S.oldx[c.i]===c.r && c.tok===_loadTok){ delete c.r.chq; delete c.r.chqImg; delete c.r.chqNo; delete c.r.chqBank; delete c.r.chqDate; CHQ_TOK.delete(c.r); scheduleSave(); }
+    renderAll(); return; }
+  const no=document.getElementById('chqNo').value.replace(/[\s-]/g,''), bank=document.getElementById('chqBank').value, d=document.getElementById('chqDate').value;
+  if(!CHQ_NO_RE.test(no)||chqKey(no)==='') return chqMsg('เลขที่เช็คต้องเป็นตัวเลข 6–12 หลัก');
+  if(!CHQ_BANKS.includes(bank)) return chqMsg('เลือกธนาคาร');
+  if(!isoReal(d)) return chqMsg('ใส่วันที่บนเช็ค');
+  const same=S.oldx.find((x,j)=>j!==c.i&&x&&x.chq&&chqKey(x.chqNo)===chqKey(no)&&x.chqBank===bank);
+  if(same&&same.chqDate!==d) return chqMsg(`เช็ค ${bank} ${no} ในฟอร์มนี้ลงวันที่บนเช็ค ${chqDmy(same.chqDate)} — เช็คใบเดียวกันวันที่ต้องตรงกัน`);
+  const ok=document.getElementById('chqOk'); ok.disabled=true; chqMsg('กำลังตรวจเลขเช็คซ้ำ…','warn');
+  let dup;
+  try{ dup=await chqDupOther(no,bank); }catch(err){ ok.disabled=false; return chqMsg('ตรวจเลขเช็คซ้ำไม่ได้ ('+(err.message||err)+') — ลองใหม่'); }
+  if(chqCtx!==c) return;
+  ok.disabled=false;
+  if(dup.length) return chqMsg(`เช็ค ${bank} ${no} เคยลงไว้ในฟอร์มวันที่ ${dup.map(beDate).join(', ')} แล้ว — บันทึกซ้ำไม่ได้`);
+  /* ระหว่างตรวจ เปลี่ยนวัน/โหลดใหม่/แถวถูกลบ = ไม่บันทึก */
+  if(c.tok!==_loadTok||c.date!==DATA.date||S.oldx[c.i]!==c.r||!canEdit()){ document.getElementById('chqDlg').hidden=true; chqCtx=null; setChip('saveChip','warn','แถวเปลี่ยนระหว่างตรวจเช็ค — กรอกข้อมูลเช็คใหม่'); renderAll(); return; }
+  c.r.chq=true; c.r.chqNo=no; c.r.chqBank=bank; c.r.chqDate=d; if(!CHQ_TOK.has(c.r)) CHQ_TOK.set(c.r,{n:++_chqSeq});
+  document.getElementById('chqDlg').hidden=true; chqCtx=null; renderAll(); scheduleSave(); }
+document.getElementById('chqOk').onclick=()=>closeChq(true);
+document.getElementById('chqCancel').onclick=()=>closeChq(false);
+['chqNo','chqBank','chqDate'].forEach(id=>{ document.getElementById(id).onkeydown=e=>{ if(e.key==='Enter'&&!document.getElementById('chqOk').disabled){ e.preventDefault(); closeChq(true); } if(e.key==='Escape') closeChq(false); }; });
 function paneBillAmt(key,title,hint,R){
   const rows=rowsWithBlank(S[key],{bill:'',amt:''});
   const tot=S[key].reduce((s,r)=>s+num(r.amt),0), cq=key==='oldx';
-  return `<div class="pane"><h2>${title}</h2><p class="hint">${hint}${hint?' · ':''}${cq?'ลูกค้าจ่ายด้วยเช็ค ติ๊กช่อง "เช็ค" แล้วถ่ายรูปเช็คแนบ (ไม่ติ๊ก = โอน K+/กสิกร ปกติ) · ':''}Enter ไปช่องถัดไป · ลูกศร ↑↓←→ เลื่อนช่องเหมือน Excel</p><div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th>${key==='scash'?'<th class="depc">มัดจำ</th>':''}<th>ชื่อร้าน (จาก ACC)</th><th style="text-align:right">ยอดเงิน</th>${cq?'<th class="depc">เช็ค</th><th>รูปเช็ค</th>':''}<th>ตรวจ</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${billCell(key,i,r,R)}<td style="width:9em">${amtInput(key,i,'amt',r.amt)}</td>${cq?chqCells(i,r):''}${stCell(key,i,R)}</tr>`).join('')}
+  return `<div class="pane"><h2>${title}</h2><p class="hint">${hint}${hint?' · ':''}${cq?'ลูกค้าจ่ายด้วยเช็ค ติ๊กช่อง "เช็ค" แล้วกรอกข้อมูลเช็ค + แนบรูป (ไม่ติ๊ก = โอน K+/กสิกร ปกติ) · ':''}Enter ไปช่องถัดไป · ลูกศร ↑↓←→ เลื่อนช่องเหมือน Excel</p><div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th>${key==='scash'?'<th class="depc">มัดจำ</th>':''}<th>ชื่อร้าน (จาก ACC)</th><th style="text-align:right">ยอดเงิน</th>${cq?'<th class="depc">เช็ค</th><th>รูปเช็ค</th>':''}<th>ตรวจ</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${cq?billCell(key,i,r,R).replace('</td>',chqTag(i,r)+'</td>'):billCell(key,i,r,R)}<td style="width:9em">${amtInput(key,i,'amt',r.amt)}</td>${cq?chqCells(i,r):''}${stCell(key,i,R)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td colspan="${key==='scash'?3:2}">ยอดรวม</td><td style="text-align:right">${totTxt(key,tot)}</td>${cq?'<td colspan="2"></td>':''}<td></td></tr></tfoot></table></div></div>`;
 }
 function paneRcash(R){
@@ -666,8 +742,9 @@ function compute(){
   Object.keys(nameOfBox).forEach(k=>(S[k]||[]).forEach((r,i)=>{ const bad=(k==='xfer'?['kp','ks']:['amt']).filter(f=>!validStored(r[f]));
     if(bad.length){ const t=k==='other'||k==='refund'?'ex':tabOf(k); R.rowInfo[k+':'+i]={lv:'bad',st:'ยอดไม่ถูกต้อง'}; bump(t,'bad'); R.issues.push({lv:'bad',block:true,code:'amt',t:`${nameOfBox[k]} แถว ${i+1}: ยอด "${bad.map(f=>r[f]).join(', ')}" ไม่ถูกต้อง`,d:(!TRIAL&&(k==='other'||k==='refund'))?'ยอดต้องเป็นตัวเลขบวก — แก้ที่กล่องในหน้าตรวจรายได้':'ยอดต้องเป็นตัวเลขบวก — แก้ที่ช่องนั้น',tab:t}); } }));
   (S.oldx||[]).forEach((r,i)=>{ if(!r.chq||(!r.bill&&r.amt==='')) return;
+    if(!chqInfoOk(r)){ R.issues.push({lv:'bad',block:true,code:'chq',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค ยังไม่กรอกข้อมูลเช็ค (เลขที่/ธนาคาร/วันที่บนเช็ค)`,d:'กด "กรอกข้อมูลเช็ค" ใต้เลขบิล',tab:'old'}); bump('old','bad'); }
     if(TRIAL) R.issues.push({lv:'info',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค (โหมดทดลองไม่ต้องแนบรูป)`,tab:'old'});
-    else if(!chqOk(r.chqImg)){ R.issues.push({lv:'bad',block:true,code:'chq',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค ยังไม่ได้แนบรูปเช็ค`,d:'กด "📷 แนบรูปเช็ค" ในแท็บบิลเก่า',tab:'old'}); bump('old','bad'); } });
+    else if(!chqOk(r.chqImg)){ R.issues.push({lv:'bad',block:true,code:'chq',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค ยังไม่ได้แนบรูปเช็ค`,d:'กด "📎 แนบรูปเช็ค" ในแท็บบิลเก่า',tab:'old'}); bump('old','bad'); } });
   Object.entries(BADAMT).forEach(([id,b])=>{ const k=id.split('_')[0], t=id==='cnt_amt_0'?'sum':(k==='other'||k==='refund')?'ex':tabOf(k);
     R.issues.push({lv:'bad',block:true,code:'amt',t:`ช่องยอดที่พิมพ์ "${b.raw}" ยังไม่ถูกต้อง — ยังไม่ได้บันทึก`,d:b.why,tab:t}); bump(t,'bad'); });
   if(!validStored(S.count)) R.issues.push({lv:'bad',block:true,code:'amt',t:`ยอดเงินสดที่นับได้ "${S.count}" ไม่ถูกต้อง`,d:TRIAL?'ต้องเป็นตัวเลขบวก — แก้ที่แท็บสรุปรายรับ':'ต้องเป็นตัวเลขบวก — แก้ที่กล่องใบนับเงินสดในหน้าตรวจรายได้',tab:'sum'});
@@ -908,8 +985,10 @@ function bind(){
   document.querySelectorAll('#panes [data-chq]').forEach(cb=>cb.onchange=()=>{ const i=+cb.dataset.chq, r=S.oldx[i];
     /* ติ๊กได้เฉพาะแถวที่มีเลขบิลหรือยอดแล้ว · เอาติ๊กออก = ล้างรูปที่ผูกไว้ด้วย (ไฟล์เดิมยังอยู่ในที่เก็บ) */
     if(!canEdit()||!r||(!r.bill&&r.amt==='')){ if(canEdit()&&cb.checked) setChip('saveChip','warn','ใส่เลขบิลและยอดก่อน แล้วค่อยติ๊กเช็ค'); renderAll(); return; }
-    if(cb.checked){ r.chq=true; CHQ_TOK.set(r,{n:++_chqSeq}); } else { delete r.chq; delete r.chqImg; CHQ_TOK.delete(r); }
+    if(cb.checked){ r.chq=true; CHQ_TOK.set(r,{n:++_chqSeq}); renderAll(); openChq(i); return; } /* ติ๊ก = เด้งหน้าต่างข้อมูลเช็ค (ยกเลิก = เอาติ๊กออก) */
+    delete r.chq; delete r.chqImg; delete r.chqNo; delete r.chqBank; delete r.chqDate; CHQ_TOK.delete(r);
     renderAll(); scheduleSave(); });
+  document.querySelectorAll('#panes [data-chqedit]').forEach(a=>a.onclick=e=>{ e.preventDefault(); openChq(+a.dataset.chqedit); });
   document.querySelectorAll('#panes [data-chqup]').forEach(fi=>fi.onchange=()=>{ const f=fi.files&&fi.files[0]; if(f) uploadChq(+fi.dataset.chqup,f); });
   document.querySelectorAll('#panes [data-chqview]').forEach(b=>b.onclick=async()=>{ const r=S.oldx[+b.dataset.chqview]; if(!r||!chqOk(r.chqImg)) return;
     const w=window.open('','_blank'); try{ const u=await sb.storage.from('revenue-slips').createSignedUrl(r.chqImg,600); if(u.error||!u.data) throw u.error||new Error('ไม่พบรูป'); if(w) w.location=u.data.signedUrl; }catch(err){ if(w) w.close(); setChip('saveChip','bad','เปิดรูปเช็คไม่ได้: '+(err.message||err)); } });
@@ -986,7 +1065,7 @@ function commit(el){
   S[k][i][f]=v;
   // drop fully empty rows except trailing
   const n0=S[k].length;
-  S[k]=S[k].filter(r=>Object.entries(r).some(([kk,vv])=>kk!=='raN'&&kk!=='ch'&&kk!=='chq'&&kk!=='chqImg'&&vv!==''&&vv!=null));
+  S[k]=S[k].filter(r=>Object.entries(r).some(([kk,vv])=>kk!=='raN'&&kk!=='ch'&&kk!=='chq'&&kk!=='chqImg'&&kk!=='chqNo'&&kk!=='chqBank'&&kk!=='chqDate'&&vv!==''&&vv!=null));
   /* แถวนี้ (i) ถูกตัด → ค่าค้างของแถว i ทิ้ง · แถวหลังจากนั้นเลื่อนเลขลง 1 (Codex v074 r2 #1) */
   if(S[k].length<n0){ const nb={}; Object.entries(BADAMT).forEach(([id,b])=>{ const m=id.match(/^([a-z]+)_([a-z]+)_(\d+)$/); if(!m||m[1]!==k){ nb[id]=b; return; } const n=+m[3]; if(n===i) return; nb[n>i?`${m[1]}_${m[2]}_${n-1}`:id]=b; }); BADAMT=nb; }
   renderAll();scheduleSave();

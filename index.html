@@ -177,7 +177,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.5</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.7</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -1162,7 +1162,7 @@ async function carryInK(date,xfer){
   out.sum=Math.round(out.sum*100)/100; return out;
 }
 async function kskDepAdj(date,xfer,pend,brows,cns){
-  var out={pre:0,preRows:[],nxtRows:[],oth:0,othRows:[]};
+  var out={pre:0,preRows:[],nxtRows:[],pastRows:[],oth:0,othRows:[]};
   try{
     if(!sb||!date) return out;
     var xf=(xfer||[]).filter(function(x){return (+x.ksk||0)>0&&x.bill;});
@@ -1229,11 +1229,23 @@ async function kskDepAdj(date,xfer,pend,brows,cns){
         if(amt>0.5){ out.oth+=amt; out.othRows.push({ref:"มัดจำ "+(d.customer||d.deposit_no||""),amt:amt}); }
       });
     }
+    /* v0.7.7 (28 ต.ค.69 คุณหลิงสั่ง): บิลที่เงินโอนเข้ามาก่อนวันเปิดบิล (ย้อน 7 วัน) — กติกาเดียวกับการ์ดตัดบิล (RevCut.pastAdj ใน cutbill.js)
+       เคส 27/10 KM6910-1115 9,325 เข้ากสิกร 26/10 → ธงเกินสเตทเมนต์หลอก · ข้ามบิลที่หักด้วยมัดจำข้างบนแล้ว/มีมัดจำผูก (กันหักซ้ำ) */
+    if(window.RevCut && RevCut.pastAdj){ var _sk={};
+      out.preRows.concat(out.nxtRows).forEach(function(x){ _sk[String(x.bill||"").trim()]=1; });
+      (((dq&&dq.data)||[])).forEach(function(d){ if(d.status!=="cancelled"&&d.matched_bill_no) _sk[String(d.matched_bill_no).trim()]=1; });
+      var _pa=await RevCut.pastAdj(date, xfer, brows, _sk); out.pastErr=_pa.err;
+      _pa.rows.forEach(function(r){ out.pre+=r.amt; out.pastRows.push(r); }); out.pastHeld=_pa.held||[]; }
   }catch(e){ console.warn("kskDepAdj",e); }
   out.pre=Math.round(out.pre*100)/100; out.oth=Math.round(out.oth*100)/100; return out;
 }
+/* v0.7.7: บิลที่อาจเป็นเงินโอนก่อนวันเปิดบิล แต่ยังหักไม่ได้ (เจอหลายก้อน/มีรายการอื่นอ้าง/ยังไม่อนุมัติ) — แสดงในกล่องธงแดงให้คนตรวจ */
+function kskHeldNote(adj){ var L=(adj&&adj.pastHeld)||[]; if(!L.length) return "";
+  return '<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">ℹ️ อาจเป็นเงินโอนก่อนวันเปิดบิล แต่ยังไม่หัก</div>'
+    + L.map(function(x){ return '<div style="padding:1px 0 1px 14px"><span style="font-family:monospace">'+esc(x.bill)+'</span> '+TH(x.amt)+' <span style="color:#78716c">· '+esc(x.why)+' — ตรวจแล้วอนุมัติในการ์ดตัดบิล ธงจะหักให้เอง</span></div>'; }).join('')+'</div>'; }
 function kskAdjNote(adj){ if(!adj||(!(adj.pre>1)&&!(adj.oth>1))) return "";
   var _nx=(adj.nxtRows||[]), _nxs=_nx.reduce(function(s,x){ return s+(+x.amt||0); },0);
+  var _pr=(adj.pastRows||[]), _prs=_pr.reduce(function(s,x){ return s+(+x.amt||0); },0); /* v0.7.7 เงินโอนก่อนวันเปิดบิล */
   /* v0.3.4 — จัดเป็นรายการอ่านง่าย (เดิมเป็นย่อหน้ายาวบรรทัดเดียว) · รวมรายการที่เข้าบิลเดียวกัน */
   var row=function(a,b,c){ return '<div style="display:flex;gap:10px;padding:1px 0 1px 14px"><span style="min-width:96px;font-family:monospace">'+a+'</span><span style="min-width:74px;text-align:right">'+b+'</span><span style="color:#78716c">'+c+'</span></div>'; };
   var h='<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">ℹ️ หักรายการข้ามวันให้แล้ว</div>';
@@ -1241,9 +1253,13 @@ function kskAdjNote(adj){ if(!adj||(!(adj.pre>1)&&!(adj.oth>1))) return "";
     h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(_nxs)+'</b> · มัดจำที่ลงในฟอร์มแต่เงินไม่ได้เข้าวันนี้</div>'
       + _nx.map(function(x){ return row(esc(x.bill), TH(x.amt), esc(x.why)); }).join('');
   }
-  if(adj.pre-_nxs>1){
+  if(_prs>1){
+    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(_prs)+'</b> · เงินโอนเข้ามาก่อนวันเปิดบิล (ย้อน 7 วัน กติกาเดียวกับการ์ดตัดบิล)</div>'
+      + _pr.map(function(x){ return row(esc(x.bill), TH(x.amt), 'เงินเข้า '+esc(beDate(x.d).slice(0,5))+' (โอนก่อนวันเปิดบิล'+(x.appr?' · อนุมัติตัดแล้ว':'')+')'); }).join('');
+  }
+  if(adj.pre-_nxs-_prs>1){
     var g={}, order=[]; (adj.preRows||[]).forEach(function(x){ var k=String(x.bill||'-'); if(!g[k]){ g[k]={amt:0,cust:[],d:[]}; order.push(k); } g[k].amt+=(+x.amt||0); if(g[k].cust.indexOf(x.cust)<0) g[k].cust.push(x.cust); var bd=beDate(x.d).slice(0,5); if(g[k].d.indexOf(bd)<0) g[k].d.push(bd); });
-    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(adj.pre-_nxs)+'</b> · มัดจำที่โอนเข้าบัญชีมาก่อน</div>'
+    h+='<div style="margin-top:3px">ฝั่งฟอร์ม <b>−'+TH(adj.pre-_nxs-_prs)+'</b> · มัดจำที่โอนเข้าบัญชีมาก่อน</div>'
       + order.map(function(k){ return row(esc(k), TH(g[k].amt), esc(g[k].cust.join(', '))+' · เข้า '+g[k].d.join(', ')); }).join('');
   }
   if(adj.oth>1){
@@ -1857,8 +1873,8 @@ async function renderDay(date, edit){
       if(_gb>1){ var _fl=_otherAcct.filter(function(x){return /สเตทเมนต์|กสิกร/.test(x.ref||"")||x.source==="รับเข้าบัญชีอื่น";});
         var _fs=Math.round(_fl.reduce(function(t,x){return t+(parseFloat(x.amount)||0);},0)*100)/100;
         if(_fs>=_gb-1){ html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — ติดธงรับเข้าบัญชีอื่นแล้ว</b>'+_note+'</div>'; }
-        else { html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🚩 โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — เงินไม่เข้าบัญชีร้าน ต้องติดธง+แนบสลิป</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fa)+' − โอนเข้าตรงตามสเตทเมนต์ '+TH(_sa)+')</div>'+_note+'<button class="btn sec" style="padding:3px 10px;margin:6px 0 0" onclick="prefillOtherAcct('+_gb+','+Q8+date+Q8+','+Q8+'โอนกสิกรเกินสเตทเมนต์-บัญชีอื่น ('+beDate(date)+')'+Q8+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } }
-      else { html+='<div class="kv"><span>โอนกสิกร (ฟอร์ม) vs โอนเข้าตรง (สเตทเมนต์)</span><b style="color:#15803d">'+TH(_fa)+' vs '+TH(_sa)+' ✓</b></div>'+((_adj.pre>1||_adj.oth>1)?('<div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(_fks)+' · สเตทเมนต์ '+TH(_sd)+'</div>'+_note):''); }
+        else { html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🚩 โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — เงินไม่เข้าบัญชีร้าน ต้องติดธง+แนบสลิป</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fa)+' − โอนเข้าตรงตามสเตทเมนต์ '+TH(_sa)+')</div>'+_note+kskHeldNote(_adj)+'<button class="btn sec" style="padding:3px 10px;margin:6px 0 0" onclick="prefillOtherAcct('+_gb+','+Q8+date+Q8+','+Q8+'โอนกสิกรเกินสเตทเมนต์-บัญชีอื่น ('+beDate(date)+')'+Q8+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } }
+      else { html+='<div class="kv"><span>โอนกสิกร (ฟอร์ม) vs โอนเข้าตรง (สเตทเมนต์)</span><b style="color:#15803d">'+TH(_fa)+' vs '+TH(_sa)+' ✓</b></div>'+(_gb<-1?('<div class="muted" style="margin:2px 0 0">สเตทเมนต์มากกว่าฟอร์ม '+TH(-_gb)+' = เงินเข้าที่ฟอร์มไม่ได้ลง (ดูใน "เงินรอจับคู่")</div>'):'')+((_adj.pre>1||_adj.oth>1)?('<div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(_fks)+' · สเตทเมนต์ '+TH(_sd)+'</div>'+_note):''); }
     })();
     (function(){ var _all=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(!_all.length) return; var Q6=String.fromCharCode(39);
       function _norm(s){ return String(s||'').replace(/['"]/g,'').slice(0,60); }
@@ -2750,8 +2766,8 @@ async function taskAlertRun(){
 function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
 <script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
-<script src="bell.js?v=20261028a"></script>
-<script src="cutbill.js?v=20261028a"></script>
+<script src="bell.js?v=20261028b"></script>
+<script src="cutbill.js?v=20261028b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>

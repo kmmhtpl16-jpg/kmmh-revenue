@@ -245,6 +245,25 @@
     return out;
   }
 
+  /* v0.9.9 (28 ต.ค.69 คุณหลิงสั่ง): ฝั่งบัญชี หักบิลที่เงินโอนเข้ามาก่อนวันเปิดบิล (ย้อน 7 วัน) — กติกาเดียวกับหน้ารายละเอียดวัน/การ์ดตัดบิล (RevCut.pastAdj ใน cutbill.js)
+     ข้ามบิลที่มีมัดจำผูก (สูตรเดิมหักแล้ว) · โหลด cutbill.js/ข้อมูลย้อนหลังไม่ได้ = ไม่หัก (เตือนตามเดิม) · เคส 27/10 KM6910-1115 9,325 เข้า 26/10 */
+  var _rcP=null;
+  function needRevCut(){ if(window.RevCut && window.RevCut.pastAdj) return Promise.resolve(true); if(_rcP) return _rcP;
+    _rcP=new Promise(function(res){ try{ var s=document.createElement("script"); s.src="cutbill.js?v=20261028b";
+      s.onload=function(){ res(!!(window.RevCut && window.RevCut.pastAdj)); }; s.onerror=function(){ _rcP=null; res(false); }; document.head.appendChild(s); }catch(e){ _rcP=null; res(false); } });
+    return _rcP; }
+  async function pastGapAdj(gaps, audits, dailies, deps, flagged){
+    if(!gaps.some(function(g){ return g.b>1; }) || !(await needRevCut())) return gaps;
+    var A={}, D={}, dp={}, out=gaps.slice(); out.parts=gaps.parts;
+    audits.forEach(function(a){ A[String(a.date).slice(0,10)]=a; }); dailies.forEach(function(d){ D[String(d.date).slice(0,10)]=d; });
+    (deps||[]).forEach(function(d){ if(d.status!=="cancelled" && d.matched_bill_no) dp[String(d.matched_bill_no).trim()]=1; });
+    for(var i=out.length-1; i>=0; i--){ var g=out[i]; if(!(g.b>1)) continue; var a=A[g.date], d=D[g.date]; if(!a||!d) continue;
+      var pa=await window.RevCut.pastAdj(g.date, a.xfer||[], d.bank_rows||null, dp); if(!(pa.amt>0.5)) continue;
+      var nb=r2(g.b-pa.amt); nb=(nb>1)?nb:0; var k=(g.k>1)?g.k:0, left=r2(k+nb-(flagged[g.date]||0));
+      if(k+nb<=1 || left<=1) out.splice(i,1); else out[i]=Object.assign({}, g, {b:nb, left:left, past:pa.rows}); }
+    return out;
+  }
+
   /* ---------- ตรวจข้อมูล ---------- */
   async function collect(){
     var R=role();
@@ -361,6 +380,7 @@
         if(!cutB[b] || k<cutB[b]) cutB[b]=k;
       });
       var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS), cutB, gDep, gPend);
+      gaps=await pastGapAdj(gaps, gAud, gDay, gDep, flg);
       if(gaps.length){
         gaps.sort(function(a,b){ return a.date<b.date?1:-1; });
         var gsum=r2(gaps.reduce(function(s,x){ return s+x.left; },0));
@@ -434,7 +454,7 @@
     }catch(e){ console.warn("bell", e); }
   }
   window.__bellRefresh=run;
-  window.__bellGapDays=gapDays; /* hook สำหรับตรวจสอบ/ทดสอบ — เรียกด้วยข้อมูลจริงได้จาก console */
+  window.__bellGapDays=gapDays; window.__bellPastGapAdj=pastGapAdj; /* hook สำหรับตรวจสอบ/ทดสอบ — เรียกด้วยข้อมูลจริงได้จาก console */
 
   /* รอ sb พร้อมก่อน (แต่ละหน้าสร้าง client คนละจังหวะ) */
   var tries=0;

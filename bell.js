@@ -173,15 +173,17 @@
                           (ข) เมื่อวานต้องมีเงินเข้าเกินฟอร์มอย่างน้อยเท่ายอดนั้น = ยังไม่ถูกนับไปในวันเมื่อวาน */
       /* หักรายการข้ามวัน (สูตรเดียวกับ kskDepAdj ใน index.html):
          ฟอร์ม −มัดจำที่เข้าบัญชีวันก่อนแล้วมาออกบิลวันนี้ · สเตทเมนต์ −เงินเข้าวันนี้ของบิลเก่า/มัดจำที่การเงินจับคู่แล้ว */
-      if(gapB>1){
-        var _ks={}, _allB={}, _nb=0;
+      var _uOn=!!(fks!=null && d.bank_dep_total!=null && window.RevCut && window.RevCut.ksksplit), _split=null; /* v0.9.10 คิดทุกวัน — เงินที่ฟอร์มไม่ลงอาจเคยกลบเงินที่หาย */
+      var _gRaw=gapB; /* v0.9.10 ยอดดิบ — จับคู่รายแถวไม่ได้ = กลับสูตรเดิมทั้งหมด (Codex s2 #2) */
+      if(gapB>1 || _uOn){
+        var _ks={}, _allB={}, _nb=0, _preBy={}, _raBy={}, _othL=[];
         xf.forEach(function(x){ var b=String(x.bill||"").trim(); if(!b) return; _allB[b]=1; _nb++; if((+x.ksk||0)>0) _ks[b]=(_ks[b]||0)+(+x.ksk||0); });
         var _pre=0;
         deps.forEach(function(dp){
           if(dp.status==="cancelled") return; var rd=String(dp.received_date||"").slice(0,10); if(!rd||rd>=dt) return;
           var b=String(dp.matched_bill_no||"").trim(); if(!b||!_ks[b]) return;
           var used=(dp.used_amount!=null&&num(dp.used_amount)>0)?num(dp.used_amount):num(dp.amount);
-          _pre+=Math.min(used,_ks[b]);
+          _pre+=Math.min(used,_ks[b]); _preBy[b]=(_preBy[b]||0)+Math.min(used,_ks[b]);
         });
         /* v0.5.6 (10 ต.ค.69) สูตรเดียวกับ kskDepAdj: มัดจำ RA ในชีตโอนที่เงินไม่ได้เข้าวันนี้
            (ก) เงินเข้าสเตทเมนต์วันถัดไป แล้วจับคู่ "มัดจำ RA..." · (ข) ส่วนเกินจากยอดโอนบิลที่มีใบลดหนี้ (ไม่ใช่เงินก้อนใหม่) */
@@ -189,9 +191,9 @@
           var _cn=(a.cns||[]), _cu={};
           xf.forEach(function(x){ if(!x||!x.ra||!((+x.ksk||0)>0)) return; var ra=String(x.ra).trim(), k=r2(x.ksk);
             var li=_lat.findIndex(function(pp){ return String(pp.matched_bill_no).trim()==="มัดจำ "+ra && Math.abs(num(pp.amount)-k)<=1; });
-            if(li>=0){ _lat.splice(li,1); _pre+=k; return; }
+            if(li>=0){ _lat.splice(li,1); _pre+=k; _raBy[ra]=(_raBy[ra]||0)+k; return; }
             var ci=_cn.findIndex(function(c,i){ if(_cu[i]||!c||num(c.cash)>0.5||Math.abs(num(c.amt)-k)>1) return false; var pd=0; xf.forEach(function(y){ if(String(y.bill||"").trim()===String(c.bill||"").trim()&&!y.ra) pd+=num(y.ksk)+num(y.knv); }); return num(c.bill_amt)>0 && pd>=num(c.bill_amt)-1; });
-            if(ci>=0){ _cu[ci]=1; _pre+=k; } }); })();
+            if(ci>=0){ _cu[ci]=1; _pre+=k; _raBy[ra]=(_raBy[ra]||0)+k; } }); })();
         var _oth=0;
         if(_nb){
           pendAll.forEach(function(pp){
@@ -200,10 +202,10 @@
             if(!/สเตทเมนต์|โอนเข้าตรง/.test(String(pp.ref||""))) return;
             var mb=String(pp.matched_bill_no||"").trim(); if(!mb) return;
             if(/^มัดจำ RA/.test(mb)){ if(/บัญชีอื่น/.test(String(pp.ref||""))) return; var _ra=mb.replace(/^มัดจำ\s*/,"").trim(); var _dp=deps.find(function(z){ return String(z.deposit_no||"").trim()===_ra && z.status!=="cancelled"; });
-              if(_dp && String(_dp.received_date||"").slice(0,10)<dt) _oth+=num(pp.amount); return; } /* v0.5.6 มัดจำลงฟอร์มวันก่อน เงินเข้าวันนี้ */
+              if(_dp && String(_dp.received_date||"").slice(0,10)<dt){ _oth+=num(pp.amount); _othL.push(num(pp.amount)); } return; } /* v0.5.6 มัดจำลงฟอร์มวันก่อน เงินเข้าวันนี้ */
             if(/มัดจำ/.test(mb)) return;
             for(var b1 in _allB){ if(mb.indexOf(b1)>=0) return; }
-            _oth+=num(pp.amount);
+            _oth+=num(pp.amount); _othL.push(num(pp.amount));
           });
           var _brs=((d&&d.bank_rows)||[]).filter(function(r){ return ((+r.dep||0)>0 && !r.kp); });
           if(_brs.length){
@@ -214,14 +216,16 @@
               if(!_brs.some(function(r){ return Math.abs((+r.dep||0)-a2)<=1; })) return;
               var mb2=String(dp.matched_bill_no||"").trim(), own=false;
               for(var b2 in _allB){ if(mb2&&mb2.indexOf(b2)>=0){ own=true; break; } }
-              _oth += own ? Math.max(0, r2(a2-num(dp.used_amount))) : a2;
+              var _oa=own ? Math.max(0, r2(a2-num(dp.used_amount))) : a2; _oth += _oa; _othL.push(_oa);
             });
           }
           gapB=r2(gapB-_pre+_oth);
         } else { gapB=r2(gapB-_pre); }
+        if(_uOn){ _split=window.RevCut.ksksplit(d.bank_rows, xf, {fks:fks, pre:_preBy, ra:_raBy, oth:_othL}); if(_split.ok) gapB=_split.missSum; } /* v0.9.10 จับคู่รายแถว (สูตรเดียวกับหน้ารายละเอียดวัน · วันที่ไม่มีเลขบิลก็ทำ · Codex s4 #1) */
+        if(_uOn && !(_split && _split.ok) && !(_gRaw>1)) gapB=_gRaw; /* สูตรเดิมไม่เข้าบล็อกนี้เมื่อยอดดิบไม่เกิน */
         if(gapB<=1) gapB=0;
       }
-      if(gapB>1){
+      if(gapB>1 && !(_split && _split.ok)){ /* v0.9.10 จับคู่รายแถวได้ = ไม่ใช้กฎยอดรวมข้ามวัน (เงินก่อนวันเปิดบิลไปผ่าน pastAdj แทน · Codex s1 #2) */
         var pvb=shiftISO(dt,-1), pab=A[pvb], pdb=D[pvb];
         if(pab && pdb && pab.status!=="วันหยุด" && pdb.bank_dep_total!=null){
           var pfks=(pab.fks==null||pab.fks==="")?null:num(pab.fks);
@@ -249,7 +253,7 @@
      ข้ามบิลที่มีมัดจำผูก (สูตรเดิมหักแล้ว) · โหลด cutbill.js/ข้อมูลย้อนหลังไม่ได้ = ไม่หัก (เตือนตามเดิม) · เคส 27/10 KM6910-1115 9,325 เข้า 26/10 */
   var _rcP=null;
   function needRevCut(){ if(window.RevCut && window.RevCut.pastAdj) return Promise.resolve(true); if(_rcP) return _rcP;
-    _rcP=new Promise(function(res){ try{ var s=document.createElement("script"); s.src="cutbill.js?v=20261028b";
+    _rcP=new Promise(function(res){ try{ var s=document.createElement("script"); s.src="cutbill.js?v=20261028c";
       s.onload=function(){ res(!!(window.RevCut && window.RevCut.pastAdj)); }; s.onerror=function(){ _rcP=null; res(false); }; document.head.appendChild(s); }catch(e){ _rcP=null; res(false); } });
     return _rcP; }
   async function pastGapAdj(gaps, audits, dailies, deps, flagged){
@@ -379,6 +383,7 @@
         var k=String(x.date).slice(0,10);
         if(!cutB[b] || k<cutB[b]) cutB[b]=k;
       });
+      await needRevCut(); /* v0.9.10 gapDays ใช้ RevCut.ksksplit — โหลดไม่ได้ = สูตรเดิม */
       var gaps=gapDays(gAud, gDay, flg, shiftISO(today,-GAP_DAYS), cutB, gDep, gPend);
       gaps=await pastGapAdj(gaps, gAud, gDay, gDep, flg);
       if(gaps.length){

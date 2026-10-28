@@ -177,7 +177,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.7</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.8</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -1161,8 +1161,13 @@ async function carryInK(date,xfer){
   }catch(e){ console.warn("carryInK",e); }
   out.sum=Math.round(out.sum*100)/100; return out;
 }
-async function kskDepAdj(date,xfer,pend,brows,cns){
+async function kskDepAdj(date,xfer,pend,brows,cns,fks){
   var out={pre:0,preRows:[],nxtRows:[],pastRows:[],oth:0,othRows:[]};
+  /* v0.7.8 แยก 2 เรื่อง: จับคู่รายแถว (RevCut.ksksplit) ด้วยตัวเลขที่สูตรเดิมหักแล้ว · fks = ยอดกสิกรรวมของฟอร์ม (ไม่ส่ง = ไม่แยก) */
+  var _split=function(){ if(!(window.RevCut && RevCut.ksksplit) || fks==null) return; var _pb={}, _rb={};
+    out.preRows.concat(out.pastRows).forEach(function(x){ var b=String(x.bill||"").trim(); if(b) _pb[b]=(_pb[b]||0)+(+x.amt||0); });
+    out.nxtRows.forEach(function(x){ var r=String(x.bill||"").trim(); if(r) _rb[r]=(_rb[r]||0)+(+x.amt||0); });
+    out.split=RevCut.ksksplit(brows, xfer, {fks:fks, pre:_pb, ra:_rb, oth:out.othRows.map(function(x){ return +x.amt||0; })}); };
   try{
     if(!sb||!date) return out;
     var xf=(xfer||[]).filter(function(x){return (+x.ksk||0)>0&&x.bill;});
@@ -1199,7 +1204,7 @@ async function kskDepAdj(date,xfer,pend,brows,cns){
       });
     }
     /* ไม่มีชีต "โอน" ของวันนั้น = ไม่รู้ว่าบิลไหนจ่ายด้วยมัดจำ → หักฝั่งสเตทเมนต์ข้างเดียวไม่ได้ (จะเตือนบวมกว่าเดิม) */
-    if(!allBills.length){ out.pre=Math.round(out.pre*100)/100; return out; }
+    if(!allBills.length){ out.pre=Math.round(out.pre*100)/100; _split(); return out; } /* v0.7.8 แถวไม่มีเลขบิล (เช่นมีแต่ RA) ก็แยกรายแถว (Codex s4 #1) */
     var _lateRA=[]; var pr=pend; if(!pr){ var pq2=await sb.from("rev_pending").select("amount,status,matched_bill_no,source,ref").eq("date",date); pr=((pq2&&pq2.data)||[]); }
     (pr||[]).forEach(function(p){
       if(p.status!=="matched") return;
@@ -1236,9 +1241,18 @@ async function kskDepAdj(date,xfer,pend,brows,cns){
       (((dq&&dq.data)||[])).forEach(function(d){ if(d.status!=="cancelled"&&d.matched_bill_no) _sk[String(d.matched_bill_no).trim()]=1; });
       var _pa=await RevCut.pastAdj(date, xfer, brows, _sk); out.pastErr=_pa.err;
       _pa.rows.forEach(function(r){ out.pre+=r.amt; out.pastRows.push(r); }); out.pastHeld=_pa.held||[]; }
+    /* v0.7.8 (28 ต.ค.69 คุณหลิงเลือก "แยก 2 เรื่อง"): ธง = แถวชีตโอนที่หาเงินไม่เจอ (RevCut.ksksplit จับคู่รายแถว) · เงินที่ฟอร์มไม่ลงแยกแสดง
+       ผู้เรียก: out.split.ok → ใช้ out.split.missSum เป็นยอดธง · ไม่ ok = สูตรเดิม (ยอดรวม) */
+    _split();
   }catch(e){ console.warn("kskDepAdj",e); }
   out.pre=Math.round(out.pre*100)/100; out.oth=Math.round(out.oth*100)/100; return out;
 }
+/* v0.7.8: ยอดธงโอนกสิกร — แยก 2 เรื่องเมื่อจับคู่รายแถวได้ (adj.split.ok) ไม่งั้นสูตรเดิม (ฟอร์ม − สเตทเมนต์) */
+function kskGap(adj, fa, sa){ return (adj && adj.split && adj.split.ok)? (+adj.split.missSum||0) : Math.round((fa-sa)*100)/100; }
+function kskSplitNote(adj, inFlag){ var S=adj&&adj.split; if(!S||!S.ok) return ""; var h="";
+  if(inFlag && S.miss.length) h+='<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">🔎 แถวชีตโอน (ช่องกสิกร) ที่หาเงินในสเตทเมนต์วันนี้ไม่เจอ</div>'+S.miss.map(function(x){ return '<div style="padding:1px 0 1px 14px"><span style="font-family:monospace">'+esc(x.bill||"(ไม่มีเลขบิล)")+'</span> '+TH(x.amt)+'</div>'; }).join('')+'</div>';
+  if(S.amt>1) h+='<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">💎 สเตทเมนต์มีเงินที่ฟอร์มไม่ได้ลง '+TH(S.amt)+' — ไม่นับในธงนี้ ไปจับคู่ใน "เงินรอจับคู่"</div>'+S.rows.map(function(x){ return '<div style="padding:1px 0 1px 14px">'+TH(x.amt)+' <span style="color:#78716c">· '+esc(x.detail)+'</span></div>'; }).join('')+'</div>';
+  return h; }
 /* v0.7.7: บิลที่อาจเป็นเงินโอนก่อนวันเปิดบิล แต่ยังหักไม่ได้ (เจอหลายก้อน/มีรายการอื่นอ้าง/ยังไม่อนุมัติ) — แสดงในกล่องธงแดงให้คนตรวจ */
 function kskHeldNote(adj){ var L=(adj&&adj.pastHeld)||[]; if(!L.length) return "";
   return '<div class="muted" style="margin:4px 0 0;font-size:12.5px;line-height:1.5"><div style="font-weight:700">ℹ️ อาจเป็นเงินโอนก่อนวันเปิดบิล แต่ยังไม่หัก</div>'
@@ -1295,11 +1309,14 @@ async function gapsForSave(date){
     }
     if(d.bank_dep_total!=null&&f.ksk!=null){
       var dir=Math.round(((+d.bank_dep_total||0)-(+d.bank_kplus_settle||0))*100)/100;
-      var b=Math.round(((+f.ksk||0)-dir)*100)/100; g.b=(b>1)?b:0;
+      var b=Math.round(((+f.ksk||0)-dir)*100)/100; g.b=(b>1)?b:0; g.bRaw=b;
     }
     /* หักรายการข้ามวันด้วยสูตรเดียวกับหน้ารายละเอียดวัน — ฟอร์มหักบิลที่จ่ายด้วยมัดจำที่เข้าบัญชีไปแล้ว
        สเตทเมนต์หักเงินเข้าวันนี้ที่เป็นบิลเก่า/มัดจำ (ยอดที่การเงินจับคู่ยืนยันแล้วเท่านั้น) */
-    if(g.b>1){ var _ad=await kskDepAdj(date,(f.xfer||[]),null,(d.bank_rows||null)); if(_ad.pre>1||_ad.oth>1){ var _nb=Math.round((g.b-_ad.pre+_ad.oth)*100)/100; g.b=(_nb>1)?_nb:0; g.bAdj=_ad; } }
+    /* v0.7.8: คิดทุกวันที่มีตัวเลขครบ (เงินที่ฟอร์มไม่ลงอาจเคยกลบเงินที่หาย) · จับคู่รายแถวได้ = ยอดธงคือแถวที่หาเงินไม่เจอ · ไม่ได้ = สูตรเดิม */
+    if(g.bRaw!=null){ var _ad=await kskDepAdj(date,(f.xfer||[]),null,(d.bank_rows||null),null,f.ksk);
+      if(_ad.split&&_ad.split.ok){ var _ms=+_ad.split.missSum||0; g.b=(_ms>1)?_ms:0; g.bAdj=_ad; }
+      else if(g.b>1 && (_ad.pre>1||_ad.oth>1)){ var _nb=Math.round((g.b-_ad.pre+_ad.oth)*100)/100; g.b=(_nb>1)?_nb:0; g.bAdj=_ad; } }
   }catch(e){}
   return g;
 }
@@ -1867,14 +1884,14 @@ async function renderDay(date, edit){
       var _sd=(da&&da.bank_dep_total!=null)?Math.round((((+da.bank_dep_total)||0)-((+da.bank_kplus_settle)||0))*100)/100:((au.detail&&au.detail.stmt_direct!=null)?(+au.detail.stmt_direct):null);
       if(_sd==null) return;
       if(_fks==null){ html+='<div class="muted" style="margin:2px 0 0">— เงินโอนเข้าตรงตามสเตทเมนต์ '+TH(_sd)+' · วันนี้ไม่มีตัวเลขฝั่งฟอร์มเก็บไว้ เทียบอัตโนมัติไม่ได้ (วันใหม่จะเก็บให้เอง)</div>'; return; }
-      var _adj=await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null,(au.detail&&au.detail.cns)||[]);
+      var _adj=await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null,(au.detail&&au.detail.cns)||[],_fks);
       var _fa=Math.round((_fks-_adj.pre)*100)/100, _sa=Math.round((_sd-_adj.oth)*100)/100; var _note=kskAdjNote(_adj);
-      var _gb=Math.round((_fa-_sa)*100)/100; var Q8=String.fromCharCode(39);
+      var _gb=kskGap(_adj,_fa,_sa); var Q8=String.fromCharCode(39); var _spl=!!(_adj.split&&_adj.split.ok); /* v0.7.8 */
       if(_gb>1){ var _fl=_otherAcct.filter(function(x){return /สเตทเมนต์|กสิกร/.test(x.ref||"")||x.source==="รับเข้าบัญชีอื่น";});
         var _fs=Math.round(_fl.reduce(function(t,x){return t+(parseFloat(x.amount)||0);},0)*100)/100;
-        if(_fs>=_gb-1){ html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — ติดธงรับเข้าบัญชีอื่นแล้ว</b>'+_note+'</div>'; }
-        else { html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🚩 โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — เงินไม่เข้าบัญชีร้าน ต้องติดธง+แนบสลิป</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fa)+' − โอนเข้าตรงตามสเตทเมนต์ '+TH(_sa)+')</div>'+_note+kskHeldNote(_adj)+'<button class="btn sec" style="padding:3px 10px;margin:6px 0 0" onclick="prefillOtherAcct('+_gb+','+Q8+date+Q8+','+Q8+'โอนกสิกรเกินสเตทเมนต์-บัญชีอื่น ('+beDate(date)+')'+Q8+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } }
-      else { html+='<div class="kv"><span>โอนกสิกร (ฟอร์ม) vs โอนเข้าตรง (สเตทเมนต์)</span><b style="color:#15803d">'+TH(_fa)+' vs '+TH(_sa)+' ✓</b></div>'+(_gb<-1?('<div class="muted" style="margin:2px 0 0">สเตทเมนต์มากกว่าฟอร์ม '+TH(-_gb)+' = เงินเข้าที่ฟอร์มไม่ได้ลง (ดูใน "เงินรอจับคู่")</div>'):'')+((_adj.pre>1||_adj.oth>1)?('<div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(_fks)+' · สเตทเมนต์ '+TH(_sd)+'</div>'+_note):''); }
+        if(_fs>=_gb-1){ html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — ติดธงรับเข้าบัญชีอื่นแล้ว</b>'+_note+kskSplitNote(_adj,true)+'</div>'; }
+        else { html+='<div style="margin:4px 0 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px"><b style="color:#b91c1c">🚩 โอนกสิกรในฟอร์มเกินสเตทเมนต์ '+TH(_gb)+' — เงินไม่เข้าบัญชีร้าน ต้องติดธง+แนบสลิป</b><div class="muted" style="margin:2px 0 6px">'+(_spl?'(ยอดแถวชีตโอนที่หาเงินในสเตทเมนต์ไม่เจอ · ยอดดิบ ฟอร์ม '+TH(_fks)+' · สเตทเมนต์ '+TH(_sd)+')':'(ฟอร์ม '+TH(_fa)+' − โอนเข้าตรงตามสเตทเมนต์ '+TH(_sa)+')')+'</div>'+_note+kskHeldNote(_adj)+kskSplitNote(_adj,true)+'<button class="btn sec" style="padding:3px 10px;margin:6px 0 0" onclick="prefillOtherAcct('+_gb+','+Q8+date+Q8+','+Q8+'โอนกสิกรเกินสเตทเมนต์-บัญชีอื่น ('+beDate(date)+')'+Q8+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } }
+      else { html+='<div class="kv"><span>โอนกสิกร (ฟอร์ม) vs โอนเข้าตรง (สเตทเมนต์)</span><b style="color:#15803d">'+(_spl?'ทุกแถวเจอเงินในสเตทเมนต์':TH(_fa)+' vs '+TH(_sa))+' ✓</b></div>'+((!_spl&&_gb<-1)?('<div class="muted" style="margin:2px 0 0">สเตทเมนต์มากกว่าฟอร์ม '+TH(-_gb)+' = เงินเข้าที่ฟอร์มไม่ได้ลง (ดูใน "เงินรอจับคู่")</div>'):'')+((_adj.pre>1||_adj.oth>1||(_spl&&_adj.split.amt>1))?('<div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(_fks)+' · สเตทเมนต์ '+TH(_sd)+'</div>'+_note+kskSplitNote(_adj,false)):''); }
     })();
     (function(){ var _all=(da&&da.bank_rows)?da.bank_rows.filter(function(r){return (+r.dep>0 && !r.kp);}):[]; if(!_all.length) return; var Q6=String.fromCharCode(39);
       function _norm(s){ return String(s||'').replace(/['"]/g,'').slice(0,60); }
@@ -2314,12 +2331,12 @@ async function _annotateKskAdj(date,rows){
     var f=DATA.form; if(!f||f.date!==date) return;
     var bd=(DATA.bank&&DATA.bank.map&&DATA.bank.map[date])||null; if(!bd) return;
     var br=(DATA.bank&&DATA.bank.rowsByDate&&DATA.bank.rowsByDate[date])||null;
-    var adj=await kskDepAdj(date,f.xfer||[],rows,br);
-    if(!(adj.pre>1||adj.oth>1)) return;
+    var adj=await kskDepAdj(date,f.xfer||[],rows,br,null,f.ksk);
+    if(!(adj.pre>1||adj.oth>1||(adj.split&&adj.split.ok))) return;
     var sd=Math.round((((+bd.dep||0)-(+bd.kplus||0)))*100)/100;
     var fa=Math.round((((+f.ksk||0)-adj.pre))*100)/100, sa=Math.round((sd-adj.oth)*100)/100;
-    if(Math.round((fa-sa)*100)/100>1) return;
-    bb.outerHTML='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ โอนกสิกรตรงกันแล้ว '+TH(fa)+' vs '+TH(sa)+' — ไม่ต้องติดธง</b><div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(+f.ksk||0)+' · สเตทเมนต์ '+TH(sd)+'</div>'+kskAdjNote(adj)+'</div>';
+    if(kskGap(adj,fa,sa)>1) return; /* v0.7.8 */
+    bb.outerHTML='<div style="margin-top:6px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ '+((adj.split&&adj.split.ok)?'ทุกแถวโอนกสิกรในชีตโอนเจอเงินในสเตทเมนต์':'โอนกสิกรตรงกันแล้ว '+TH(fa)+' vs '+TH(sa))+' — ไม่ต้องติดธง</b><div class="muted" style="margin:2px 0 0">ยอดดิบ ฟอร์ม '+TH(+f.ksk||0)+' · สเตทเมนต์ '+TH(sd)+'</div>'+kskAdjNote(adj)+kskSplitNote(adj,false)+'</div>'; /* v0.7.8 Codex s5 #2 */
   }catch(e){}
 }
 function prefillOtherAcct(amount, date, ref){
@@ -2766,8 +2783,8 @@ async function taskAlertRun(){
 function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
 <script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
-<script src="bell.js?v=20261028b"></script>
-<script src="cutbill.js?v=20261028b"></script>
+<script src="bell.js?v=20261028c"></script>
+<script src="cutbill.js?v=20261028c"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>

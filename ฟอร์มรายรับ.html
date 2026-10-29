@@ -185,6 +185,14 @@ details.how ul{margin:6px 0 0;padding-left:20px;color:var(--muted)}
 .sheet .sign .cnt{display:flex;flex-direction:column;gap:1.5mm}.sheet .sign .cnt b{font-size:13pt;background:#2EF2BF;border:0.6pt solid #555;padding:2mm 5mm;text-align:right}
 .sheet .sig{width:75mm;display:flex;flex-direction:column;align-items:center;gap:2.5mm}.sheet .sig .lab{align-self:flex-start}.sheet .sig .space{width:100%;height:18mm;border-bottom:0.6pt dotted #333}.sheet .sig .line{text-align:center}
 .sheet .note{font-size:8.5pt;color:#444;margin-top:2mm}
+/* หน้า 1 ส่วนล่าง (29 ต.ค.69): รูปใบนับในกรอบพอดีรูป (กว้างไม่เกินคอลัมน์ สูงไม่เกินที่เหลือของหน้า ไม่ตัด ไม่ยืด) + ตารางนับเงินสด */
+.sheet .p1b{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:5mm;align-items:start}
+.sheet .p1h{font-weight:700;margin-bottom:2mm}
+.sheet .pfr{display:inline-block;border:0.6pt solid #555;padding:1.2mm;line-height:0;vertical-align:top}
+.sheet .pfr img{display:block;width:auto;height:auto;max-width:84mm;max-height:142mm;image-orientation:from-image}
+.sheet .pfr.empty{display:grid;place-items:center;width:84mm;height:40mm;line-height:1.3;color:#666;box-sizing:border-box}
+.sheet table.cnt td,.sheet table.cnt th{padding:1.3mm 2mm}
+.sheet .p1b .sig{width:100%;margin-top:7mm;display:flex;flex-direction:column;align-items:center;gap:2.5mm;font-size:10.5pt}
 #printArea{display:none}
 @page{size:A4 portrait;margin:0}
 @media print{
@@ -203,6 +211,8 @@ body.trial aside.check{top:64px}
 body.trial h1::after{content:" (ทดลอง)";color:#c2410c}
 .btn.trialbtn{border-color:#c2410c;color:#c2410c;text-decoration:none}
 table.cmp td.d{font-weight:700}
+table.cpt td input.num{width:100%;min-width:4em}
+table.cpt tr.cpsum td{background:#d5fbef;font-weight:700}
 </style>
 </head>
 <body>
@@ -296,7 +306,7 @@ const BILL_RE=/^(KM|RA)\d{4}-\d{4}$/;
 const validBill=s=>BILL_RE.test(s);
 const isRA=s=>/^RA/.test(s);
 /* ---------- state ---------- */
-let S={rcash:[],scash:[],xfer:[],credit:[],oldc:[],oldx:[],upk:[],other:[],refund:[],photo:null,count:''};
+let S={rcash:[],scash:[],xfer:[],credit:[],oldc:[],oldx:[],upk:[],other:[],refund:[],photo:null,photoPath:null,count:''};
 let ROW={status:'draft'};
 /* โหมดทดลอง (?trial=1): เลือกวันย้อนหลัง กรอกเหมือนจริง ตรวจกับ ACC จริงด้วยกติกาเดียวกัน
    อ่าน/เขียนแค่ rev_cashier_form_trial · ไม่แตะ rev_cashier_form / rev_cash_* / รูปใบนับ / ส่งฟอร์ม · รายรับอื่นๆ คืนเงิน ยอดนับเงินสด กรอกในฟอร์มเลย
@@ -331,13 +341,15 @@ function setAcc(d){ DATA=d; indexAcc(); }
 /* ส่งเลขอ้างอิงทั้งหมดในฟอร์มทุกครั้ง (รวม RA ของเงินสดปลีก) — ถ้าส่งเฉพาะที่ยังไม่มี ผลรอบใหม่จะแทนที่ map ทำให้บิลเก่าที่เคยโหลดหลุด */
 function extraBills(s){ s=s||S; const out=[]; const add=v=>{ v=normBill(v); if(v&&validBill(v)&&out.indexOf(v)<0) out.push(v); };
   ['scash','xfer','credit','oldc','oldx','upk','refund'].forEach(k=>(s[k]||[]).forEach(r=>add(r.bill)));
+  /* บิลที่ใบลดหนี้ในแถวคืนเงินถูกใช้จ่ายอยู่ (inv_no2) — ใช้คิดว่าคืนได้อีกเท่าไร */
+  (s.refund||[]).forEach(r=>{ const o=r.cn&&EXO.opts&&EXO.opts.find(z=>z.cn===r.cn); if(o&&o.bill2) add(o.bill2); });
   (s.rcash||[]).forEach(r=>add(r.ra)); return out; }
 let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 /* ช่องยอดที่พิมพ์ผิดและยังไม่ได้บันทึก {id ช่อง: {raw, why}} — ค้างไว้จนแก้ บล็อกส่ง/ปริ้น/Excel/คัดลอก (Codex v074 #1) */
 let BADAMT={};
 let _chqBusy=false; const CHQ_TOK=new WeakMap(); let _chqSeq=0;
 async function loadDay(date){
-  const tok=++_loadTok; _loadOk=false; _copyNote=''; BADAMT={}; pkReset(); ['subOk','rsOk','cpOk'].forEach(id=>{ const so=document.getElementById(id); if(so) so.remove(); }); if(DATA.date) renderAll(); YYMM=date.slice(2,4)==='26'?String(+date.slice(0,4)+543).slice(2)+date.slice(5,7):'';
+  const tok=++_loadTok; _loadOk=false; _copyNote=''; BADAMT={}; CP_CNT={}; CP_ST=''; EXO={opts:null,bills:null,reqs:[],nRfPhoto:0,rfPhoto:null,dayLock:false,appr:{},err:''}; pkReset(); ['subOk','rsOk','cpOk'].forEach(id=>{ const so=document.getElementById(id); if(so) so.remove(); }); if(DATA.date) renderAll(); YYMM=date.slice(2,4)==='26'?String(+date.slice(0,4)+543).slice(2)+date.slice(5,7):'';
   document.getElementById('dTxt').textContent=''; setChip('syncChip','mute','กำลังโหลด…'); setChip('saveChip','mute','');
   try{
     if(TRIAL){
@@ -364,22 +376,23 @@ async function loadDay(date){
     const [f,o,rf,pf]=await Promise.all([
       sb.from("rev_cashier_form").select("*").eq("date",date).maybeSingle(),
       sb.from("rev_cash_other").select("id,item,amount,channel").eq("date",date).order("id"),
-      sb.from("rev_cash_refund").select("id,bill_no,cn_no,amount,pay,kind").eq("date",date).order("id"),
-      sb.from("rev_cash_proof").select("amount,image_path").eq("date",date).maybeSingle()]);
+      sb.from("rev_cash_refund").select("id,bill_no,cn_no,amount,pay,kind,cn_manual").eq("date",date).order("id"),
+      sb.from("rev_cash_proof").select("amount,image_path,counts").eq("date",date).maybeSingle()]);
     if(tok!==_loadTok) return;
     /* ตารางไหนโหลดไม่ได้ = หยุด ไม่ถือว่า "ไม่มีรายการ" (ไม่งั้นคืนเงิน/รายรับอื่นเป็น 0 แล้วเงินสดนำส่งผิด) */
     for(const q of [f,o,rf,pf]) if(q.error) throw q.error;
     const row=f.data||{status:'draft'}; const e=(f.data&&f.data.entries)||{};
     const s={rcash:e.rcash||[],scash:e.scash||[],xfer:e.xfer||[],credit:e.credit||[],oldc:e.oldc||[],oldx:e.oldx||[],upk:e.upk||[],
-       other:(o.data||[]).map(x=>({desc:x.item,amt:+x.amount,ch:x.channel==='cash'?'cash':'xfer'})),
-       refund:(rf.data||[]).map(x=>({bill:x.bill_no,cn:x.cn_no||'',amt:+x.amount,ch:x.pay==='cash'?'cash':'xfer'})),
-       photo:null,count:(pf.data&&pf.data.amount!=null)?+pf.data.amount:''};
+       other:(o.data||[]).map(exFromOther), refund:(rf.data||[]).map(exFromRefund),
+       photo:null,photoPath:(pf.data&&pf.data.image_path)||null,counts:(pf.data&&pf.data.counts&&typeof pf.data.counts==='object')?pf.data.counts:null,count:(pf.data&&pf.data.amount!=null)?+pf.data.amount:''};
     if(pf.data&&pf.data.image_path){ try{ const u=await sb.storage.from("revenue-slips").createSignedUrl(pf.data.image_path,3600); if(u&&u.data) s.photo=u.data.signedUrl; }catch(_e){} }
+    /* ตัวช่วยตรวจแถวคืนเงิน + คำขอแก้ยอดเงินสด + รูปใบคืนเงิน — อ่านไม่ได้ไม่ทำให้หน้าโหลดพัง (ขึ้นในแท็บแทน) */
+    const ex0=await exAux(date); if(tok!==_loadTok) return; EXO=ex0;
     /* ACC ค้าง → ตัดที่ 25 วิ แล้วขึ้นว่าโหลดไม่ได้ (ไม่ให้หน้าล็อกเงียบๆ ไม่มีกำหนด) */
     const acc=await Promise.race([fetchAcc(date,extraBills(s)),new Promise((_,rej)=>setTimeout(()=>rej(new Error('ข้อมูล ACC ตอบช้าเกิน 25 วินาที')),25000))]);
     if(tok!==_loadTok) return;
     /* ตั้งค่าทั้งชุดหลังโหลดครบและยังเป็นวันล่าสุดที่เลือก — ผลของวันเก่าที่กลับมาช้าจะไม่ทับวันใหม่ */
-    ROW=row; S=s; setAcc(acc); _loadOk=true;
+    ROW=row; S=s; setAcc(acc); cpInitDraft(); _loadOk=true;
   }catch(err){ if(tok===_loadTok) setChip('syncChip','bad','โหลดไม่ได้: '+(err.message||err)+' — ยังบันทึก/ส่งไม่ได้ ลองเปิดใหม่'); return; }
   document.getElementById('dTxt').textContent=beDate(date);
   renderAll();
@@ -390,7 +403,7 @@ function scheduleSave(){ _dirty=true; setChip('saveChip','warn','ยังไม
 const normAmt=v=>typeof v==='string'&&v!==''&&parseAmt(v).ok?parseAmt(v).v:v;
 const normRow=r=>{ const o={...r}; ['amt','kp','ks'].forEach(f=>{ if(f in o) o[f]=normAmt(o[f]); }); return o; };
 /* มียอดที่ไม่ถูกต้องค้างอยู่ไหม (ช่องสีแดงที่ยังไม่บันทึก + ยอดเก่าที่ผิด) — ใช้บล็อกบันทึก/ส่ง/ปริ้น/Excel/คัดลอก */
-/* writable=true: เฉพาะช่องที่หน้านี้เขียนลงฐาน (ใช้กันบันทึก) · โหมดปกติ รายรับอื่นๆ/คืนเงิน/ยอดนับ มาจากหน้าตรวจรายได้ แก้ที่นี่ไม่ได้ จึงไม่ขวางบันทึก แต่ยังบล็อกส่ง/ปริ้น/Excel (Codex v074 r3 #1) */
+/* writable=true: เฉพาะช่องที่หน้านี้เขียนลงฐาน (ใช้กันบันทึก) · โหมดปกติ รายรับอื่นๆ/คืนเงิน/ยอดนับ บันทึกแยกทีละแถว/ใบนับ (ไม่ผ่านการบันทึกฟอร์ม) จึงไม่ขวางบันทึก แต่ยังบล็อกส่ง/ปริ้น/Excel (Codex v074 r3 #1) */
 function storedAmtBad(writable){ const all=!writable||TRIAL; const ks={rcash:['amt'],scash:['amt'],xfer:['kp','ks'],credit:['amt'],oldc:['amt'],oldx:['amt'],upk:['amt']}; if(all){ ks.other=['amt']; ks.refund=['amt']; }
   return Object.keys(ks).some(k=>(S[k]||[]).some(r=>ks[k].some(f=>!validStored(r[f]))))||(all&&!validStored(S.count)); }
 function amtProblems(){ return Object.keys(BADAMT).length+(storedAmtBad()?1:0); }
@@ -428,7 +441,9 @@ async function refreshAcc(date){
   const gen=++_accGen, tok=_loadTok;
   try{ const acc=await fetchAcc(date,ex); if(gen===_accGen&&tok===_loadTok&&date===DATA.date){ setAcc(acc); renderAll(); } }catch(_e){}
 }
-window.addEventListener('beforeunload',e=>{ if(_dirty||_savePromise||Object.keys(BADAMT).length){ e.preventDefault(); e.returnValue=''; } });
+/* แถวรายรับอื่นๆ/คืนเงินที่ยังไม่ได้บันทึกลงฐาน (พิมพ์ไม่ครบ/บันทึกไม่ผ่าน/กำลังบันทึก) */
+const exPending=()=>!TRIAL&&['other','refund'].some(k=>(S[k]||[]).some(r=>(EXST.get(r)||{}).busy||(r._sv?!exSame(k,r):exCheck(k,r,S[k].indexOf(r)).lv!=='')));
+window.addEventListener('beforeunload',e=>{ if(_dirty||_savePromise||Object.keys(BADAMT).length||exPending()||cpDirty()){ e.preventDefault(); e.returnValue=''; } });
 function beDate(s){ if(!s) return "—"; const p=String(s).slice(0,10).split("-"); return (+p[2])+"/"+(+p[1])+"/"+(parseInt(p[0])+543); }
 /* ---------- tabs ---------- */
 const TABS=[
@@ -455,7 +470,7 @@ function renderTabs(R){
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{cur=b.dataset.t;renderAll()});
 }
 /* ---------- rows ---------- */
-function rowsWithBlank(arr,blank){const a=arr.slice();const last=a[a.length-1];if(!last||Object.entries(last).some(([k,v])=>k!=='chq'&&k!=='chqImg'&&k!=='chqNo'&&k!=='chqBank'&&k!=='chqDate'&&v!==''&&v!=null&&v!==0))a.push({...blank});return a}
+function rowsWithBlank(arr,blank){const a=arr.slice();const last=a[a.length-1];if(!last||Object.entries(last).some(([k,v])=>k!=='chq'&&k!=='ch'&&k!=='chan'&&k!=='chqImg'&&k!=='chqNo'&&k!=='chqBank'&&k!=='chqDate'&&v!==''&&v!=null&&v!==0))a.push({...blank});return a}
 function billCell(key,i,r,R){
   const info=R.rowInfo[key+':'+i]||{};
   const dep=key==='scash'||key==='xfer';const ra=isRA(r.bill||'');
@@ -685,11 +700,11 @@ function paneOld(R){
   <div class="cols wide">${paneBillAmt('oldc','เงินสด','',R).replace('<div class="pane">','<div>')}${paneBillAmt('oldx','โอนเข้าบัญชี','',R).replace('<div class="pane">','<div>')}</div></div>`;
 }
 function chSel(k,i,v){return `<select id="${k}_ch_${i}" data-k="${k}" data-i="${i}" data-f="ch"><option value="cash" ${v!=='xfer'?'selected':''}>เงินสด</option><option value="xfer" ${v==='xfer'?'selected':''}>โอน</option></select>`}
-/* โหมดทดลอง: รายรับอื่นๆ / คืนเงิน กรอกในฟอร์มเลย (ของจริงลงที่กล่องในหน้าตรวจรายได้ — โหมดทดลองห้ามแตะ) */
+/* โหมดทดลอง: รายรับอื่นๆ / คืนเงิน กรอกในฟอร์มเลย (ของจริงลงในฟอร์มปกติแท็บเดียวกัน = ตาราง rev_cash_* — โหมดทดลองห้ามแตะ) */
 function paneExTrial(R){
   const ro=rowsWithBlank(S.other,{desc:'',amt:'',ch:''}), rr=rowsWithBlank(S.refund,{bill:'',cn:'',amt:'',ch:''});
   const txt=(k,i,f,v,ph,cls)=>`<input class="${cls||''}" id="${k}_${f==='bill'?'b':f}_${i}" data-k="${k}" data-i="${i}" data-f="${f}" value="${esc(v||'')}" placeholder="${ph||''}" maxlength="${f==='desc'?80:20}" autocomplete="off">`;
-  return `<div class="pane"><h2>รายรับอื่นๆ</h2><p class="hint">โหมดทดลอง: กรอกที่นี่ได้เลย (ใช้งานจริงลงที่กล่อง "รายรับอื่นๆ" ในหน้าตรวจรายได้)</p>
+  return `<div class="pane"><h2>รายรับอื่นๆ</h2><p class="hint">โหมดทดลอง: กรอกที่นี่ได้เลย (ไม่บันทึกเข้าระบบจริง — ใช้งานจริงลงในฟอร์มปกติแท็บนี้)</p>
   <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>รายละเอียด</th><th style="text-align:right">บาท</th><th>รับเป็น</th><th>ตรวจ</th></tr></thead><tbody>
   ${ro.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('other',i,'desc',x.desc,'เช่น ค่าขนส่ง')}</td><td style="width:8em">${amtInput('other',i,'amt',x.amt)}</td><td style="width:7em">${chSel('other',i,x.ch)}</td>${stCell('other',i,R)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td>${boxBad('other')?'รวม':`รวม (สด ${fmt(R.ex.oc)} · โอน ${fmt(R.ex.ox)})`}</td><td style="text-align:right">${totTxt('other',R.ex.oc+R.ex.ox)}</td><td colspan="2"></td></tr></tfoot></table></div>
@@ -698,18 +713,324 @@ function paneExTrial(R){
   ${rr.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('refund',i,'bill',x.bill,'KM6910-0000','bill')}</td><td>${txt('refund',i,'cn',x.cn,'CN6910-0000','bill')}</td><td style="width:8em">${amtInput('refund',i,'amt',x.amt)}</td><td style="width:7em">${chSel('refund',i,x.ch)}</td>${stCell('refund',i,R)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td colspan="2">${boxBad('refund')?'รวม':`รวม (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td colspan="2"></td></tr></tfoot></table></div></div>`;
 }
+/* ---------- รายรับอื่นๆ / คืนเงิน ลงในฟอร์มได้เลยเหมือน Excel (คุณหลิงสั่ง 28 ต.ค.69) ----------
+   เก็บที่ตารางเดิม rev_cash_other / rev_cash_refund — ที่เดียวกับกล่องในหน้าตรวจรายได้ การ์ดตัดบิล ด่านเงินสด กระดิ่ง (ไม่มีที่เก็บใหม่ ลงที่ไหนก็เห็นทั้งสองที่)
+   แถวครบ = บันทึกเข้าฐานทันทีทีละแถว (ไม่ผูกกับปุ่มส่งฟอร์ม) · แถวที่บันทึกแล้วแก้ในช่องได้ · 🗑 = ลบ · สิทธิ์/ล็อกตามกติกาเดิม (ฐานกันซ้ำอีกชั้น)
+   ยอดรวม/เงินสดนำส่ง/แผงตรวจ นับเฉพาะค่าที่อยู่ในฐานแล้ว (_sv) · แถวที่ยังไม่ครบ/บันทึกไม่ผ่าน = เรื่องต้องแก้ก่อนส่ง (ฟอร์มกับฐานต้องตรงกัน) */
+let EXO={opts:null,bills:null,reqs:[],nRfPhoto:0,rfPhoto:null,dayLock:false,appr:{},err:''};
+const EXST=new WeakMap();
+const CHAN_TXT={cash:'เงินสด',kplus:'โอน K+',ksk:'โอนกสิกร'};
+const r2x=n=>Math.round(n*100)/100;
+function exFromOther(x){ const chan=['cash','kplus','ksk'].includes(x.channel)?x.channel:'cash'; const r={id:x.id,desc:x.item||'',amt:+x.amount,chan,ch:chan==='cash'?'cash':'xfer'}; r._sv={desc:r.desc,amt:r.amt,chan}; return r; }
+function exFromRefund(x){ const r={id:x.id,bill:x.bill_no||'',cn:x.cn_no||'',amt:+x.amount,ch:x.pay==='transfer'?'xfer':'cash',kind:x.kind,manual:!!x.cn_manual}; r._sv={bill:r.bill,cn:r.cn,amt:r.amt,ch:r.ch}; return r; }
+/* แถวที่นับเข้ายอด: โหมดทดลอง = ที่กรอก · โหมดจริง = ค่าที่บันทึกในฐานแล้ว */
+function exRows(k){ return TRIAL?S[k]:S[k].filter(r=>r._sv).map(r=>k==='other'?{...r,desc:r._sv.desc,amt:r._sv.amt,chan:r._sv.chan,ch:r._sv.chan==='cash'?'cash':'xfer'}:{...r,...r._sv}); }
+function exSame(k,r){ const v=r._sv; if(!v) return false; return k==='other'?(String(r.desc||'').trim()===v.desc&&num(r.amt)===v.amt&&(r.chan||'cash')===v.chan):(r.bill===v.bill&&(r.cn||'')===v.cn&&num(r.amt)===v.amt&&(r.ch==='xfer'?'xfer':'cash')===v.ch); }
+async function exAux(date){
+  const o={opts:null,bills:null,reqs:[],nRfPhoto:0,rfPhoto:null,dayLock:false,appr:{},err:''};
+  /* แคชเชียร์ดูวันเก่า: ฐานไม่ให้อ่านตัวช่วยคืนเงิน (คืน []) → ไม่ถามเลย ไม่งั้นทุก CN จะดูเหมือน "ยังไม่มีใน ACC" */
+  const t0=bkkToday(), aux=ROLE!=='cashier'||date===t0||date===bkkShift(t0,-1);
+  try{ const q=await Promise.all([aux?sb.rpc('rev_refund_cn_options',{p_date:date}):{data:null},aux?sb.rpc('rev_refund_bills',{p_date:date}):{data:null},
+      sb.from('rev_cash_proof_req').select('*').eq('date',date).order('id'),sb.from('rev_cash_refund_proof').select('id,image_path').eq('date',date).order('id'),sb.rpc('rev_refund_appr',{p_date:date})]);
+    if(q[0].error||q[1].error) o.err=(q[0].error||q[1].error).message||'อ่านไม่ได้';
+    else if(aux){ o.opts=Array.isArray(q[0].data)?q[0].data:[]; o.bills=Array.isArray(q[1].data)?q[1].data:[]; }
+    o.reqs=(q[2]&&!q[2].error&&q[2].data)||[];
+    const ph=(q[3]&&!q[3].error&&q[3].data)||[]; o.nRfPhoto=ph.length; o.rfPhoto=ph.length?ph[ph.length-1].image_path:null;
+    ((q[4]&&!q[4].error&&q[4].data)||[]).forEach(z=>{ if(z&&z.status!=='cancelled'){ o.appr[z.bill_no]=z.status; if(z.bill_date===date) o.dayLock=true; } });
+  }catch(e){ o.err=e.message||String(e); }
+  return o; }
+/* ใครลง/แก้ได้: กติกาเดียวกับกล่องเดิม — เจ้าของ/การเงินได้เสมอ · แคชเชียร์วันนี้/เมื่อวาน ก่อนส่งฟอร์ม และ (คืนเงิน) ก่อนเจ้าของอนุมัติตัดบิลของวันนี้ */
+function exCan(k){ if(TRIAL) return canEdit(); if(!_loadOk||_submitting||_copying||!ROLE) return false;
+  if(ROLE==='owner'||ROLE==='finance') return true;
+  if(ROLE!=='cashier'||ROW.status==='submitted') return false;
+  const t0=bkkToday(); if(!(DATA.date===t0||DATA.date===bkkShift(t0,-1))) return false;
+  return !(k==='refund'&&EXO.dayLock); }
+const canEl=el=>el&&el.dataset&&el.dataset.own==='ex'?exCan(el.dataset.k):el&&el.dataset&&el.dataset.own==='cp'?cpEd():canEdit();
+/* เลขบิลแบบย่อ 1194 → KM6910-1194 (ปีเดือนของวันที่ฟอร์ม) */
+function exBill(v){ v=normBill(v).replace(/\s/g,''); const m=v.match(/^(\d{1,4})$/); return m&&DATA.date?'KM'+String(+DATA.date.slice(0,4)+543).slice(2)+DATA.date.slice(5,7)+'-'+m[1].padStart(4,'0'):v; }
+/* ใบลดหนี้ที่ใช้จ่ายบิลอื่นอยู่แล้ว (inv_no2 · เคส 28/10 CN6910-0043 12 ใช้จ่ายบิล 1194 ยอด 10) → คืนได้แค่ส่วนที่เหลือ */
+/* หลายใบลดหนี้จ่ายบิลเดียวกัน: เครดิตที่ใช้ = min(รวม CN, ยอดบิล) · คืนได้รวม = รวม CN − ที่ใช้ · หักที่แถวอื่นคืนไปแล้ว (CN อื่นที่จ่ายบิลเดียวกัน) · ไม่เกินยอด CN ใบนี้ (Codex r1 #6) */
+function cnCap(o,skip){ if(!o||!o.bill2) return null; const B=BILL[o.bill2]; if(!B) return {known:false,bill:o.bill2};
+  const grp=(EXO.opts||[]).filter(z=>z.bill2===o.bill2), sum=r2x(grp.reduce((t,z)=>t+(+z.amt||0),0)), used=r2x(Math.min(sum,+B.total||0));
+  /* แถวอื่นในกลุ่ม: นับค่ามากกว่าระหว่างที่อยู่ในฐาน (_sv) กับที่พิมพ์ค้าง — กันลดแถวหนึ่งบนจอ (ยังไม่บันทึก) แล้วอีกแถวคืนเกินได้ (Codex r2 #1) */
+  const inGrp=cn=>!!cn&&cn!==o.cn&&grp.some(z=>z.cn===cn);
+  const other=r2x(S.refund.filter(x=>x!==skip).reduce((t,x)=>t+Math.max(x._sv&&inGrp(x._sv.cn)?num(x._sv.amt):0,inGrp(x.cn)?num(x.amt):0),0));
+  return {known:true,bill:o.bill2,used,left:r2x(Math.max(0,Math.min(+o.amt||0,sum-used-other))),multi:grp.length>1}; }
+function exCheck(k,r,i){
+  const amt=num(r.amt);
+  if(k==='other'){ const desc=String(r.desc||'').trim();
+    if(!desc&&!(amt>0)) return {ok:false,lv:'',t:''};
+    if(!desc) return {ok:false,lv:'bad',t:'ใส่รายละเอียด'};
+    if(!(amt>0)) return {ok:false,lv:'bad',t:'ใส่ยอด'};
+    return {ok:true,rec:{item:desc.slice(0,80),amount:amt,channel:['cash','kplus','ksk'].includes(r.chan)?r.chan:'cash'}}; }
+  const bill=r.bill||'', cn=r.cn||'', pay=r.ch==='xfer'?'transfer':'cash';
+  if(!bill&&!cn&&!(amt>0)) return {ok:false,lv:'',t:''};
+  if(!/^KM\d{4}-\d{4}$/.test(bill)) return {ok:false,lv:'bad',t:'เลขบิลไม่ถูกต้อง (เช่น KM6910-0874 หรือพิมพ์ 0874)'};
+  if(cn&&!/^CN\d{4}-\d{4}$/.test(cn)) return {ok:false,lv:'bad',t:'เลขใบลดหนี้ผิด (เช่น CN6910-0026)'};
+  if(!(amt>0)) return {ok:false,lv:'bad',t:'ใส่ยอด'};
+  if(cn){
+    const dup=S.refund.findIndex((x,j)=>j!==i&&x.cn===cn); if(dup>=0) return {ok:false,lv:'bad',t:`ใบลดหนี้นี้ลงแล้วที่แถว ${dup+1}`};
+    if(!EXO.opts) return {ok:false,unk:true,lv:'warn',t:'ตรวจใบลดหนี้กับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
+    const o=EXO.opts.find(z=>z.cn===cn);
+    if(!o) return {ok:true,warn:'ใบลดหนี้นี้ยังไม่มีใน ACC — บิลจะพักไว้จนรอบซิงก์ถัดไปเจอ',rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:true}};
+    if(bill!==o.bill&&bill!==o.bill2) return {ok:false,lv:'bad',t:`ใบลดหนี้นี้ใน ACC ผูกบิล ${[o.bill,o.bill2].filter(Boolean).join(' / ')} ไม่ใช่บิลนี้`};
+    if(amt>(+o.amt||0)+0.01) return {ok:false,lv:'bad',t:`ยอดเกินใบลดหนี้ (${fmt(+o.amt)})`};
+    const cap=cnCap(o,r);
+    if(cap&&!cap.known) return {ok:false,unk:true,need2:cap.bill,lv:'warn',t:`CN นี้ใช้จ่ายบิล ${cap.bill} ด้วย — กำลังดึงยอดบิลนั้นจาก ACC (ถ้าค้าง เปิดหน้าใหม่)`};
+    if(cap&&amt>cap.left+0.01) return {ok:false,lv:'bad',t:`CN นี้ใช้จ่ายบิล ${cap.bill.slice(-4)}${cap.multi?' (รวมใบลดหนี้อื่นที่จ่ายบิลเดียวกัน)':''} ยอด ${fmt(cap.used)} แล้ว → คืนได้แค่ ${fmt(cap.left)}`};
+    return {ok:true,rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:false}};
+  }
+  const dupB=S.refund.findIndex((x,j)=>j!==i&&!x.cn&&x.bill===bill); if(dupB>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงคืนเงินโอนเกินแล้วที่แถว ${dupB+1}`};
+  if(!EXO.bills) return {ok:false,unk:true,lv:'warn',t:'ตรวจยอดบิลกับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
+  const b=EXO.bills.find(z=>z.no===bill);
+  if(!b) return {ok:false,lv:'bad',t:'ไม่มีเลขใบลดหนี้ และไม่ใช่บิลของวันนี้ — คืนตามใบลดหนี้ให้ใส่เลข CN'};
+  const got=r2x(S.xfer.filter(x=>normBill(x.bill)===bill).reduce((s,x)=>s+num(x.kp)+num(x.ks),0)), need=r2x(+b.out||0), exc=r2x(got-need);
+  if(!(got>0)) return {ok:false,lv:'bad',t:'ไม่มีเลขใบลดหนี้ และบิลนี้ไม่อยู่ในแท็บโอน — คืนตามใบลดหนี้ให้ใส่เลข CN'};
+  if(exc<=0.5) return {ok:false,lv:'bad',t:`บิลนี้ไม่ได้โอนเกิน (โอน ${fmt(got)} · บิล ${fmt(need)})`};
+  if(Math.abs(amt-exc)>1) return {ok:false,lv:'bad',t:`ลูกค้าโอนเกินแค่ ${fmt(exc)} (โอน ${fmt(got)} − บิล ${fmt(need)})`};
+  return {ok:true,rec:{bill_no:bill,kind:'overpay',cn_no:null,amount:amt,pay,cn_manual:false}};
+}
+const EX_NOUPD='แก้รายการที่บันทึกแล้วไม่ได้ (ไม่มีสิทธิ์แก้ หรือรายการถูกลบไปแล้ว) — ลบ 🗑 แล้วลงใหม่ หรือเปิดหน้าใหม่';
+/* ค่าที่อยู่ในฐานจริง = ค่าที่ส่งไปบันทึก (rec) — ระหว่างบันทึกพิมพ์แก้ต่อ ค่าบนจอจะต่างจาก _sv แล้วบันทึกรอบถัดไปเอง (Codex r1 #1) */
+function exSnap(k,r,rec){ r._sv=k==='other'?{desc:rec.item,amt:+rec.amount,chan:rec.channel}:{bill:rec.bill_no,cn:rec.cn_no||'',amt:+rec.amount,ch:rec.pay==='transfer'?'xfer':'cash'}; }
+function exRevert(k,r){ if(!r._sv) return; Object.assign(r,r._sv); if(k==='other') r.ch=r.chan==='cash'?'cash':'xfer'; }
+/* บันทึกแถวเดียวลงฐาน (เพิ่มใหม่ / แก้) · ระหว่างบันทึกพิมพ์แก้ต่อ = บันทึกซ้ำหลังรอบนี้จบ · เปลี่ยนวัน/โหลดใหม่ระหว่างนั้น = ทิ้งผล */
+async function exSync(k,r){
+  if(TRIAL||!r) return; let st=EXST.get(r); if(!st){ st={}; EXST.set(r,st); }
+  if(st.busy){ st.again=true; return; }
+  const i=S[k].indexOf(r); if(i<0) return;
+  let c=exCheck(k,r,i); st.lv=''; st.t='';
+  /* ยอดบิลที่ CN ใช้จ่ายยังไม่มี → ดึง ACC (พร้อมบิลนั้น) แล้วตรวจใหม่ · ดึงไม่ได้ = ไม่บันทึก */
+  if(!c.ok&&c.need2&&!BILL[c.need2]){ const date=DATA.date, tok=_loadTok; st.busy=true; renderAll();
+    try{ const ex=extraBills(); if(ex.indexOf(c.need2)<0) ex.push(c.need2); const acc=await fetchAcc(date,ex); if(tok===_loadTok&&date===DATA.date) setAcc(acc); }catch(_e){}
+    st.busy=false; if(tok!==_loadTok||date!==DATA.date) return;
+    c=exCheck(k,r,S[k].indexOf(r)); if(!c.ok&&c.need2){ st.lv='bad'; st.t='ดึงยอดบิลที่ใบลดหนี้ใช้จ่ายจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง'; } }
+  if(!c.ok){ if(st.again){ st.again=false; return exSync(k,r); } renderAll(); return; }
+  if(r._sv&&exSame(k,r)){ renderAll(); return; }
+  if(!exCan(k)){ exRevert(k,r); st.lv='bad'; st.t='วันที่นี้แก้ไม่ได้แล้ว — คืนค่าเดิม'; renderAll(); return; }
+  const date=DATA.date, tok=_loadTok, T=k==='other'?'rev_cash_other':'rev_cash_refund', rec={...c.rec};
+  st.busy=true; renderAll();
+  let err=null, newId=null;
+  try{
+    if(r.id){ const q=await sb.from(T).update(rec).eq('id',r.id).eq('date',date).select('id'); if(q.error) throw q.error; if(!q.data||!q.data.length) throw new Error(EX_NOUPD); }
+    else{ const q=await sb.from(T).insert([{...rec,date,created_role:ROLE}]).select('id').single();
+      if(q.error){ if(String(q.error.code)==='23505') throw new Error(rec.cn_no?rec.cn_no+' บันทึกไปแล้ว':'บิลนี้บันทึกคืนเงินโอนเกินไปแล้ว'); throw q.error; } newId=q.data&&q.data.id; }
+  }catch(e){ err=e; }
+  st.busy=false;
+  if(tok!==_loadTok||date!==DATA.date) return;
+  if(err){ st.lv='bad'; st.t='บันทึกไม่สำเร็จ: '+(err.message||err); if(r.id&&r._sv){ exRevert(k,r); st.t+=' — คืนค่าเดิมแล้ว'; } setChip('saveChip','bad',st.t); st.again=false; }
+  else{ if(newId!=null) r.id=newId; exSnap(k,r,rec); if(k==='refund'){ r.kind=rec.kind; r.manual=rec.cn_manual; } if(!exSame(k,r)) st.again=true;
+    setChip('saveChip','ok',`บันทึก${k==='other'?'รายรับอื่นๆ':'คืนเงิน'}แล้ว `+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})); }
+  if(st.again){ st.again=false; return exSync(k,r); }
+  renderAll();
+}
+/* ลบแถว: แถวที่ยังไม่บันทึก = ลบออกจากหน้า · แถวในฐาน = ถามก่อนแล้วลบในฐาน (ที่เดียวกับกล่องเดิม) */
+function exDropBad(k,i){ const nb={}; Object.entries(BADAMT).forEach(([id,b])=>{ const m=id.match(/^([a-z]+)_([a-z]+)_(\d+)$/); if(!m||m[1]!==k){ nb[id]=b; return; } const n=+m[3]; if(n===i) return; nb[n>i?`${m[1]}_${m[2]}_${n-1}`:id]=b; }); BADAMT=nb; }
+async function exDel(k,i){
+  const r=S[k][i]; if(!r||!exCan(k)) return renderAll();
+  const st=EXST.get(r)||{}; if(st.busy) return;
+  if(!r.id){ S[k].splice(i,1); exDropBad(k,i); return renderAll(); }
+  const v=r._sv||r, lab=k==='other'?`รายรับอื่นๆ "${v.desc}" ${fmt(num(v.amt))}`:`คืนเงิน ${v.bill}${v.cn?' · '+v.cn:''} ${fmt(num(v.amt))}`;
+  if(!confirm(`ลบ${lab} ของวันที่ ${beDate(DATA.date)} ?\n(ลบในระบบ — หน้าตรวจรายได้/การ์ดตัดบิลจะไม่เห็นรายการนี้แล้ว)`)) return;
+  const date=DATA.date, tok=_loadTok; EXST.set(r,{...st,busy:true}); renderAll();
+  let err=null;
+  try{ const q=await sb.from(k==='other'?'rev_cash_other':'rev_cash_refund').delete().eq('id',r.id).eq('date',date).select('id'); if(q.error) throw q.error; if(!q.data||!q.data.length) throw new Error('ลบไม่ได้ (ไม่มีสิทธิ์ หรือถูกลบไปแล้ว) — เปิดหน้าใหม่'); }catch(e){ err=e; }
+  EXST.set(r,{busy:false,lv:err?'bad':'',t:err?'ลบไม่สำเร็จ: '+(err.message||err):''});
+  if(tok!==_loadTok||date!==DATA.date) return;
+  if(err) setChip('saveChip','bad','ลบไม่สำเร็จ: '+(err.message||err));
+  else{ const j=S[k].indexOf(r); if(j>=0){ S[k].splice(j,1); exDropBad(k,j); } setChip('saveChip','ok','ลบรายการแล้ว'); }
+  renderAll();
+}
+async function openPath(path){ const w=window.open('','_blank'); try{ const u=await sb.storage.from('revenue-slips').createSignedUrl(path,600); if(u.error||!u.data) throw u.error||new Error('ไม่พบรูป'); if(w) w.location=u.data.signedUrl; }catch(err){ if(w) w.close(); setChip('saveChip','bad','เปิดรูปไม่ได้: '+(err.message||err)); } }
+/* รูปใบรายการจ่ายเงิน (คืนเงิน) — 1 รูปต่อวัน แทนได้ (รูปเดิมยังเก็บ) · ที่เก็บ/ตารางเดียวกับกล่องเดิม */
+let _rfPhBusy=false;
+async function rfPhotoUp(file){
+  if(TRIAL||!exCan('refund')||_rfPhBusy) return;
+  if(!/^image\//.test(file.type||'')){ setChip('saveChip','bad','ไฟล์ที่เลือกไม่ใช่รูปภาพ'); return; }
+  const date=DATA.date, tok=_loadTok;
+  if(!confirm(`แนบรูปใบรายการจ่ายเงิน (คืนเงิน) ของวันที่ ${beDate(date)}${EXO.rfPhoto?'\n(แทนรูปเดิม — รูปเดิมยังเก็บไว้)':''} ?`)) return;
+  _rfPhBusy=true; setChip('saveChip','warn','กำลังอัปรูปใบคืนเงิน…'); renderAll();
+  try{ const blob=await shrinkJpeg(file); const path=`refundslip/${date}/${Date.now()}.jpg`;
+    const up=await sb.storage.from('revenue-slips').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(up.error) throw up.error;
+    const r=await sb.from('rev_cash_refund_proof').insert([{date,image_path:path,uploaded_role:ROLE}]); if(r.error) throw r.error;
+    if(tok===_loadTok&&date===DATA.date){ EXO.rfPhoto=path; EXO.nRfPhoto++; setChip('saveChip','ok','แนบรูปใบคืนเงินแล้ว'); } }
+  catch(err){ setChip('saveChip','bad','แนบรูปไม่สำเร็จ: '+(err.message||err)); }
+  finally{ _rfPhBusy=false; renderAll(); }
+}
+function exStCell(k,i,R){ const info=R.rowInfo[k+':'+i]; return `<td class="st ${info?info.lv:''}">${info?esc(info.st):''}</td>`; }
+function exDelCell(k,i,r){ const can=exCan(k)&&!(EXST.get(r)||{}).busy, has=r&&(r.id||Object.entries(r).some(([kk,v])=>!['ch','chan'].includes(kk)&&v!==''&&v!=null));
+  return `<td style="width:2.2em;text-align:center">${has&&can?`<button type="button" class="btn" data-exdel="${k}:${i}" title="ลบรายการนี้" aria-label="ลบแถว ${i+1}" style="padding:1px 7px">🗑</button>`:''}</td>`; }
 function paneEx(R){
   if(TRIAL) return paneExTrial(R);
-  const o=S.other,r=S.refund;
-  return `<div class="pane"><h2>รายรับอื่นๆ</h2><p class="hint">ลง/แก้ที่กล่อง "รายรับอื่นๆ" ในหน้าตรวจรายได้เหมือนเดิม — หน้านี้ดึงมาแสดงและรวมยอดให้</p>
-  <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>รายละเอียด</th><th style="text-align:right">บาท</th><th>รับเป็น</th></tr></thead><tbody>
-  ${o.length?o.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${esc(x.desc)}</td><td style="text-align:right">${fmt(num(x.amt))}</td><td>${x.ch==='xfer'?'โอน':'เงินสด'}</td></tr>`).join(''):'<tr><td colspan="4" class="small">ไม่มีรายการ</td></tr>'}
-  </tbody><tfoot><tr><td></td><td>${boxBad('other')?'รวม':`รวม (สด ${fmt(R.ex.oc)} · โอน ${fmt(R.ex.ox)})`}</td><td style="text-align:right">${totTxt('other',R.ex.oc+R.ex.ox)}</td><td></td></tr></tfoot></table></div>
-  <h2 style="margin-top:8px">คืนเงิน</h2><p class="hint">ลง/แก้ที่กล่อง "↩️ คืนเงิน" ในหน้าตรวจรายได้เหมือนเดิม</p>
-  <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th><th>ใบลดหนี้</th><th style="text-align:right">ยอดเงิน</th><th>คืนเป็น</th></tr></thead><tbody>
-  ${r.length?r.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${esc(x.bill)}</td><td>${esc(x.cn||'')}</td><td style="text-align:right">${fmt(num(x.amt))}</td><td>${x.ch==='xfer'?'โอน':'เงินสด'}</td></tr>`).join(''):'<tr><td colspan="5" class="small">ไม่มีรายการ</td></tr>'}
-  </tbody><tfoot><tr><td></td><td colspan="2">${boxBad('refund')?'รวม':`รวม (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td></td></tr></tfoot></table></div>
-  <a class="btn" href="index.html" style="text-decoration:none;color:inherit;align-self:flex-start">ไปลงที่หน้าตรวจรายได้</a></div>`;
+  const ro=rowsWithBlank(S.other,{desc:'',amt:'',ch:'',chan:''}), rr=rowsWithBlank(S.refund,{bill:'',cn:'',amt:'',ch:''});
+  const txt=(k,i,f,v,ph,cls)=>`<input class="${cls||''}" id="${k}_${f==='bill'?'b':f}_${i}" data-k="${k}" data-i="${i}" data-f="${f}" data-own="ex" value="${esc(v||'')}" placeholder="${ph||''}" maxlength="${f==='desc'?80:20}" autocomplete="off">`;
+  /* ยอดที่บันทึกแล้วแสดงคอมม่าหลักพัน (1,250) — พิมพ์ได้ทั้งมี/ไม่มีคอมม่า */
+  const ownAmt=(k,i,v)=>amtInput(k,i,'amt',typeof v==='number'&&isFinite(v)?v.toLocaleString('en-US',{maximumFractionDigits:2}):v).replace('<input ','<input data-own="ex" ');
+  const chanSel=(i,v)=>`<select id="other_chan_${i}" data-k="other" data-i="${i}" data-f="chan" data-own="ex">${['cash','kplus','ksk'].map(c=>`<option value="${c}" ${(v||'cash')===c?'selected':''}>${CHAN_TXT[c]}</option>`).join('')}</select>`;
+  const paySel=(i,v)=>chSel('refund',i,v).replace('<select ','<select data-own="ex" ').replace('>โอน<','>โอนคืน<');
+  const lockMsg=!exCan('refund')&&_loadOk?(ROLE==='cashier'&&ROW.status==='submitted'?'ส่งฟอร์มแล้ว — แคชเชียร์แก้ไม่ได้ ให้การเงินหรือเจ้าของแก้':ROLE==='cashier'&&EXO.dayLock?'เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้คืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้เฉพาะวันนี้และเมื่อวาน)'):'';
+  const ph=EXO.rfPhoto?`<button type="button" class="btn" data-rfview="1" style="padding:2px 10px;font-size:.8rem">✅ ดูรูปใบคืนเงิน</button>`:`<span class="st ${S.refund.some(r=>r._sv)?'warn':''}">ยังไม่มีรูปใบคืนเงิน</span>`;
+  const phUp=exCan('refund')?`<label class="btn" style="padding:2px 10px;font-size:.8rem">📷 ${EXO.rfPhoto?'เปลี่ยนรูป':'แนบรูปใบรายการจ่ายเงิน'}<input type="file" accept="image/*" capture="environment" id="rfPhIn" data-own="ex" data-k="refund" hidden></label>`:'';
+  return `<div class="pane"><h2>รายรับอื่นๆ</h2><p class="hint">เงินที่ไม่มีบิล (ขายเศษเหล็ก ค่าขนส่ง ฯลฯ) · พิมพ์ลงทีละแถวได้เลย ครบแถวแล้วบันทึกเข้าระบบเอง (ที่เดียวกับกล่องในหน้าตรวจรายได้) · Enter/ลูกศร เลื่อนช่องเหมือน Excel</p>
+  <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>รายละเอียด</th><th style="text-align:right">บาท</th><th>รับเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
+  ${ro.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('other',i,'desc',x.desc,'เช่น ขายเศษเหล็ก')}</td><td style="width:8em">${ownAmt('other',i,x.amt)}</td><td style="width:8em">${chanSel(i,x.chan)}</td>${exStCell('other',i,R)}${exDelCell('other',i,x)}</tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td>${boxBad('other')?'รวม':`รวม (สด ${fmt(R.ex.oc)} · โอน ${fmt(R.ex.ox)})`}</td><td style="text-align:right">${totTxt('other',R.ex.oc+R.ex.ox)}</td><td colspan="3"></td></tr></tfoot></table></div>
+  <h2 style="margin-top:8px">คืนเงิน</h2><p class="hint">เลขบิล (พิมพ์แค่ 4 ตัวท้ายได้ เช่น 1194) + เลขใบลดหนี้ (ถ้ามี) + ยอดที่คืนจริง + คืนเป็นสด/โอนคืน · ไม่มีใบลดหนี้ = คืนเพราะลูกค้าโอนเกิน (ต้องมีบิลนี้ในแท็บโอน)</p>
+  ${lockMsg?`<div class="small" style="color:var(--bad)">🔒 ${esc(lockMsg)}</div>`:''}
+  ${EXO.err?`<div class="small" style="color:var(--warn)">ตรวจกับ ACC ไม่ได้ (${esc(EXO.err)}) — ยังลงรายรับอื่นๆ ได้ · คืนเงินลองเปิดหน้าใหม่</div>`:''}
+  <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th><th>ใบลดหนี้</th><th style="text-align:right">ยอดเงิน</th><th>คืนเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
+  ${rr.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('refund',i,'bill',x.bill,'1194 หรือ KM6910-1194','bill')}</td><td>${txt('refund',i,'cn',x.cn,'CN6910-0000','bill')}</td><td style="width:8em">${ownAmt('refund',i,x.amt)}</td><td style="width:7em">${paySel(i,x.ch)}</td>${exStCell('refund',i,R)}${exDelCell('refund',i,x)}</tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td colspan="2">${boxBad('refund')?'รวม':`รวม (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td colspan="3"></td></tr></tfoot></table></div>
+  <div class="small" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">รูปใบรายการจ่ายเงิน (คืนเงิน): ${ph} ${phUp}</div></div>`;
+}
+/* ---------- ใบนับเงินสด ในฟอร์มที่เดียว (คุณหลิงสั่ง 28 ต.ค.69 16:47) + ตารางนับเงินสด (คุณหลิงอนุมัติแบบ 29 ต.ค.69 09:03) ----------
+   แคชเชียร์กรอกแค่ "จำนวน" แบงค์/เหรียญ → รวมนับได้ = ยอดนับจริง (แทนช่องพิมพ์ยอดเดิม) · บันทึก rev_cash_proof.amount ที่เดียวเหมือนเดิม + counts (จำนวนแต่ละชนิด ไว้ปริ้น/ดูย้อนหลัง)
+   รูปบังคับแนบตามเดิม · กติกาเดิม (2 ต.ค.69): รูปแรกบันทึกเลย · รูปที่ 2 / แก้จำนวนหลังบันทึก = "ส่งคำขอแก้ไขยอดเงินสด" (rev_cash_proof_req) ให้เจ้าของอนุมัติ
+   เจ้าของกดอนุมัติได้ทั้งที่นี่และในหน้าตรวจรายได้ · เจ้าของแทนเองได้แต่ต้องใส่เหตุผล (เก็บประวัติ) · วันเก่าที่มีแค่ยอดรวม = ตารางว่าง แสดงยอดเดิม */
+const CP_DEN=[1000,500,100,50,20,10,5,2,1];
+const cpDenLab=d=>(d>=20?'ธนบัตร ':'เหรียญ ')+fmt(d);
+const CNT_RE=/^\d{1,6}$/;
+let CP_CNT={}, CP_ST='', _cpBusy=false;
+/* ตารางนับบนจอเริ่มจากจำนวนที่บันทึกไว้ (โหลดวัน / หลังบันทึก / ยกเลิกที่แก้) */
+function cpInitDraft(){ CP_CNT={}; CP_ST=''; const c=S.counts; if(c&&typeof c==='object'&&!Array.isArray(c)){ CP_DEN.forEach(d=>{ const v=c[String(d)]; if(Number.isInteger(v)&&v>0) CP_CNT[d]=String(v); }); if(+c.st>0) CP_ST=String(c.st); } }
+function cpNorm(c){ const o={}; if(c&&typeof c==='object'&&!Array.isArray(c)) [...CP_DEN.map(String),'st'].forEach(k=>{ if(+c[k]>0) o[k]=+c[k]; }); return o; }
+const cpSame=(a,b)=>JSON.stringify(cpNorm(a))===JSON.stringify(cpNorm(b));
+/* ค่าที่กรอกในตารางตอนนี้ → {any, bad, total, counts} */
+function cpDraft(){ let tot=0, any=false, bad=''; const counts={};
+  CP_DEN.forEach(d=>{ const s=String(CP_CNT[d]||'').trim().replace(/,/g,''); if(s==='') return; any=true;
+    if(!CNT_RE.test(s)||+s>100000){ bad=bad||`${cpDenLab(d)}: จำนวนต้องเป็นจำนวนเต็ม 0 ขึ้นไป`; return; }
+    const n=+s; if(n>0){ counts[String(d)]=n; tot+=d*n; } });
+  const st=String(CP_ST||'').trim();
+  if(st!==''){ any=true; const p=parseAmt(st); if(!p.ok||p.v===''||p.v>=1) bad=bad||'เศษสตางค์ต้องเป็น 0.01–0.99 บาท'; else if(p.v>0){ counts.st=p.v; tot+=p.v; } }
+  return {any,bad,total:r2x(tot),counts}; }
+const cpHas=()=>S.count!==''&&S.count!=null;
+/* แก้ตารางนับแล้ว ยังไม่ได้บันทึก/ส่งคำขอ */
+function cpDirty(){ if(TRIAL) return false; const d=cpDraft(); if(!cpHas()) return d.any; return d.any&&(d.bad!==''||!S.counts||!cpSame(d.counts,S.counts)||Math.abs(d.total-num(S.count))>0.009); }
+function cpCan(){ if(TRIAL||!_loadOk||!ROLE||_cpBusy) return false; if(ROLE==='owner'||ROLE==='finance') return true; const t0=bkkToday(); return ROLE==='cashier'&&(DATA.date===t0||DATA.date===bkkShift(t0,-1)); }
+const cpPend=()=>(EXO.reqs||[]).filter(r=>r.status==='pending');
+const cpEd=()=>cpCan()&&!(cpHas()&&ROLE!=='owner'&&cpPend().length);
+const RL_TXT={cashier:'แคชเชียร์',finance:'การเงิน',owner:'เจ้าของ'};
+function cpWhen(t){ try{ return t?new Date(t).toLocaleString('th-TH',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''; }catch(e){ return ''; } }
+const cpShowSt=()=>Math.round(R.cashSend*100)%100!==0||CP_ST!==''||(S.counts&&+S.counts.st>0);
+function cpDiffTxt(d){ if(!d.any) return '<span class="st warn">ยังไม่ได้นับ</span>'; if(d.bad) return `<span class="st bad">${esc(d.bad)}</span>`; if(amtProblems()) return '<span class="st bad">ยังสรุปไม่ได้</span>';
+  const diff=r2x(d.total-R.cashSend); return Math.abs(diff)<0.009?'<span class="st ok">0 ✓ ตรง</span>':`<span class="st bad">${diff<0?'ขาด':'เกิน'} ${fmt(Math.abs(diff))}</span>`; }
+const cpBaht=(den,v)=>{ const s=String(v||'').trim().replace(/,/g,''); return CNT_RE.test(s)?den*(+s):0; };
+/* ตารางนับเงินบนจอ — กรอกแค่ "จำนวน" (Enter/ลูกศรเลื่อนช่องเหมือนแท็บอื่น) · บาท/รวม/ผลต่าง คิดให้ทันทีระหว่างพิมพ์ */
+function cpTable(){
+  const ed=cpEd(), d=cpDraft();
+  const inp=(id,den,v,ph,mode)=>ed?`<input class="num" id="${id}" data-own="cp" data-den="${den}" value="${esc(v)}" placeholder="${ph}" inputmode="${mode}" autocomplete="off">`:`<span>${esc(v)}</span>`;
+  const rows=CP_DEN.map(den=>`<tr><td>${cpDenLab(den)}</td><td style="width:7.5em">${inp('cpc_'+den,den,CP_CNT[den]||'','','numeric')}</td><td style="text-align:right" id="cpb_${den}">${fmt(cpBaht(den,CP_CNT[den]))}</td></tr>`).join('');
+  const st=cpShowSt()?`<tr><td>เศษสตางค์ (บาท)</td><td>${inp('cpc_st','st',CP_ST,'0.00','decimal')}</td><td style="text-align:right" id="cpb_st">${fmt(d.counts.st||0)}</td></tr>`:'';
+  return `<div class="tblwrap"><table class="entry cpt"><thead><tr><th>ชนิด</th><th>จำนวน</th><th style="text-align:right">บาท</th></tr></thead><tbody>${rows}${st}</tbody>
+   <tfoot><tr class="cpsum"><td colspan="2">รวมนับได้</td><td style="text-align:right" id="cp_tot">${d.any&&!d.bad?fmt(d.total):'—'}</td></tr>
+   <tr><td colspan="2">ยอดนำส่งตามฟอร์ม</td><td style="text-align:right">${amtProblems()?'—':fmt(R.cashSend)}</td></tr>
+   <tr><td colspan="2">ผลต่าง</td><td style="text-align:right" id="cp_diff">${cpDiffTxt(d)}</td></tr></tfoot></table></div>
+   ${cpHas()&&!S.counts?`<div class="small">ใบนับวันนี้บันทึกไว้แค่ยอดรวม ${fmt(num(S.count))} (ไม่มีจำนวนแยกชนิด)</div>`:''}`;
+}
+/* ระหว่างพิมพ์: อัปเดตแค่ช่องบาท/รวม/ผลต่าง (ไม่วาดหน้าใหม่ ช่องที่พิมพ์ไม่หลุด) */
+function cpLive(){ const d=cpDraft();
+  CP_DEN.forEach(den=>{ const b=document.getElementById('cpb_'+den); if(b) b.textContent=fmt(cpBaht(den,CP_CNT[den])); });
+  const bs=document.getElementById('cpb_st'); if(bs) bs.textContent=fmt(d.counts.st||0);
+  const t=document.getElementById('cp_tot'); if(t) t.textContent=d.any&&!d.bad?fmt(d.total):'—';
+  const f=document.getElementById('cp_diff'); if(f) f.innerHTML=cpDiffTxt(d); }
+function cpHTML(){
+  const has=cpHas(), pend=cpPend(), done=(EXO.reqs||[]).filter(r=>r.status!=='pending'), d=cpDraft(), dirty=cpDirty();
+  const lnk=(p,t)=>p?`<a href="#" data-cpview="${esc(p)}">${t}</a>`:'';
+  let h=pend.map(r=>`<div class="small" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 8px">⏳ <b>คำขอแก้ไขยอดเงินสด รออนุมัติ</b><br>ยอดเดิม ${fmt(+r.prev_amount||0)} → ยอดใหม่ <b>${fmt(+r.amount||0)}</b> · เหตุผล: ${esc(r.reason||'')}<br>${esc(RL_TXT[r.requested_role]||r.requested_role||'')} ${cpWhen(r.requested_at)} · ${lnk(r.prev_image_path,'รูปเดิม')}${r.prev_image_path?' · ':''}${lnk(r.image_path,r.image_path===r.prev_image_path?'รูป (เดิม)':'รูปใหม่')}
+    ${ROLE==='owner'?`<div style="display:flex;gap:6px;margin-top:4px"><button type="button" class="btn pri" data-cpok="${+r.id}">✅ อนุมัติ</button><button type="button" class="btn" data-cpno="${+r.id}">❌ ไม่อนุมัติ</button></div>`:''}</div>`).join('');
+  const blocked=has&&ROLE!=='owner'&&pend.length;
+  if(cpCan()&&!blocked){
+    const fileBtn=(lab,pri)=>`<label class="btn${pri?' pri':''}" style="padding:4px 10px">${lab}<input type="file" accept="image/*" capture="environment" id="cp_file" data-own="cp" hidden></label>`;
+    if(!has) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn('📷 ถ่าย/เลือกรูปใบนับ',true)}</div><span class="small">กรอกจำนวนในตารางนับให้ครบก่อน แล้วถ่าย/เลือกรูปใบนับ (บังคับแนบรูป)</span>`;
+    else if(dirty) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนใบนับ + รูปใหม่':'📷 ส่งคำขอแก้ยอด + รูปใหม่',true)}<button type="button" class="btn" id="cp_keep">${ROLE==='owner'?'📝 แทนยอด (ใช้รูปเดิม)':'📝 ส่งคำขอแก้ยอด (ใช้รูปเดิม)'}</button><button type="button" class="btn" id="cp_undo">ยกเลิกที่แก้</button></div>
+      <span class="small" style="color:var(--warn)">แก้จำนวนหลังบันทึกแล้ว = แก้ยอดเงินสด ${ROLE==='owner'?'(เจ้าของแทนได้ ต้องใส่เหตุผล)':'ต้องส่งคำขอให้เจ้าของอนุมัติ'}</span>`;
+    else h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนรูปใบนับ (ใส่เหตุผล)':'📷 ส่งคำขอเปลี่ยนรูปใบนับ',false)}</div><span class="small">บันทึกแล้ว — แก้จำนวนในตาราง/เปลี่ยนรูป ต้องส่งคำขอให้เจ้าของอนุมัติ</span>`;
+  }else if(blocked) h+='<span class="small">มีคำขอแก้ไขรออนุมัติอยู่ — รอเจ้าของก่อน</span>';
+  else if(!has&&_loadOk) h+='<span class="small" style="color:var(--bad)">วันที่นี้แคชเชียร์แนบใบนับไม่ได้แล้ว (ได้เฉพาะวันนี้/เมื่อวาน) — แจ้งการเงินหรือเจ้าของ</span>';
+  if(done.length) h+=`<details class="small"><summary style="cursor:pointer">📜 ประวัติแก้ไขยอดเงินสด ${done.length} ครั้ง</summary>${done.map(r=>`<div>${r.status==='approved'?'✅':'❌'} ${fmt(+r.prev_amount||0)} → ${fmt(+r.amount||0)} · ${esc(r.reason||'')} · ${esc(RL_TXT[r.requested_role]||'')} ${cpWhen(r.requested_at)}</div>`).join('')}</details>`;
+  return h;
+}
+/* อ่านใบนับ + คำขอของวันนั้นใหม่ แล้ววาดทันที (ปริ้นหน้า 1 ใช้รูป/ยอด/ตารางนับใหม่เลย ไม่ต้อง F5) */
+async function cpReload(date,tok){
+  const q=await Promise.all([sb.from('rev_cash_proof').select('amount,image_path,counts').eq('date',date).maybeSingle(),sb.from('rev_cash_proof_req').select('*').eq('date',date).order('id')]);
+  if(q[0].error) throw q[0].error;
+  let url=null; const p=q[0].data; if(p&&p.image_path){ try{ const u=await sb.storage.from('revenue-slips').createSignedUrl(p.image_path,3600); if(u&&u.data) url=u.data.signedUrl; }catch(_e){} }
+  if(tok!==_loadTok||date!==DATA.date) return;
+  S.count=(p&&p.amount!=null)?+p.amount:''; S.counts=(p&&p.counts&&typeof p.counts==='object')?p.counts:null; S.photoPath=(p&&p.image_path)||null; S.photo=url; EXO.reqs=(q[1]&&!q[1].error&&q[1].data)||[];
+  cpInitDraft();
+}
+/* file = รูปใหม่ · null = ใช้รูปเดิม (แก้แค่จำนวน — มีใบนับแล้วเท่านั้น) */
+async function cpUpload(file){
+  if(!cpCan()) return renderAll();
+  if(file&&!/^image\//.test(file.type||'')){ setChip('saveChip','bad','ไฟล์ที่เลือกไม่ใช่รูปภาพ'); return; }
+  const date=DATA.date, tok=_loadTok, d=cpDraft();
+  if(!d.any||d.bad){ setChip('saveChip','bad',d.bad||'กรอกจำนวนแบงค์/เหรียญในตารางนับเงินก่อน แล้วค่อยถ่ายรูป'); const a=document.getElementById('cpc_1000'); if(a) a.focus(); return; }
+  const amt=d.total, counts=d.counts;
+  let cur=null, pend=[];
+  try{ const q=await Promise.all([sb.from('rev_cash_proof').select('*').eq('date',date).maybeSingle(),sb.from('rev_cash_proof_req').select('id').eq('date',date).eq('status','pending')]); if(q[0].error) throw q[0].error; cur=q[0].data; pend=(q[1]&&q[1].data)||[]; }
+  catch(_e){ setChip('saveChip','bad','เช็กใบนับเดิมไม่ได้ ลองใหม่อีกครั้ง'); return; }
+  if(!file&&!cur){ setChip('saveChip','bad','ยังไม่มีใบนับของวันนี้ — ต้องแนบรูปใบนับ'); return; }
+  if(!file&&cur&&cpSame(counts,cur.counts)&&Math.abs(+cur.amount-amt)<0.009){ setChip('saveChip','warn','ตารางนับไม่ได้เปลี่ยน — ไม่มีอะไรต้องส่ง'); return; }
+  let reason='';
+  if(cur){
+    if(ROLE!=='owner'&&pend.length){ setChip('saveChip','bad','มีคำขอแก้ไขยอดเงินสดรออนุมัติอยู่แล้ว — รออนุมัติก่อน'); return; }
+    reason=String(prompt(`${ROLE==='owner'?'แทนใบนับเดิม':'ส่งคำขอแก้ไขยอดเงินสด'} วันที่ ${beDate(date)}\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)}${file?'':' (ใช้รูปเดิม)'}\n\nเหตุผลที่แก้ (จำเป็น):`)||'').trim();
+    if(!reason){ setChip('saveChip','warn','ต้องใส่เหตุผลที่ขอแก้ไข — ยังไม่ได้ส่ง'); return; }
+  }else if(!confirm(`บันทึกใบนับเงินสดของวันที่ ${beDate(date)}\nรวมนับได้ ${fmt(amt)} บาท ใช่ไหม?`)) return;
+  _cpBusy=true; setChip('saveChip','warn',file?'กำลังอัปรูปใบนับ…':'กำลังบันทึก…'); renderAll();
+  try{
+    let path=cur?cur.image_path:null;
+    if(file){ const blob=await shrinkJpeg(file); path=`cashproof/${date}/${Date.now()}.jpg`;
+      const up=await sb.storage.from('revenue-slips').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(up.error) throw up.error; }
+    if(cur&&ROLE!=='owner'){
+      const rq=await sb.from('rev_cash_proof_req').insert([{date,amount:amt,counts,image_path:path,reason,prev_amount:+cur.amount,prev_image_path:cur.image_path,status:'pending',requested_role:ROLE}]); if(rq.error) throw rq.error;
+      try{ await sb.functions.invoke('rev-alert',{body:{text:`📝 <b>คำขอแก้ไขยอดเงินสด ${beDate(date)}</b>\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)}${file?'':' (ใช้รูปเดิม)'}\nเหตุผล: ${esc(reason)}\n👉 เปิดฟอร์มรายรับ (หรือหน้าตรวจรายได้) วันที่ ${beDate(date)} เพื่ออนุมัติ`}}); }catch(_e){}
+      setChip('saveChip','ok','ส่งคำขอแก้ไขยอดเงินสดแล้ว — รอเจ้าของอนุมัติ');
+    }else{
+      if(cur){ const lg=await sb.from('rev_cash_proof_req').insert([{date,amount:amt,counts,image_path:path,reason,prev_amount:+cur.amount,prev_image_path:cur.image_path,status:'approved',requested_role:ROLE,decided_role:ROLE,decided_at:new Date().toISOString()}]); if(lg.error) throw lg.error; }
+      const row={date,amount:amt,counts,image_path:path,uploaded_role:ROLE,uploaded_at:new Date().toISOString()};
+      /* รูปแรก = เพิ่มใหม่เท่านั้น — อีกเครื่องแนบไปก่อนแล้ว (ชนกัน) จะไม่ทับ ต้องส่งคำขอแก้ไขตามกติกา (Codex r1 #7) · เจ้าของแทนของเดิม = upsert พร้อมเหตุผลตามเดิม */
+      const r=cur?await sb.from('rev_cash_proof').upsert([row],{onConflict:'date'}):await sb.from('rev_cash_proof').insert([row]);
+      if(r.error){ if(String(r.error.code)==='23505') throw new Error('มีใบนับของวันนี้แล้ว (อีกเครื่องเพิ่งแนบ) — ดูยอดใหม่ แล้วถ้าจะแก้ให้ส่งคำขอแก้ไข'); throw r.error; }
+      setChip('saveChip','ok','บันทึกใบนับเงินสดแล้ว');
+    }
+    await cpReload(date,tok);
+  }catch(err){ setChip('saveChip','bad','บันทึกใบนับไม่สำเร็จ: '+(err.message||err)); }
+  finally{ _cpBusy=false; renderAll(); }
+}
+async function cpDecide(id,ok){
+  if(ROLE!=='owner'||_cpBusy) return; const date=DATA.date, tok=_loadTok;
+  _cpBusy=true; renderAll();
+  try{
+    const g=await sb.from('rev_cash_proof_req').select('*').eq('id',id).maybeSingle(); const r=g&&g.data;
+    if(!r||r.status!=='pending'||r.date!==date){ setChip('saveChip','warn','คำขอนี้ถูกจัดการไปแล้ว'); }
+    else if(confirm(`${ok?'อนุมัติ':'ไม่อนุมัติ'}คำขอแก้ไขยอดเงินสดวันที่ ${beDate(r.date)}\nยอดเดิม ${fmt(+r.prev_amount)} → ยอดใหม่ ${fmt(+r.amount)} ?`)){
+      /* อนุมัติ = แทนใบนับก่อน แล้วค่อยปิดคำขอ (เฉพาะที่ยังรออยู่) — ขาดกลางทาง = คำขอยังรออนุมัติ กดซ้ำได้ (ไม่เกิด "อนุมัติแล้วแต่ยอดยังเก่า" · Codex r2 #2) · ผู้อนุมัติมีเจ้าของคนเดียว */
+      /* ไม่อนุมัติ แต่ใบนับตอนนี้เป็นของคำขอนี้แล้ว (อนุมัติค้างกลางทาง) → ไม่ปิดเป็น "ไม่อนุมัติ" ให้กดอนุมัติแทน (Codex r3 #1) · คำขอใช้รูปเดิมได้ จึงเทียบยอด+จำนวนด้วย */
+      if(!ok){ const c=await sb.from('rev_cash_proof').select('amount,image_path,counts').eq('date',r.date).maybeSingle(); if(c.error) throw c.error;
+        const applied=c.data&&c.data.image_path===r.image_path&&Math.abs(+c.data.amount-(+r.amount))<0.009&&cpSame(c.data.counts,r.counts); /* คำขอที่ไม่เปลี่ยนอะไรถูกกันตั้งแต่ตอนส่ง (cpUpload) — ไม่ต้องยกเว้น (Codex r5) */
+        if(applied){ setChip('saveChip','warn','ใบนับตอนนี้เป็นค่าของคำขอนี้แล้ว (อนุมัติค้างจากรอบก่อน) — กด "อนุมัติ" เพื่อปิดคำขอ'); await cpReload(date,tok); return; } }
+      if(ok){ const u=await sb.from('rev_cash_proof').upsert([{date:r.date,amount:+r.amount,counts:r.counts==null?null:r.counts,image_path:r.image_path,uploaded_role:r.requested_role,uploaded_at:new Date().toISOString()}],{onConflict:'date'}); if(u.error) throw u.error; }
+      const d=await sb.from('rev_cash_proof_req').update({status:ok?'approved':'rejected',decided_role:ROLE,decided_at:new Date().toISOString()}).eq('id',id).eq('status','pending').select('id'); if(d.error) throw d.error;
+      setChip('saveChip',d.data&&d.data.length?'ok':'warn',!(d.data&&d.data.length)?'คำขอนี้ถูกจัดการไปแล้ว':ok?'อนุมัติแล้ว':'ไม่อนุมัติแล้ว');
+    }
+    await cpReload(date,tok);
+  }catch(err){ setChip('saveChip','bad','บันทึกไม่สำเร็จ: '+(err.message||err)); }
+  finally{ _cpBusy=false; renderAll(); }
+}
+/* ปริ้นหน้า 1 ส่วนล่าง (คุณหลิงอนุมัติแบบ 29 ต.ค.69): ซ้าย = รูปใบนับในกรอบพอดีรูป (ไม่ตัด ไม่ยืด) · ขวา = ตารางนับเงินสด (จำนวนที่บันทึกแล้ว) + เซ็น + ตรวจกับ ACC */
+function p1Bottom(){
+  const c=cpNorm(S.counts), has=cpHas(), cnt=has?num(S.count):null, showSt=Math.round(R.cashSend*100)%100!==0||+c.st>0;
+  const rows=CP_DEN.map(den=>`<tr><td>${cpDenLab(den)}</td><td class="r">${c[String(den)]?fmt(c[String(den)]):''}</td><td class="r">${fmt(den*(c[String(den)]||0))}</td></tr>`).join('')+(showSt?`<tr><td>เศษสตางค์</td><td></td><td class="r">${fmt(c.st||0)}</td></tr>`:'');
+  const diff=has?r2x(cnt-R.cashSend):null;
+  return `<div class="p1b"><div><div class="p1h">ใบนับเงินสด (รูปที่แนบ)</div>${S.photo?`<div class="pfr"><img src="${esc(S.photo)}" alt=""></div>`:'<div class="pfr empty">ยังไม่ได้แนบรูปใบนับเงินสด</div>'}</div>
+   <div><div class="p1h">ตารางนับเงินสด</div><table class="cnt"><tr><th style="width:44%">ชนิด</th><th>จำนวน</th><th>บาท</th></tr>${rows}
+     <tr class="t xaqua"><td colspan="2">รวมนับได้</td><td class="r">${has?fmt(cnt):''}</td></tr>
+     <tr><td colspan="2">ยอดนำส่งตามฟอร์ม</td><td class="r">${fmt(R.cashSend)}</td></tr>
+     <tr class="t"><td colspan="2">ผลต่าง</td><td class="r" style="color:${diff==null?'#666':Math.abs(diff)<0.009?'#15803d':'#b3261e'}">${diff==null?'ยังไม่ได้นับ':Math.abs(diff)<0.009?'0 ✓ ตรง':(diff<0?'ขาด ':'เกิน ')+fmt(Math.abs(diff))}</td></tr></table>
+     ${has&&!S.counts?'<div class="note">ใบนับวันนี้บันทึกแค่ยอดรวม (ไม่มีจำนวนแยกชนิด)</div>':''}
+     <div class="sig"><div class="lab">ผู้จัดทำ</div><div class="space"></div><div class="line">(.................................................)</div><div class="line">วันที่ ........../........../..........</div></div>
+     <div class="note">ตรวจกับ ACC: ${R.level==='ok'?'ผ่านทั้งหมด':R.level==='warn'?`มีจุดต้องดู ${R.nWarn} เรื่อง`:badHead(R)}</div></div></div>`;
 }
 function paneSum(R){
   const ph=S.photo?`<img src="${esc(S.photo)}" alt="รูปใบนับเงินสด">`:'ยังไม่แนบรูป';
@@ -721,7 +1042,7 @@ function paneSum(R){
    <div class="card" style="gap:8px"><b>ใบนับเงินสด</b><div class="photo"><div class="ph" id="phBox">${S.photo?`<img src="${esc(S.photo)}" alt="รูปใบนับเงินสด">`:'ยังไม่แนบรูป'}</div>
      <div style="display:flex;flex-direction:column;gap:6px"><span class="small">ยอดเงินสดนำส่งตามฟอร์ม<br><b style="font-size:1.1rem;color:var(--ink)">${amtProblems()?'<span class="st bad">ยังสรุปไม่ได้</span>':fmt(R.cashSend)+' บาท'}</b></span>
      <span class="small">ยอดที่นับได้จริง<br>${TRIAL?`<input class="num${BADAMT.cnt_amt_0?' badamt':''}" id="cnt_amt_0" value="${BADAMT.cnt_amt_0?esc(BADAMT.cnt_amt_0.raw):S.count===''?'':esc(S.count)}" placeholder="ใส่ยอดที่นับได้" inputmode="decimal" autocomplete="off" style="font-size:1.05rem;width:9em;border:1px solid var(--line);border-radius:6px;padding:4px 8px;text-align:right">`:`<b style="font-size:1.1rem;color:var(--ink)">${S.count===''?'—':validStored(S.count)?fmt(num(S.count))+' บาท':esc(S.count)+' (ไม่ถูกต้อง)'}</b>`} <span class="st ${R.cnt.lv}">${R.cnt.st}</span></span></div></div>
-     <span class="small">${TRIAL?'โหมดทดลอง: ใส่ยอดที่นับได้ที่นี่ ไม่ต้องแนบรูป':'แนบรูปและใส่ยอดที่กล่อง "ใบนับเงินสด" ในหน้าตรวจรายได้เหมือนเดิม'}</span>
+     ${TRIAL?'<span class="small">โหมดทดลอง: ใส่ยอดที่นับได้ที่นี่ ไม่ต้องแนบรูป</span>':'<b class="small" style="color:var(--ink)">ตารางนับเงินสด — กรอกจำนวนแบงค์/เหรียญ</b>'+cpTable()+cpHTML()}
      <div class="small">รายรับอื่นๆ ${totTxt('other',R.ex.oc+R.ex.ox)} · คืนเงิน ${totTxt('refund',R.ex.rc+R.ex.rx)} <button class="btn" data-go2="ex" style="padding:2px 10px;font-size:.8rem">ดูรายการ</button></div></div>
   </div></div>`;
 }
@@ -740,7 +1061,7 @@ function compute(){
   /* ยอดที่บันทึกไว้ก่อนมีตัวตรวจ (ติดลบ / ไม่ใช่ตัวเลข) → แจ้งให้แก้ ไม่ปล่อยผ่านเงียบๆ */
   const nameOfBox={rcash:'เงินสดปลีก',scash:'ร้านค้าเงินสด',xfer:'โอน',credit:'ลงบัญชี',oldc:'บิลเก่า-เงินสด',oldx:'บิลเก่า-โอน',upk:'UPK',other:'รายรับอื่นๆ',refund:'คืนเงิน'};
   Object.keys(nameOfBox).forEach(k=>(S[k]||[]).forEach((r,i)=>{ const bad=(k==='xfer'?['kp','ks']:['amt']).filter(f=>!validStored(r[f]));
-    if(bad.length){ const t=k==='other'||k==='refund'?'ex':tabOf(k); R.rowInfo[k+':'+i]={lv:'bad',st:'ยอดไม่ถูกต้อง'}; bump(t,'bad'); R.issues.push({lv:'bad',block:true,code:'amt',t:`${nameOfBox[k]} แถว ${i+1}: ยอด "${bad.map(f=>r[f]).join(', ')}" ไม่ถูกต้อง`,d:(!TRIAL&&(k==='other'||k==='refund'))?'ยอดต้องเป็นตัวเลขบวก — แก้ที่กล่องในหน้าตรวจรายได้':'ยอดต้องเป็นตัวเลขบวก — แก้ที่ช่องนั้น',tab:t}); } }));
+    if(bad.length){ const t=k==='other'||k==='refund'?'ex':tabOf(k); R.rowInfo[k+':'+i]={lv:'bad',st:'ยอดไม่ถูกต้อง'}; bump(t,'bad'); R.issues.push({lv:'bad',block:true,code:'amt',t:`${nameOfBox[k]} แถว ${i+1}: ยอด "${bad.map(f=>r[f]).join(', ')}" ไม่ถูกต้อง`,d:(!TRIAL&&(k==='other'||k==='refund'))?'ยอดต้องเป็นตัวเลขบวก — แก้ในแท็บ อื่นๆ / คืนเงิน':'ยอดต้องเป็นตัวเลขบวก — แก้ที่ช่องนั้น',tab:t}); } }));
   (S.oldx||[]).forEach((r,i)=>{ if(!r.chq||(!r.bill&&r.amt==='')) return;
     if(!chqInfoOk(r)){ R.issues.push({lv:'bad',block:true,code:'chq',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค ยังไม่กรอกข้อมูลเช็ค (เลขที่/ธนาคาร/วันที่บนเช็ค)`,d:'กด "กรอกข้อมูลเช็ค" ใต้เลขบิล',tab:'old'}); bump('old','bad'); }
     if(TRIAL) R.issues.push({lv:'info',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค (โหมดทดลองไม่ต้องแนบรูป)`,tab:'old'});
@@ -799,12 +1120,16 @@ function compute(){
   // today's bills
   const tb=!ACC_OK?[]:Object.values(BILL).filter(b=>b.date===today).sort((a,b)=>a.no<b.no?-1:1);
   let expRetailCash=0;const retailCashParts=[];const satang=[];
+  /* ใบลดหนี้ที่ใช้จ่ายบิลวันนี้ (ACC นับเต็มใบ) แต่ทอนส่วนที่เกินคืนลูกค้า (ลงในแถวคืนเงินด้วยเลข CN เดียวกัน) → เครดิตที่ใช้จริง = ยอด CN − คืนเงิน
+     เคส 28/10: บิล 1194 ยอด 10 ใช้ CN6910-0043 12 ทอนสด 2 → เครดิต 10 = ครบบิล (เดิมขึ้น "ลงรับรวม 12 เกินยอดบิล 10") */
+  const rfCn={}; exRows('refund').forEach(x=>{ if(x.cn) rfCn[x.cn]=r2x((rfCn[x.cn]||0)+num(x.amt)); });
+  const cnAmt=x=>Math.max(0,r2x(x.amt-(rfCn[x.cn]||0)));
   tb.forEach(b=>{
     const ent=(R.paid[b.no]||[]);const entSum=ent.reduce((s,x)=>s+x.amt,0);
     const dep=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);
-    const cn=(CNUSE[b.no]||[]).reduce((s,x)=>s+x.amt,0);
+    const cn=(CNUSE[b.no]||[]).reduce((s,x)=>s+cnAmt(x),0), cnRf=(CNUSE[b.no]||[]).reduce((s,x)=>s+x.amt-cnAmt(x),0);
     const covered=entSum+dep+cn;const rem=Math.round((b.total-covered)*100)/100;
-    const extra=[];if(dep)extra.push(`หักมัดจำ ${(USE[b.no]||[]).map(x=>x.ra).join(',')} ${fmt(dep)}`);if(cn)extra.push(`ใช้เครดิต ${(CNUSE[b.no]||[]).map(x=>x.cn).join(',')} ${fmt(cn)}`);
+    const extra=[];if(dep)extra.push(`หักมัดจำ ${(USE[b.no]||[]).map(x=>x.ra).join(',')} ${fmt(dep)}`);if(cn||cnRf)extra.push(`ใช้เครดิต ${(CNUSE[b.no]||[]).map(x=>x.cn).join(',')} ${fmt(cn)}${cnRf>0.009?` (ใบลดหนี้ ${fmt(cn+cnRf)} − คืนเงิน ${fmt(cnRf)})`:''}`);
     const retail=b.code===RETAIL;const upk=/UPK/i.test(b.name);
     if(retail&&!upk){
       if(rem<-0.009){R.issues.push({lv:'warn',sum:true,t:`${b.no} คุณ 1 ลงรับรวม ${fmt(covered)} เกินยอดบิล ${fmt(b.total)}`,d:extra.join(' · ')})}
@@ -830,7 +1155,7 @@ function compute(){
   /* ยอดรวมทั้งวัน: บิลขายวันนี้ใน ACC = ที่ฟอร์มลงรับไว้กับบิลวันนี้ (ทุกกล่อง) + เงินสดปลีก + มัดจำที่หักในบิล + ใบลดหนี้ที่ใช้เป็นเครดิต */
   if(ACC_OK){
     const box={};let dep=0,cn=0;
-    tb.forEach(b=>{(R.paid[b.no]||[]).forEach(x=>{box[x.src]=(box[x.src]||0)+x.amt});dep+=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);cn+=(CNUSE[b.no]||[]).reduce((s,x)=>s+x.amt,0)});
+    tb.forEach(b=>{(R.paid[b.no]||[]).forEach(x=>{box[x.src]=(box[x.src]||0)+x.amt});dep+=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);cn+=(CNUSE[b.no]||[]).reduce((s,x)=>s+cnAmt(x),0)});
     const tot=tb.reduce((s,b)=>s+b.total,0);const covered=Object.values(box).reduce((s,v)=>s+v,0)+rcEntered+dep+cn;
     const depAcc={cash:0,xfer:0},depForm={cash:0,xfer:0};
     Object.values(DEP).forEach(d=>{if(d.date===today)depAcc[/สด/.test(d.method)?'cash':'xfer']+=d.total});
@@ -853,17 +1178,29 @@ function compute(){
   R.sum=z;
   R.old={c:S.oldc.reduce((s,r)=>s+num(r.amt),0),x:S.oldx.reduce((s,r)=>s+num(r.amt),0),cs:{r:0,s:0},xs:{r:0,s:0}};S.oldc.forEach(r=>R.old.cs[side(r.bill)]+=num(r.amt));S.oldx.forEach(r=>R.old.xs[side(r.bill)]+=num(r.amt));
   R.upk=S.upk.reduce((s,r)=>s+num(r.amt),0);
-  R.ex={oc:0,ox:0,rc:0,rx:0};S.other.forEach(x=>{R.ex[x.ch==='xfer'?'ox':'oc']+=num(x.amt)});S.refund.forEach(x=>{R.ex[x.ch==='xfer'?'rx':'rc']+=num(x.amt)});
-  S.other.forEach((x,i)=>{if(num(x.amt)&&!String(x.desc||'').trim()){R.issues.push({lv:'bad',t:`รายรับอื่นๆ แถว ${i+1}: ใส่รายละเอียดด้วย`,tab:'ex'});bump('ex','bad')}});
-  S.refund.forEach((x,i)=>{if(!x.bill&&!num(x.amt))return;
+  R.ex={oc:0,ox:0,rc:0,rx:0};exRows('other').forEach(x=>{R.ex[x.ch==='xfer'?'ox':'oc']+=num(x.amt)});exRows('refund').forEach(x=>{R.ex[x.ch==='xfer'?'rx':'rc']+=num(x.amt)});
+  /* โหมดจริง: สถานะแถวรายรับอื่นๆ/คืนเงิน — ยังไม่บันทึก/บันทึกไม่ผ่าน = ต้องแก้ก่อนส่งฟอร์ม (block) · แถวในฐานที่ตรวจแล้วไม่ผ่าน (เช่นคืนเกินส่วนที่เหลือของ CN) = เรื่องที่การเงินตรวจต่อ */
+  if(!TRIAL) ['other','refund'].forEach(k=>{ const lab=k==='other'?'รายรับอื่นๆ':'คืนเงิน';
+    S[k].forEach((r,i)=>{ const st=EXST.get(r)||{}, c=exCheck(k,r,i); let info;
+      if(st.busy){ info={lv:'warn',st:'กำลังบันทึก…'}; R.issues.push({lv:'bad',block:true,t:`${lab} แถว ${i+1} กำลังบันทึก — รอสักครู่ก่อนส่งฟอร์ม`,tab:'ex'}); }
+      else if(!r._sv||!exSame(k,r)){ if(!c.ok&&!c.lv&&!r._sv) return;
+        info=st.lv==='bad'&&st.t?{lv:'bad',st:st.t}:c.ok?{lv:'warn',st:'ยังไม่บันทึก'}:{lv:c.lv||'bad',st:c.t||'ยังไม่ครบ'};
+        R.issues.push({lv:'bad',block:true,t:`${lab} แถว ${i+1} ยังไม่ได้บันทึก: ${info.st}`,d:r._sv?'ในระบบยังเป็นค่าเดิม — แก้ให้ครบ หรือกด 🗑 ถ้าจะลบ':'แก้ให้ครบแล้วโปรแกรมบันทึกให้เอง หรือกด 🗑 ลบแถวนี้',tab:'ex'}); }
+      else if(!c.ok&&!c.unk){ info={lv:c.lv||'bad',st:c.t}; R.issues.push({lv:c.lv==='warn'?'warn':'bad',t:`${lab} แถว ${i+1} (${k==='other'?r.desc:r.bill+(r.cn?' · '+r.cn:'')}): ${c.t}`,d:'อยู่ในระบบแล้ว — การเงิน/เจ้าของตรวจ แก้ยอดได้ในแถวนี้',tab:'ex'}); }
+      else{ info=st.lv==='bad'&&st.t?{lv:'warn',st:st.t}:c.warn&&c.ok?{lv:'warn',st:c.warn}:{lv:'ok',st:'บันทึกแล้ว ✓'}; if(c.ok&&c.warn) R.issues.push({lv:'warn',t:`${lab} แถว ${i+1}: ${c.warn}`,tab:'ex'}); }
+      R.rowInfo[k+':'+i]=info; bump('ex',info.lv); }); });
+  if(TRIAL) S.other.forEach((x,i)=>{if(num(x.amt)&&!String(x.desc||'').trim()){R.issues.push({lv:'bad',t:`รายรับอื่นๆ แถว ${i+1}: ใส่รายละเอียดด้วย`,tab:'ex'});bump('ex','bad')}});
+  if(TRIAL) S.refund.forEach((x,i)=>{if(!x.bill&&!num(x.amt))return;
     if(!validBill(x.bill)||isRA(x.bill)){R.rowInfo['refund:'+i]={lv:'bad',st:'เลขบิลไม่ถูกต้อง'};R.issues.push({lv:'bad',t:`คืนเงิน แถว ${i+1}: เลขบิล "${x.bill||''}" ไม่ถูกต้อง`,d:'พิมพ์เต็ม เช่น KM6910-0874',tab:'ex'});bump('ex','bad');return}
     if(x.cn&&!/^CN\d{4}-\d{4}$/.test(x.cn)){R.rowInfo['refund:'+i]={lv:'bad',st:'เลขใบลดหนี้ผิด'};R.issues.push({lv:'bad',t:`คืนเงิน แถว ${i+1}: เลขใบลดหนี้ "${x.cn}" ไม่ถูกต้อง`,d:'พิมพ์เต็ม เช่น CN6910-0026',tab:'ex'});bump('ex','bad');return}
     if(!num(x.amt)){R.rowInfo['refund:'+i]={lv:'bad',st:'ใส่ยอด'};bump('ex','bad');return}
     R.rowInfo['refund:'+i]={lv:'ok',st:'✓'};bump('ex','ok')});
   R.cashSend=z.cash.r+z.cash.s+R.ex.oc+R.old.c-R.ex.rc;R.cnt={lv:'',st:''};
-  if(S.count===''||S.count==null){R.cnt={lv:'bad',st:'ยังไม่ได้ใส่'};R.issues.push({lv:'bad',t:'ยังไม่ได้ใส่ยอดเงินสดที่นับได้จริง',d:TRIAL?'ใส่ที่แท็บสรุปรายรับ ช่องยอดที่นับได้จริง':'ใส่ที่กล่องใบนับเงินสด ในหน้าตรวจรายได้',tab:'sum'});bump('sum','bad')}
+  if(S.count===''||S.count==null){R.cnt={lv:'bad',st:'ยังไม่ได้ใส่'};R.issues.push({lv:'bad',t:'ยังไม่ได้ใส่ยอดเงินสดที่นับได้จริง',d:TRIAL?'ใส่ที่แท็บสรุปรายรับ ช่องยอดที่นับได้จริง':'ใส่ยอด + แนบรูป ที่กล่องใบนับเงินสด แท็บสรุปรายรับ',tab:'sum'});bump('sum','bad')}
   else{const cd=Math.round((num(S.count)-R.cashSend)*100)/100;if(Math.abs(cd)>0.009){R.cnt={lv:'bad',st:`${cd<0?'ขาด':'เกิน'} ${fmt(Math.abs(cd))}`};R.issues.unshift({lv:'bad',sum:true,t:`เงินสดนับได้ ${fmt(num(S.count))} · ตามฟอร์ม ${fmt(R.cashSend)} → ${cd<0?'ขาด':'เกิน'} ${fmt(Math.abs(cd))}`,tab:'sum'});bump('sum','bad')}else{R.cnt={lv:'ok',st:'ตรงกับฟอร์ม ✓'};R.issues.push({lv:'ok',t:`เงินสดนับได้ ${fmt(num(S.count))} ตรงกับยอดตามฟอร์ม`,tab:'sum'})}}
-  if(!S.photo&&!TRIAL){R.issues.push({lv:'warn',t:'ยังไม่ได้แนบรูปใบนับเงินสด',d:'แนบที่กล่องใบนับเงินสด ในหน้าตรวจรายได้',tab:'sum'});bump('sum','warn')}
+  if(!TRIAL&&cpHas()&&cpDirty()){R.issues.push({lv:'warn',t:'แก้จำนวนในตารางนับเงินแล้ว ยังไม่ได้ส่งคำขอแก้ยอด',d:'ยอดนับที่ใช้ตรวจยังเป็นค่าเดิม '+fmt(num(S.count))+' — กดส่งคำขอ หรือ "ยกเลิกที่แก้" ในกล่องใบนับ',tab:'sum'});bump('sum','warn')}
+  if(!TRIAL&&!cpHas()&&cpDraft().any){R.issues.push({lv:'warn',t:'นับเงินในตารางแล้ว ยังไม่ได้แนบรูปใบนับ (ยังไม่บันทึก)',d:'กด "ถ่าย/เลือกรูปใบนับ" ในกล่องใบนับเงินสด',tab:'sum'});bump('sum','warn')}
+  if(!S.photo&&!TRIAL){R.issues.push({lv:'warn',t:'ยังไม่ได้แนบรูปใบนับเงินสด',d:'แนบที่กล่องใบนับเงินสด แท็บสรุปรายรับ',tab:'sum'});bump('sum','warn')}
   const bad=R.issues.filter(x=>x.lv==='bad').length,warn=R.issues.filter(x=>x.lv==='warn').length;
   R.level=bad?'bad':warn?'warn':'ok';R.nBad=bad;R.nWarn=warn;R.accOk=ACC_OK;
   /* มียอดไม่ถูกต้อง (ค้างแดง/ข้อมูลเก่าผิด) → ผล "ตรง/ครบ" ทุกอย่างยังเชื่อไม่ได้ ซ่อนไว้จนกว่าจะแก้ (Codex v074 r4 #1) */
@@ -889,12 +1226,17 @@ function sumTable(R,compact){
   <tr class="tot"><td>ยอดรวมเงินสดนำส่ง</td><td colspan="2"></td><td>${amtProblems()?'<span class="st bad">ยังสรุปไม่ได้</span>':fmt(R.cashSend)+xlTag(R.cashSend,XL.send)}</td></tr>
   </tbody></table></div>`;
 }
+/* เรื่องที่ล็อกปุ่มส่งฟอร์ม — เงื่อนไขเดียวกับปุ่มส่งจริง (หัวแผง/ปุ่ม/กระดาษปริ้น ใช้ตัวเดียวกัน ไม่ขัดกัน) */
+function blockCount(R){ return R.issues.filter(x=>x.lv==='bad'&&(x.block===true||/ไม่ครบหรือผิดรูปแบบ|ไม่มีเลขบิล|เลข RA .* ไม่ถูกต้อง/.test(x.t))).length; }
+/* หัวแผง (คุณหลิงเลือก 28 ต.ค.69 16:42): มีเรื่องที่ล็อก = "ต้องแก้ N เรื่องก่อนส่งฟอร์ม" · มีแต่เรื่องที่ไม่ล็อก = "ส่งได้ · มี N เรื่องที่การเงินจะตรวจต่อ" */
+function badHead(R){ const nb=blockCount(R); return nb?`ต้องแก้ ${nb} เรื่องก่อนส่งฟอร์ม`:`ส่งได้ · มี ${R.nBad-nb} เรื่องที่การเงินจะตรวจต่อ`; }
 function renderSide(R){
-  const head=!R.accOk?{ok:'รอข้อมูล ACC รอบ 16:30 — ตอนนี้ตรวจได้แค่รูปแบบเลขบิล',warn:'รอข้อมูล ACC รอบ 16:30 — ตอนนี้ตรวจได้แค่รูปแบบเลขบิล',bad:`แก้ ${R.nBad} เรื่อง · รอข้อมูล ACC รอบ 16:30`}[R.level]:{ok:'ตรงกับ ACC ทั้งหมด',warn:`มีจุดต้องดู ${R.nWarn} เรื่อง (ไม่บล็อก)`,bad:`ต้องแก้ ${R.nBad} เรื่องก่อนกดยืนยัน`}[R.level];
+  const head=!R.accOk?{ok:'รอข้อมูล ACC รอบ 16:30 — ตอนนี้ตรวจได้แค่รูปแบบเลขบิล',warn:'รอข้อมูล ACC รอบ 16:30 — ตอนนี้ตรวจได้แค่รูปแบบเลขบิล',bad:`${badHead(R)} · รอข้อมูล ACC รอบ 16:30`}[R.level]:{ok:'ตรงกับ ACC ทั้งหมด',warn:`มีจุดต้องดู ${R.nWarn} เรื่อง (ไม่บล็อก)`,bad:badHead(R)}[R.level];
+  const nBlock=blockCount(R);
   const order={bad:0,warn:1,info:2,ok:3};
   const list=R.issues.slice().sort((a,b)=>order[a.lv]-order[b.lv]);
-  document.getElementById('cResult').innerHTML=`<h3>ตรวจกับ ACC <span class="chip ${R.level}">${R.level==='ok'?'ผ่าน':R.level==='warn'?'ดูก่อน':'ยังไม่ผ่าน'}</span></h3>
-   <div class="big ${R.level}">${head}</div>
+  document.getElementById('cResult').innerHTML=`<h3>ตรวจกับ ACC <span class="chip ${R.level==='bad'&&!nBlock?'warn':R.level}">${R.level==='ok'?'ผ่าน':R.level==='warn'?'ดูก่อน':nBlock?'ยังส่งไม่ได้':'ส่งได้ · มีเรื่องตรวจต่อ'}</span></h3>
+   <div class="big ${R.level==='bad'&&!nBlock?'warn':R.level}">${head}</div>
    <div class="issues">${list.map(x=>`<div class="iss ${x.lv}"><b>${esc(x.t)}</b>${x.d?`<div class="d">${esc(x.d)}</div>`:''}${x.tab&&x.tab!==cur?`<button data-go="${x.tab}">ไปที่แท็บ</button>`:''}</div>`).join('')||'<div class="small">ยังไม่มีรายการ</div>'}</div>
    <details class="how"><summary>โปรแกรมตรวจอะไรบ้าง</summary><ul>
     <li>ทุกบิลร้านค้าของวันนี้ต้องมีที่มาของเงินครบยอด (รวมทุกกล่อง + มัดจำที่หัก + ใบลดหนี้ที่ใช้เป็นเครดิต)</li>
@@ -950,12 +1292,12 @@ function renderAll(keepFocus){
   p.querySelectorAll('input').forEach(i=>{i.onchange=null;i.onkeydown=null;i.oninput=null;i.onblur=null});
   p.innerHTML=cur==='sum'?paneSum(R):cur==='rcash'?paneRcash(R):cur==='scash'?paneBillAmt('scash','ร้านค้าเงินสด','เลขบิลเต็ม + ยอดเงิน (เช่น KM6910-0874) · ชื่อร้านขึ้นเองจาก ACC · มัดจำเงินสดของร้านค้า ติ๊กช่องมัดจำ แล้วใส่เลขที่ใบรับมัดจำ',R):cur==='xfer'?paneXfer(R):cur==='ex'?paneEx(R):cur==='credit'?paneBillAmt('credit','ลงบัญชี (รวมงานสั่งทำ)','บิลที่ลูกค้ายังไม่จ่าย ใส่ยอดที่ค้าง · บิลที่หักมัดจำไปแล้ว ใส่แค่ยอดที่เหลือ (ACC รู้ยอดหักเอง)',R):paneOld(R);
   renderSide(R);bind();
-  const ed=canEdit(); p.querySelectorAll('input,select').forEach(i=>{ i.disabled=!ed; });
+  const ed=canEdit(); p.querySelectorAll('input,select').forEach(i=>{ i.disabled=i.dataset.own==='ex'?!exCan(i.dataset.k):i.dataset.own==='cp'?!cpEd():!ed; });
   const done=accDone(), miss=done?CashierForm.missingInAcc(S,{bills:BILL,deps:DEP}):[];
   setChip('syncChip', done?'ok':'warn', done?('ACC ครบวันแล้ว · ซิงก์ '+new Date(DATA.synced_at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):'รอข้อมูล ACC รอบ 16:30');
   setChip('roleChip', ROW.status==='submitted'?'ok':'mute', (ROLE_LABEL[ROLE]||'')+(ROW.status==='submitted'?' · ส่งฟอร์มแล้ว':''));
   /* เรื่องที่บล็อกส่งฟอร์ม: รูปแบบเลขบิล (เดิม · ดูจากข้อความ) + เรื่องที่ติดธง block (ยอดผิด/ยอดค้างไม่ถูกต้อง/ยังไม่แนบรูปเช็ค) — Codex v074 #3 */
-  const fmtBad=R.issues.filter(x=>x.lv==='bad'&&(x.block===true||/ไม่ครบหรือผิดรูปแบบ|ไม่มีเลขบิล|เลข RA .* ไม่ถูกต้อง/.test(x.t))).length;
+  const fmtBad=blockCount(R);
   const nBadAmt=amtProblems();
   const bp=document.getElementById('bPrint'), bs=document.getElementById('bSubmit');
   bp.disabled=!(done&&!miss.length&&!nBadAmt); bp.title=!done?'ปริ้นได้หลังข้อมูล ACC เข้ารอบ 16:30 (ชื่อร้าน + แยกปลีก/ร้านค้า จะครบ)':miss.length?('ยังไม่พบใน ACC: '+miss.join(', ')):nBadAmt?'แก้ช่องยอดที่ขึ้นสีแดงก่อน':'';
@@ -996,6 +1338,15 @@ function bind(){
   document.querySelectorAll('#panes [data-go2]').forEach(b=>b.onclick=()=>{cur=b.dataset.go2;renderAll()});
   const ci=document.getElementById('cnt_amt_0');if(ci){const f=()=>{if(!canEdit()){renderAll();return}const p=parseAmt(ci.value);if(!p.ok){amtErr(ci,p.why);return}const had=!!BADAMT.cnt_amt_0;delete BADAMT['cnt_amt_0'];ci.classList.remove('badamt');const v=p.v;if(v===S.count){ if(had) renderAll(); return; }ci.defaultValue=ci.value;S.count=v;renderAll();scheduleSave()};ci.onchange=f;ci.onblur=()=>{if(ci.isConnected)f()};ci.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();f()}}}
   try{ pkBind(); }catch(_e){} /* ตัวช่วยบิลเก่าพัง ไม่กระทบช่องกรอกอื่น */
+  document.querySelectorAll('#panes [data-exdel]').forEach(b=>b.onclick=()=>{ const [k,i]=b.dataset.exdel.split(':'); exDel(k,+i); });
+  document.querySelectorAll('#panes [data-rfview]').forEach(b=>b.onclick=()=>{ if(EXO.rfPhoto) openPath(EXO.rfPhoto); });
+  const rp=document.getElementById('rfPhIn'); if(rp) rp.onchange=()=>{ const f=rp.files&&rp.files[0]; rp.value=''; if(f) rfPhotoUp(f); };
+  document.querySelectorAll('#panes [data-den]').forEach(el=>{ const den=el.dataset.den; el.oninput=()=>{ if(den==='st') CP_ST=el.value; else CP_CNT[den]=el.value; cpLive(); }; el.onchange=()=>renderAll(); });
+  const ck=document.getElementById('cp_keep'); if(ck) ck.onclick=()=>cpUpload(null);
+  const cu=document.getElementById('cp_undo'); if(cu) cu.onclick=()=>{ cpInitDraft(); renderAll(); };
+  const cf=document.getElementById('cp_file'); if(cf) cf.onchange=()=>{ const f=cf.files&&cf.files[0]; cf.value=''; if(f) cpUpload(f); };
+  document.querySelectorAll('#panes [data-cpview]').forEach(a=>a.onclick=e=>{ e.preventDefault(); openPath(a.dataset.cpview); });
+  document.querySelectorAll('#panes [data-cpok],#panes [data-cpno]').forEach(b=>b.onclick=()=>cpDecide(+(b.dataset.cpok||b.dataset.cpno),!!b.dataset.cpok));
   const ph=document.getElementById('phIn');
   if(ph)ph.onchange=()=>{const f=ph.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{S.photo=rd.result;renderAll()};rd.readAsDataURL(f)};
 }
@@ -1008,7 +1359,7 @@ function navKey(e,el){
   const key=e.key;
   if(!['Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(key)||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey) return;
   /* ฟอร์มล็อก (แก้ไม่ได้/กำลังโหลด/ส่ง/คัดลอก) หรือช่องปิด = ไม่ดักคีย์ (Codex kbd r1 #1) · ช่อง RA ที่ล็อกแบบ readonly ยังเป็นจุดผ่านได้ (แตะเพื่อแก้) */
-  if(!canEdit()||el.disabled) return;
+  if(!canEl(el)||el.disabled) return;
   if(el.tagName==='INPUT'&&(key==='ArrowLeft'||key==='ArrowRight')){
     const s=el.selectionStart,en=el.selectionEnd,L=el.value.length,all=s===0&&en===L;
     if(s!=null&&!all&&!(key==='ArrowLeft'?(s===0&&en===0):(s===L&&en===L))) return;
@@ -1052,7 +1403,7 @@ function parseAmt(raw){
 const validStored=v=>v===''||v==null||(typeof v==='number'?(isFinite(v)&&v>=0&&v<=9999999.99&&Math.abs(Math.round(v*100)-v*100)<1e-6):(typeof v==='string'&&parseAmt(v).ok));
 function amtErr(el,why){ el.classList.add('badamt'); el.title=why; BADAMT[el.id]={raw:el.value,why}; setChip('saveChip','bad','ยังไม่บันทึกช่องนี้: '+why); renderAll(); }
 function commit(el){
-  if(!canEdit()){renderAll();return}
+  if(!canEl(el)){renderAll();return}
   const k=el.dataset.k,i=+el.dataset.i,f=el.dataset.f;
   let v=el.value.trim();
   if(['amt','kp','ks'].includes(f)){ const p=parseAmt(v); if(!p.ok){ amtErr(el,p.why); return false; } v=p.v; delete BADAMT[el.id]; }
@@ -1062,12 +1413,17 @@ function commit(el){
   /* เปลี่ยนเลขบิลของแถวเช็คที่แนบรูปแล้ว → ถอดรูปเดิมออก (รูปเป็นของบิลเดิม) ต้องแนบใหม่ (Codex v074 r2 #5) */
   if(k==='oldx'&&f==='bill'&&S[k][i]&&S[k][i].chqImg&&S[k][i].bill!==v){ delete S[k][i].chqImg; setChip('saveChip','warn','เปลี่ยนเลขบิลแล้ว — แนบรูปเช็คใหม่'); }
   if(f==='ra'||f==='cn')v=normBill(v);
+  if(k==='refund'&&f==='bill')v=exBill(v);
   S[k][i][f]=v;
+  if(k==='other'&&f==='chan') S[k][i].ch=v==='cash'?'cash':'xfer';
+  const row=S[k][i];
   // drop fully empty rows except trailing
   const n0=S[k].length;
-  S[k]=S[k].filter(r=>Object.entries(r).some(([kk,vv])=>kk!=='raN'&&kk!=='ch'&&kk!=='chq'&&kk!=='chqImg'&&kk!=='chqNo'&&kk!=='chqBank'&&kk!=='chqDate'&&vv!==''&&vv!=null));
+  S[k]=S[k].filter(r=>Object.entries(r).some(([kk,vv])=>kk!=='raN'&&kk!=='ch'&&kk!=='chan'&&kk!=='chq'&&kk!=='chqImg'&&kk!=='chqNo'&&kk!=='chqBank'&&kk!=='chqDate'&&vv!==''&&vv!=null));
   /* แถวนี้ (i) ถูกตัด → ค่าค้างของแถว i ทิ้ง · แถวหลังจากนั้นเลื่อนเลขลง 1 (Codex v074 r2 #1) */
-  if(S[k].length<n0){ const nb={}; Object.entries(BADAMT).forEach(([id,b])=>{ const m=id.match(/^([a-z]+)_([a-z]+)_(\d+)$/); if(!m||m[1]!==k){ nb[id]=b; return; } const n=+m[3]; if(n===i) return; nb[n>i?`${m[1]}_${m[2]}_${n-1}`:id]=b; }); BADAMT=nb; }
+  if(S[k].length<n0) exDropBad(k,i);
+  /* รายรับอื่นๆ / คืนเงิน (โหมดจริง): บันทึกทีละแถวเข้าตารางเดิม ไม่ผ่านการบันทึกฟอร์ม */
+  if(!TRIAL&&(k==='other'||k==='refund')){ renderAll(); if(S[k].includes(row)) exSync(k,row); return true; }
   renderAll();scheduleSave();
   return true;
 }
@@ -1168,11 +1524,7 @@ function pageHTML(id){
    <tr><td>คืนเงิน</td><td class="r">สด ${fmt(R.ex.rc)}</td><td class="r">โอน ${fmt(R.ex.rx)}</td><td class="r">${fmt(R.ex.rc+R.ex.rx)}</td></tr>
    <tr><td>UPK</td><td class="c" colspan="2">${esc(S.upk.map(r=>r.bill).join(', '))}</td><td class="r">${fmt(R.upk)}</td></tr>
    <tr class="t xyellow"><td colspan="3">ยอดรวมเงินสดนำส่งรายวัน <span style="font-weight:400;font-size:8.5pt">(เงินสด + รายรับอื่นๆ สด + บิลเก่าสด − คืนเงินสด)</span></td><td class="r">${fmt(R.cashSend)}</td></tr></table>
-   <div style="margin-top:5mm;font-weight:700">ใบนับเงินสด (รูปที่แนบ)</div>
-   <div class="photo-box">${S.photo?`<img src="${esc(S.photo)}" alt="">`:'ยังไม่ได้แนบรูปใบนับเงินสด'}</div>
-   <div class="sign"><div class="cnt">ยอดเงินสดนำส่งจริง (ตามใบนับ)<b>${S.count===''?'........................':fmt(num(S.count))+' บาท'}</b>${S.count!==''&&Math.abs(num(S.count)-R.cashSend)>0.009?`<span style="font-size:9pt">${num(S.count)<R.cashSend?'ขาด':'เกิน'} ${fmt(Math.abs(num(S.count)-R.cashSend))} บาท</span>`:''}</div>
-     <div class="sig"><div class="lab">ผู้จัดทำ</div><div class="space"></div><div class="line">(.................................................)</div><div class="line">วันที่ ........../........../..........</div></div></div>
-   <div class="note">ตรวจกับ ACC: ${R.level==='ok'?'ผ่านทั้งหมด':R.level==='warn'?`มีจุดต้องดู ${R.nWarn} เรื่อง`:`ยังไม่ผ่าน ${R.nBad} เรื่อง`}</div></div>`;
+   ${p1Bottom()}</div>`;
   if(id==='p2'){const rows=padRows(S.scash,30);return `<div class="sheet">${sheetHead('ร้านค้า · รายการเงินสด')}
    <table><tr><th style="width:12mm">ลำดับ</th><th style="width:32mm">เลขบิล</th><th>ชื่อร้านค้า</th><th style="width:30mm">ยอดเงิน</th></tr>
    ${rows.map((r,i)=>`<tr><td class="c">${i+1}</td><td>${r?esc(r.bill):''}</td><td>${r?esc(nm(r.bill)):''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`).join('')}
@@ -1193,7 +1545,7 @@ function pageHTML(id){
   if(id==='p5'){const tb=(t,a,cl)=>`<span class="lab2 ${cl}">${t}</span><table><tr><th style="width:12mm">ลำดับ</th><th style="width:32mm">เลขบิล</th><th>สมาชิก/ร้านค้า</th><th style="width:26mm">ยอดเงิน</th></tr>${padRows(a,12).map((r,i)=>`<tr><td class="c">${i+1}</td><td>${r?esc(r.bill)+(r.chq?'<span class="nm">(เช็ค)</span>':''):''}</td><td>${r?esc(nm(r.bill)):''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`).join('')}<tr class="t"><td colspan="3" class="r">ยอดรวม</td><td class="r">${fmt(a.reduce((s,r)=>s+num(r.amt),0))}</td></tr></table>`;
     return `<div class="sheet">${sheetHead('บิลเก่า',true)}${tb('เงินสด',S.oldc,'')}<div style="height:6mm"></div>${tb('โอนเข้าบัญชี',S.oldx,'xblue')}</div>`}
   if(id==='p7'){
-    const o=padRows(S.other,12),r=padRows(S.refund,12);
+    const o=padRows(exRows("other"),12),r=padRows(exRows("refund"),12);
     return `<div class="sheet">${sheetHead('รายรับอื่นๆ / คืนเงิน')}
     <span class="lab2">รายรับอื่นๆ</span><table><tr><th style="width:12mm">ลำดับ</th><th>รายละเอียด</th><th style="width:28mm">เงินสด</th><th style="width:28mm">เงินโอน</th></tr>
     ${o.map((x,i)=>`<tr><td class="c">${i+1}</td><td>${x?esc(x.desc):''}</td><td class="r">${x&&x.ch!=='xfer'&&num(x.amt)?fmt(num(x.amt)):''}</td><td class="r">${x&&x.ch==='xfer'&&num(x.amt)?fmt(num(x.amt)):''}</td></tr>`).join('')}
@@ -1230,8 +1582,8 @@ function buildXlsx(ids){
   const ent=entriesOf(); const ok=r=>CF.BILL_RE.test(String(r.bill||''));
   const e={date:DATA.date,rcash:ent.rcash};
   ['scash','xfer','credit','oldc','oldx','upk'].forEach(k=>e[k]=(ent[k]||[]).filter(ok));
-  e.other=S.other.map(x=>({desc:x.desc,amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
-  e.refund=S.refund.map(x=>({bill:x.bill,cn:x.cn||'',amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
+  e.other=exRows("other").map(x=>({desc:x.desc,amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
+  e.refund=exRows("refund").map(x=>({bill:x.bill,cn:x.cn||'',amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
   const full=CF.buildWorkbook(X,e,{bills:BILL,deps:DEP});
   /* ชีตบิลเก่า: แถวโอนที่จ่ายด้วยเช็ค ใส่คำว่า "เช็ค" ในคอลัมน์ D (ไม่แตะตัวสร้างกลางที่หน้าตรวจรายได้ใช้ดึงยอด) */
   /* จับคู่รายแถวด้วยเลขลำดับในคอลัมน์ A ของช่วง "โอนเข้าบัญชี" (= ลำดับใน e.oldx) ไม่ใช่เลขบิล — บิลเดียวแบ่งหลายแถวได้ (Codex v074 #8) */
@@ -1265,8 +1617,9 @@ function doXlsx(){
 function doPrint(){
   if(amtProblems()){ document.getElementById('mNote').textContent='มียอดที่ไม่ถูกต้อง (ช่องสีแดง/เรื่องต้องแก้) — แก้ก่อนค่อยปริ้น'; return; }
   const ids=PAGES.filter(p=>picked.has(p.id)).map(p=>p.id);if(!ids.length)return;
-  document.getElementById('printArea').innerHTML=ids.map(pageHTML).join('');
-  try{window.print()}catch(e){}
+  const pa=document.getElementById('printArea'); pa.innerHTML=ids.map(pageHTML).join('');
+  /* รอรูปในหน้าปริ้นโหลดเสร็จ (ไม่เกิน 6 วิ) ไม่งั้นกรอบรูปใบนับว่างในกระดาษ */
+  Promise.race([Promise.all([...pa.querySelectorAll('img')].map(im=>im.complete?0:new Promise(r=>{ im.onload=im.onerror=r; }))),new Promise(r=>setTimeout(r,6000))]).then(()=>{ try{window.print()}catch(e){} });
   setTimeout(()=>{document.getElementById('mNote').textContent='ถ้าหน้าต่างปริ้นไม่ขึ้น แปลว่ากำลังเปิดในหน้าพรีวิวที่ปิดการปริ้นไว้ — เปิดไฟล์นี้ใน Chrome แล้วกดอีกครั้ง (ในโปรแกรมจริงปริ้นได้ปกติ)'},1500);
 }
 document.getElementById('bPrint').onclick=openPrint;
@@ -1282,6 +1635,7 @@ document.getElementById('bSubmit').onclick=async()=>{
     document.getElementById('subYes').onclick=async()=>{ document.getElementById('subOk').remove();
       /* ตรวจเงื่อนไขส่งของวันที่แสดงอยู่ตอนนี้ซ้ำ (ปุ่มส่งถูกคำนวณใหม่ทุกครั้งที่ renderAll) */
       if(_submitting||!_loadOk||document.getElementById('bSubmit').disabled) return;
+      if(exPending()){ setChip('saveChip','bad','ส่งไม่ได้: มีแถวรายรับอื่นๆ/คืนเงินที่ยังไม่ได้บันทึก — แก้ในแท็บ อื่นๆ / คืนเงิน ก่อน'); renderAll(); return; }
       /* ล็อกช่องกรอก + การเปลี่ยนวัน ตลอดการส่ง → สิ่งที่บันทึกรอบสุดท้ายคือสิ่งที่ส่ง และผลส่งไม่ไปตกที่วันอื่น */
       _submitting=true; renderAll(); const date=DATA.date, tok=_loadTok;
       try{ _dirty=true;
@@ -1306,7 +1660,7 @@ document.getElementById('bReset').onclick=()=>{
 document.getElementById('bTrialSave').onclick=async()=>{ if(!TRIAL||!canEdit()) return; _dirty=true; await saveNow(); };
 /* โหมดทดลอง → คัดลอกไปเป็น "ร่าง" ของฟอร์มจริง (คุณหลิงเลือก 24 ต.ค.69)
    ทำได้เฉพาะ: วันนี้/เมื่อวาน · ฟอร์มจริงของวันนั้นยังไม่มี หรือเป็นร่างว่าง · วันนั้นยังไม่ยืนยันในหน้าตรวจรายได้ (ไม่มีแถว rev_audit)
-   คัดลอกเฉพาะรายการในฟอร์ม (rcash/scash/xfer/credit/oldc/oldx/upk) — รายรับอื่นๆ/คืนเงิน/ยอดนับ ของจริงอยู่ที่กล่องในหน้าตรวจรายได้ ไม่คัดลอก
+   คัดลอกเฉพาะรายการในฟอร์ม (rcash/scash/xfer/credit/oldc/oldx/upk) — รายรับอื่นๆ/คืนเงิน/ยอดนับ ของจริงอยู่ในตาราง rev_cash_* (ลงในฟอร์มปกติ) ไม่คัดลอก
    ไม่ส่งฟอร์ม · ไม่แตะ rev_audit / rev_cash_* / ตัดบิล — แคชเชียร์ต้องเปิดฟอร์มปกติ ตรวจ แล้วกดส่งเอง */
 const REAL_KEYS=['rcash','scash','xfer','credit','oldc','oldx','upk'];
 /* ร่างว่าง = ทุกช่องใน entries เป็น array ว่าง / '' / null เท่านั้น · ช่องอื่นที่มีค่า หรือรูปแบบแปลก = ถือว่ามีข้อมูล ไม่ทับ (Codex v072 #3) */
@@ -1316,7 +1670,7 @@ document.getElementById('bCopyReal').onclick=()=>{
   const date0=DATA.date, tok0=_loadTok, t0=bkkToday();
   if(!(date0===t0||date0===bkkShift(t0,-1))){ setChip('saveChip','bad','คัดลอกไปฟอร์มจริงได้เฉพาะวันนี้และเมื่อวาน'); return; }
   const ex=[]; if(S.other.length) ex.push('รายรับอื่นๆ'); if(S.refund.length) ex.push('คืนเงิน'); if(S.count!=='') ex.push('ยอดนับเงินสด');
-  document.getElementById('bCopyReal').insertAdjacentHTML('afterend',`<span id="cpOk" class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:520px">คัดลอกรายการของวันที่ ${esc(beDate(date0))} ไปเป็นร่างของฟอร์มจริง?${ex.length?` (${esc(ex.join(' / '))} ไม่คัดลอก — ลงที่กล่องในหน้าตรวจรายได้เอง)`:''} <button class="btn pri" id="cpYes">คัดลอก</button><button class="btn" id="cpNo">ยกเลิก</button></span>`);
+  document.getElementById('bCopyReal').insertAdjacentHTML('afterend',`<span id="cpOk" class="small" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:520px">คัดลอกรายการของวันที่ ${esc(beDate(date0))} ไปเป็นร่างของฟอร์มจริง?${ex.length?` (${esc(ex.join(' / '))} ไม่คัดลอก — ลงเองในฟอร์มปกติ แท็บ อื่นๆ/คืนเงิน และใบนับในแท็บสรุปรายรับ)`:''} <button class="btn pri" id="cpYes">คัดลอก</button><button class="btn" id="cpNo">ยกเลิก</button></span>`);
   document.getElementById('cpNo').onclick=()=>document.getElementById('cpOk').remove();
   document.getElementById('cpYes').onclick=async()=>{ document.getElementById('cpOk').remove();
     if(!TRIAL||!canEdit()||_copying||DATA.date!==date0||_loadTok!==tok0) return;
@@ -1345,7 +1699,7 @@ document.getElementById('bCopyReal').onclick=()=>{
       if(r.error){ setChip('saveChip','bad','คัดลอกไม่สำเร็จ: '+(r.error.message||r.error)); return; }
       if(!r.data||!r.data.length){ setChip('saveChip','bad','คัดลอกไม่สำเร็จ: ฟอร์มจริงเพิ่งถูกแก้ระหว่างนี้ — เปิดฟอร์มปกติดู'); return; }
       setChip('saveChip','ok','คัดลอกไปฟอร์มจริง (ร่าง) แล้ว');
-      _copyNote=`คัดลอกไปเป็นร่างของฟอร์มจริงวันที่ ${esc(beDate(date0))} แล้ว — <a href="ฟอร์มรายรับ.html?d=${esc(date0)}">เปิดฟอร์มปกติ</a> ตรวจอีกรอบแล้วกด "ส่งฟอร์ม"${ex.length?` · อย่าลืมลง ${esc(ex.join(' / '))} ที่หน้าตรวจรายได้`:''}`;
+      _copyNote=`คัดลอกไปเป็นร่างของฟอร์มจริงวันที่ ${esc(beDate(date0))} แล้ว — <a href="ฟอร์มรายรับ.html?d=${esc(date0)}">เปิดฟอร์มปกติ</a> ตรวจอีกรอบแล้วกด "ส่งฟอร์ม"${ex.length?` · อย่าลืมลง ${esc(ex.join(' / '))} ในฟอร์มปกติ (แท็บ อื่นๆ/คืนเงิน · ใบนับในแท็บสรุปรายรับ)`:''}`;
     } finally{ _copying=false; renderAll(); }
   };
 };

@@ -168,6 +168,9 @@ async function load(){
   if(a.error||d.error){ st.textContent="โหลดไม่ได้: "+((a.error||d.error).message); return; }
   /* v10ต.ค.69: ส่วนต่างที่เกิดจากใบลดหนี้ (ไม่ใช่เงินหาย) — CN บิลวันก่อน / CN ที่ส่วนเกินเป็นมัดจำ */
   let cnx={}; try{ const r=await sb.rpc("rev_cn_explain",{p_from:lo,p_to:hi}); if(r&&r.data) cnx=r.data; }catch(_e){}
+  /* v0.7.9 (28 ต.ค.69): คืนเงินของวันที่มีแถวในกล่องคืนเงิน = ยอดในกล่องตอนนี้ (สูตรเดียวกับหน้ารายละเอียดวัน) · อ่านไม่ได้ = ใช้ค่าที่เก็บตอนยืนยันแบบเดิม */
+  /* วันที่ใช้กล่องคืนเงินแล้ว (ตั้งแต่ 19 ต.ค.69 = REFUND_FROM ใน cutbill.js) ไม่มีแถว = คืนเงิน 0 */
+  const RF_FROM="2026-10-19"; let rfBox={}, rfBoxOk=false; try{ const r=await sb.from("rev_cash_refund").select("date,amount",{count:"exact"}).gte("date",lo).lte("date",hi); /* ได้ไม่ครบ (เกินเพดานแถวต่อครั้ง) = ไม่ใช้ ใช้ค่าที่เก็บแบบเดิม (Codex r2 #3) */ if(r&&!r.error&&(r.count==null||r.count<=(r.data||[]).length)){ rfBoxOk=true; (r.data||[]).forEach(x=>{ rfBox[x.date]=Math.round(((rfBox[x.date]||0)+(parseFloat(x.amount)||0))*100)/100; }); } }catch(_e){}
   st.textContent="";
   document.getElementById("rangeLbl").textContent="("+beDate(lo)+(lo!==hi?" – "+beDate(hi):"")+")";
   const audit=a.data||[], daily=d.data||[];
@@ -190,7 +193,7 @@ async function load(){
   const rows=days.map(dt=>{
     const x=aMap[dt], hasDaily=!!dMap[dt];
     const mn=x?parseFloat(x.machine_net):null, fm=x?parseFloat(x.form_main):null;
-    const up=x?NUM(x.form_upk):0, rf=x?NUM(x.form_refund):0;
+    const up=x?NUM(x.form_upk):0, rfSnap=x?NUM(x.form_refund):0, rf=(x&&rfBoxOk&&dt>=RF_FROM)?(rfBox[dt]||0):rfSnap;
     // สูตรเดียวกับหน้าตรวจรายได้: ยอดเครื่อง = ยอดฟอร์ม + UPK - คืนเงินสด
     const diff=(x&&mn!=null&&fm!=null&&!isNaN(mn)&&!isNaN(fm))?(mn-(fm+up-rf)):null;
     if(x&&x.status==="ตรวจแล้ว"){ totMachine+=(parseFloat(x.machine_net)||0); totForm+=(parseFloat(x.form_main)||0); totUpk+=up; totRefund+=rf; totDays++; }
@@ -199,7 +202,7 @@ async function load(){
     if(diff!=null&&Math.abs(diff)>1){ [[_o,0],[0,_dp],[_o,_dp]].some(function(c){ if((c[0]||c[1])&&Math.abs(diff+c[0]+c[1])<=1){ _exp=c[0]+c[1]; if(c[0]) _why.push('ใบลดหนี้บิลวันก่อน '+TH(c[0])+(_cx.old_list?' ('+_cx.old_list+')':'')); if(c[1]) _why.push('ใบลดหนี้ที่ส่วนเกินเป็นมัดจำ '+TH(c[1])+(_cx.dep_list?' ('+_cx.dep_list+')':'')); return true; } return false; }); }
     if(x&&x.status==="ตรวจแล้ว") totExp+=_exp;
     const diffHtml=(diff==null)?"—":(Math.abs(diff)<=1?'<span class="ok">'+TH(diff)+'</span>':(_exp?'<span class="ok" title="'+_why.join(' + ').replace(/"/g,'&quot;')+' — เครื่องหักแล้วแต่ไม่มีเงินคืนในฟอร์ม ไม่ใช่เงินหาย">'+TH(diff)+' ✓<br><span style="font-size:11px;font-weight:600">ใบลดหนี้ ไม่ใช่เงินหาย</span></span>':'<span class="warn">'+TH(diff)+' 🚩</span>'));
-    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily,dMap[dt])+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+(up?TH(up):'<span class="muted">—</span>')+'</td><td class="num">'+(rf?TH(rf):'<span class="muted">—</span>')+'</td><td class="num">'+diffHtml+'</td></tr>';
+    return '<tr class="row" onclick="goDay(\''+dt+'\')"><td>'+beDate(dt)+'</td><td>'+chip(x,hasDaily,dMap[dt])+'</td><td class="num">'+(mn!=null?TH(mn):"—")+'</td><td class="num">'+(fm!=null?TH(fm):"—")+'</td><td class="num">'+(up?TH(up):'<span class="muted">—</span>')+'</td><td class="num"'+(Math.abs(rf-rfSnap)>0.009?' title="ตอนยืนยัน '+TH(rfSnap)+' · กล่องคืนเงินตอนนี้ '+TH(rf)+'"':'')+'>'+(rf?TH(rf):'<span class="muted">—</span>')+(Math.abs(rf-rfSnap)>0.009?' <span style="font-size:11px">↻</span>':'')+'</td><td class="num">'+diffHtml+'</td></tr>';
   }).join("");
   const totDiff=totMachine-(totForm+totUpk-totRefund);
   const totTol=Math.max(1,totDays); // เผื่อเศษปัดวันละ 1 บาท

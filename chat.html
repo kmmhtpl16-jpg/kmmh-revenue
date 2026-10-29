@@ -23,7 +23,9 @@
      - ข้อมูลอยู่หลัง RLS is_owner() — ไม่ล็อกอินหรือไม่ใช่เจ้าของ ฐานข้อมูลไม่ส่งข้อความใดๆ มา
      - ไม่มีช่องพิมพ์ส่ง · ปักหมุด/โน๊ต/อัลบั้ม ยังปิด (ขั้น ②–④)
      เด้งเตือน (27 ต.ค.): ปุ่มกระดิ่ง → เปิด/ปิดเตือนเครื่องนี้ · service worker hq-sw.js scope "chat" (คุมแค่หน้านี้)
-     ข้อความเตือนสร้างในฐาน ไม่มียอดเงิน · กุญแจ VAPID สาธารณะด้านล่าง (ส่วนลับอยู่ใน Supabase เท่านั้น) -->
+     ข้อความเตือนสร้างในฐาน ไม่มียอดเงิน · กุญแจ VAPID สาธารณะด้านล่าง (ส่วนลับอยู่ใน Supabase เท่านั้น)
+     ขั้น ③ (28 ต.ค.): เจ้าของพิมพ์สั่งงาน + แท็ก @ / @all → ฟังก์ชัน hq_chat_send (ฐานตรวจเจ้าของเอง · ไม่เขียนตารางตรง)
+     Claude ในคอมร้านตอบในชื่อผู้ช่วย · กดค้างที่ข้อความ = ยกเลิก (ก่อนผู้ช่วยหยิบ) -->
 <style>
 :root{
   --bg:#0F1A2E; --bar:#132139; --line:#22324F; --chip:#1C2B45; --bubble:#1C2B45; --day:#18263F;
@@ -105,6 +107,27 @@ a{color:var(--amber)}
 .nmsg.err{color:var(--err)}
 .dev{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;border-bottom:1px solid var(--line);font-size:13px}
 .dev span{color:var(--muted)}
+/* ขั้น ③ สั่งงาน: ข้อความเจ้าของ (ขวา สีอำพัน) + สถานะงาน · ช่องพิมพ์ + ป๊อปอัป "แท็กถึง" */
+.me{display:flex;flex-direction:column;align-items:flex-end;gap:4px;width:100%}
+.mebub{max-width:85%;background:var(--amber);color:var(--amber-ink);border-radius:16px 4px 16px 16px;padding:10px 12px;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.mebub b{font-weight:700}
+.mebub.cx{opacity:.55;text-decoration:line-through}
+.me .meta{text-align:right}
+.foot{position:relative;align-items:flex-end}
+.foot textarea{flex:1;min-width:0;min-height:44px;max-height:132px;resize:none;border:1px solid #2E4166;border-radius:22px;background:var(--bg);color:var(--ink);padding:11px 16px;font-size:16px;line-height:1.35;font-family:inherit}
+.foot textarea:focus{outline:2px solid var(--amber);outline-offset:0}
+.send{width:44px;height:44px;border:none;border-radius:50%;background:var(--amber);color:var(--amber-ink);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}
+.send:disabled{opacity:.45;cursor:default}
+.ferr{font-size:12px;color:var(--err);padding:0 14px 6px;background:var(--bar);min-height:0}
+.mention{position:absolute;left:12px;right:12px;bottom:calc(100% + 6px);background:var(--day);border:1px solid #2E4166;border-radius:16px;padding:6px;display:flex;flex-direction:column;box-shadow:0 12px 32px rgba(0,0,0,.45);max-height:46vh;overflow-y:auto;z-index:5}
+.mention>span{font-size:11px;color:var(--muted);padding:6px 10px 4px}
+.mopt{min-height:44px;display:flex;align-items:center;gap:10px;padding:6px 10px;border:none;border-radius:10px;background:transparent;text-align:left;cursor:pointer}
+.mopt.on,.mopt:active{background:#22324F}
+.mopt .av{width:34px;height:34px}
+.mopt .at{width:32px;height:32px;border-radius:50%;background:var(--amber);color:var(--amber-ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.mopt div{display:flex;flex-direction:column}
+.mopt b{font-size:14px;font-weight:600}
+.mopt small{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -143,8 +166,24 @@ a{color:var(--amber)}
   <div class="soon">โน๊ต · อัลบั้ม เปิดใช้ในขั้นถัดไป</div>
   <a class="pinbar hide" id="pinbar" rel="noopener"></a>
   <div class="list" id="list" aria-live="polite"><div class="note">กำลังโหลด…</div></div>
+  <div class="ferr hide" id="ferr" role="alert"></div>
   <div class="foot">
-    <div class="ro">ห้องนี้อ่านอย่างเดียว · ผู้ช่วยโพสต์รายงานให้อัตโนมัติ</div>
+    <div class="mention hide" id="mention" role="listbox" aria-label="แท็กถึง"></div>
+    <label for="msg" class="hide">พิมพ์ข้อความ</label>
+    <textarea id="msg" rows="1" maxlength="2000" placeholder="พิมพ์ข้อความ หรือ @ เพื่อแท็ก" autocomplete="off" enterkeyhint="send"></textarea>
+    <button class="send" id="sendBtn" aria-label="ส่ง" onclick="sendMsg()" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="sheet hide" id="act" onclick="if(event.target===this)closeAct()">
+  <div class="sbox" role="dialog" aria-label="จัดการงาน">
+    <div class="shead"><b>งานที่สั่ง</b><button class="ibtn" aria-label="ปิด" onclick="closeAct()">✕</button></div>
+    <p class="ntxt" id="actTxt"></p>
+    <button class="nbtn pri" id="actCancel">ยกเลิกงานนี้</button>
+    <button class="nbtn" onclick="closeAct()">ไม่ยกเลิก</button>
+    <div class="nmsg" id="actMsg" role="status"></div>
   </div>
 </div>
 
@@ -196,6 +235,7 @@ function showGate(msg,isDeny){
   $("list").innerHTML="";                          /* ไม่ทิ้งข้อความไว้บนจอเมื่อสิทธิ์หลุด */
   $("nDevs").innerHTML=""; $("notify").classList.add("hide"); $("members").classList.add("hide");
   PINS=[]; $("pinbar").classList.add("hide"); $("pinbar").textContent=""; $("pinCount").textContent="";
+  TASKS={}; $("msg").value=""; SEND_CLIENT=null; hideMention(); closeAct(); fErr(""); syncSend();   /* ไม่ทิ้งข้อความที่พิมพ์ค้างไว้เมื่อสิทธิ์หลุด */
   $("gateMsg").textContent=msg||"สำหรับเจ้าของเท่านั้น · ใส่ PIN";
   $("gateOut").classList.toggle("hide",!isDeny);
   $("pinInput").classList.toggle("hide",!!isDeny); $("pinBtn").classList.toggle("hide",!!isDeny);
@@ -204,6 +244,7 @@ function enter(){
   READY=true; GEN++;
   LOADING=false;   /* คำขอรุ่นเก่าที่ค้าง (ถ้ามี) จะทิ้งผลเองด้วย GEN — ไม่ให้มันขวางการโหลดรอบใหม่ */
   $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden"); $("app").inert=false;
+  syncSend();
   load();
   refreshBell();
 }
@@ -281,6 +322,68 @@ function msgNode(r){
   row.appendChild(col);
   return {row:row,bub:bub,col:col,meta:meta};
 }
+/* ---------- ขั้น ③ ข้อความเจ้าของ: ขวา สีอำพัน · @ชื่อ ตัวหนา · สถานะงานใต้ข้อความ · กดค้าง = ยกเลิก ---------- */
+var TASKS={};   /* message_id → {status, assignee} จากตาราง hq_chat_tasks (อ่านได้เฉพาะเจ้าของ) */
+function tagNames(){ var a=["@all","@ทุกคน"]; Object.keys(MEMBERS).forEach(function(id){ a.push("@"+MEMBERS[id].name); }); return a; }
+function fillMine(el,body){
+  body=String(body==null?"":body);
+  var names=tagNames().sort(function(a,b){ return b.length-a.length; }), i=0, last=0;
+  while(i<body.length){
+    var hit=null;
+    if(body.charAt(i)==="@") for(var j=0;j<names.length;j++){ if(body.substr(i,names[j].length)===names[j]){ hit=names[j]; break; } }
+    if(hit){
+      if(i>last) el.appendChild(document.createTextNode(body.slice(last,i)));
+      var b=document.createElement("b"); b.textContent=hit; el.appendChild(b);
+      i+=hit.length; last=i;
+    } else i++;
+  }
+  if(last<body.length) el.appendChild(document.createTextNode(body.slice(last)));
+}
+function taskLabel(t){
+  if(!t) return "ส่งแล้ว";
+  var who=(MEMBERS[t.assignee]||{name:"ผู้ช่วย"}).name;
+  return ({queued:"ส่งแล้ว · รอ"+who+"หยิบ (กดค้างเพื่อยกเลิก)", claimed:who+"รับงานแล้ว", working:who+"กำลังทำ",
+           waiting_approval:"รอคุณหลิงกดอนุมัติในแอป Claude", done:"เสร็จแล้ว", failed:"ทำไม่สำเร็จ", cancelled:"ยกเลิกแล้ว"})[t.status]||"ส่งแล้ว";
+}
+function mineNode(r){
+  var t=TASKS[r.id], d=new Date(r.posted_at);
+  var row=document.createElement("div"); row.className="me";
+  var bub=document.createElement("div"); bub.className="mebub"+(t&&t.status==="cancelled"?" cx":""); fillMine(bub,r.body); row.appendChild(bub);
+  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=taskLabel(t)+" · "+hhmm(d); row.appendChild(meta);
+  if(t && t.status==="queued") holdToCancel(bub,r);
+  return {row:row,bub:bub,col:row,meta:meta};
+}
+function holdToCancel(el,r){
+  var tm=null;
+  function start(){ clearTimeout(tm); tm=setTimeout(function(){ tm=null; openAct(r); },550); }
+  function stop(){ clearTimeout(tm); tm=null; }
+  el.addEventListener("touchstart",start,{passive:true});
+  el.addEventListener("touchend",stop); el.addEventListener("touchmove",stop,{passive:true}); el.addEventListener("touchcancel",stop);
+  el.addEventListener("contextmenu",function(ev){ ev.preventDefault(); stop(); openAct(r); });
+}
+var ACT_ID=null;
+function openAct(r){
+  if(!READY) return;
+  ACT_ID=r.id;
+  $("actTxt").textContent="“"+String(r.body||"").slice(0,120)+(String(r.body||"").length>120?"…":"")+"” — ยกเลิกได้จนกว่าผู้ช่วยจะหยิบไปทำ ข้อความยังอยู่แต่ขีดฆ่าไว้";
+  $("actMsg").textContent=""; $("actCancel").disabled=false;
+  $("actCancel").onclick=doCancel;
+  $("act").classList.remove("hide");
+}
+function closeAct(){ $("act").classList.add("hide"); ACT_ID=null; }
+async function doCancel(){
+  var id=ACT_ID, g=GEN; if(!id || !sb) return;
+  $("actCancel").disabled=true; $("actMsg").textContent="กำลังยกเลิก…";
+  try{
+    var r=await sb.rpc("hq_chat_cancel",{p_message_id:id});
+    if(g!==GEN) return;
+    if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(r.error){ $("actMsg").textContent="ยกเลิกไม่สำเร็จ ลองใหม่"; $("actCancel").disabled=false; return; }
+    if(r.data===false){ $("actMsg").textContent="ผู้ช่วยหยิบไปทำแล้ว ยกเลิกไม่ได้ — พิมพ์บอกใหม่ว่า \"ยกเลิกงานเมื่อกี้\""; await load(); return; }
+    closeAct(); await load();
+  }catch(e){ console.warn("cancel",e); if(g===GEN){ $("actMsg").textContent="เชื่อมต่อไม่ได้ ลองใหม่"; $("actCancel").disabled=false; } }
+}
+
 function render(rows){
   var list=$("list"); list.innerHTML="";
   if(!rows.length){ list.innerHTML='<div class="empty">ยังไม่มีรายงานในห้อง</div>'; return; }
@@ -288,7 +391,7 @@ function render(rows){
   rows.forEach(function(r){
     var d=new Date(r.posted_at), k=dayKey(d);
     if(k!==lastDay){ var s=document.createElement("div"); s.className="daysep"; s.textContent=dayLabel(d); list.appendChild(s); lastDay=k; }
-    var n=msgNode(r); list.appendChild(n.row);
+    var n=(r.sender==="owner") ? mineNode(r) : msgNode(r); list.appendChild(n.row);
     /* ข้อความยาว: ย่อไว้ กดอ่านต่อ */
     if(n.bub.scrollHeight>380){
       n.bub.classList.add("clip");
@@ -321,14 +424,28 @@ async function load(){
     var s=await sb.rpc("hq_chat_sync");
     if(g!==GEN) return;
     if(authErr(s.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    /* ขั้น ③: คอมร้านปิดหลังส่งงาน → ตอบ "รับเรื่องแล้ว…" ให้งานที่ค้าง (พลาดก็ไม่เป็นไร) */
+    try{ await sb.rpc("hq_chat_ack_stale"); }catch(_e){}
+    if(g!==GEN) return;
     var q=await sb.from("hq_chat_messages")
       .select("id,sender,kind,body,body_format,posted_at")
       .eq("room","hq").order("posted_at",{ascending:false}).order("id",{ascending:false}).limit(60);
     if(!READY || g!==GEN) return;   /* ระหว่างรอ สิทธิ์หลุด/เข้าใหม่แล้ว — ไม่วาดผลรุ่นเก่า */
     if(authErr(q.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }   /* r2 (Codex ② r1 #2) */
     if(q.error){ $("list").innerHTML='<div class="note err">โหลดข้อความไม่ได้ ลองกดโหลดใหม่</div>'; return; }
+    /* ขั้น ③ สถานะงานของข้อความเจ้าของ (พลาด = แสดง "ส่งแล้ว" ไปก่อน) */
+    var mine=(q.data||[]).filter(function(r){ return r.sender==="owner"; }).map(function(r){ return r.id; });
+    var tk={};
+    if(mine.length){
+      var tq=await sb.from("hq_chat_tasks").select("message_id,assignee,status").in("message_id",mine);
+      if(!READY || g!==GEN) return;
+      if(authErr(tq.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+      (tq.data||[]).forEach(function(t){ tk[t.message_id]={status:t.status,assignee:t.assignee}; });
+    }
+    TASKS=tk;
     render((q.data||[]).slice().reverse());
     await loadPins(g);
+    schedFast(g);
   }catch(e){
     console.warn("hqchat.load",e);
     if(g===GEN && READY) $("list").innerHTML='<div class="note err">เชื่อมต่อไม่ได้ ลองกดโหลดใหม่</div>';
@@ -376,6 +493,99 @@ function openPins(){
 }
 document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") load(); });
 setInterval(function(){ if(document.visibilityState==="visible") load(); }, 5*60*1000);
+/* มีงานที่ยังไม่ปิด → โหลดใหม่ทุก 20 วิ (เฉพาะตอนเปิดหน้าอยู่) เพื่อเห็นคำตอบเร็ว */
+var FAST=null;
+function schedFast(g){
+  clearTimeout(FAST); FAST=null;
+  var open=Object.keys(TASKS).some(function(k){ return ["queued","claimed","working"].indexOf(TASKS[k].status)>=0; });
+  if(open) FAST=setTimeout(function(){ if(g!==GEN) return; if(document.visibilityState==="visible") load(); else schedFast(g); },20000);
+}
+
+/* ---------- ขั้น ③ ช่องพิมพ์ + แท็ก ---------- */
+var SEND_CLIENT=null, SEND_FOR="", SENDING=false;
+function fErr(t){ var e=$("ferr"); e.textContent=t||""; e.classList.toggle("hide",!t); }
+function syncSend(){ $("sendBtn").disabled=SENDING || !READY || !$("msg").value.trim(); }
+function growMsg(){ var t=$("msg"); t.style.height="auto"; t.style.height=Math.min(t.scrollHeight+2,132)+"px"; }
+function uuid4(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  var b=crypto.getRandomValues(new Uint8Array(16)); b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
+  var h=Array.prototype.map.call(b,function(x){ return (x+256).toString(16).slice(1); }).join("");
+  return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);
+}
+/* แท็กอ่านจากข้อความจริงตอนส่ง (ลบ @ชื่อ ทิ้ง = ไม่แท็กแล้ว) */
+function mentionsOf(body){
+  var m=[];
+  if(body.indexOf("@all")>=0 || body.indexOf("@ทุกคน")>=0) m.push("all");
+  Object.keys(MEMBERS).forEach(function(id){ if(body.indexOf("@"+MEMBERS[id].name)>=0) m.push(id); });
+  return m;
+}
+var MQ=null, MSEL=0;   /* คำที่กำลังพิมพ์หลัง @ : {start,end,q} */
+function mentionToken(){
+  var t=$("msg"), pos=t.selectionStart, before=t.value.slice(0,pos), m=/(^|\s)@([^\s@]{0,12})$/.exec(before);
+  return m ? {start:pos-m[2].length-1,end:pos,q:m[2]} : null;
+}
+function mentionOpts(q){
+  var all=[{id:"all",name:"all",title:"ทุกคนในห้อง",ins:"@all"}];
+  Object.keys(MEMBERS).forEach(function(id){ all.push({id:id,name:MEMBERS[id].name,title:MEMBERS[id].title,ins:"@"+MEMBERS[id].name}); });
+  if(!q) return all;
+  return all.filter(function(o){ return o.name.indexOf(q)===0 || o.id.indexOf(q.toLowerCase())===0 || (o.id==="all" && "ทุกคน".indexOf(q)===0); });
+}
+function hideMention(){ MQ=null; var b=$("mention"); b.classList.add("hide"); b.innerHTML=""; }
+function showMention(){
+  MQ=mentionToken(); var box=$("mention");
+  var opts=MQ ? mentionOpts(MQ.q) : [];
+  if(!opts.length){ hideMention(); return; }
+  if(MSEL>=opts.length) MSEL=0;
+  box.innerHTML=""; var h=document.createElement("span"); h.textContent="แท็กถึง"; box.appendChild(h);
+  opts.forEach(function(o,i){
+    var b=document.createElement("button"); b.type="button"; b.className="mopt"+(i===MSEL?" on":""); b.setAttribute("role","option");
+    if(o.id==="all"){ var a=document.createElement("span"); a.className="at"; a.textContent="@"; a.setAttribute("aria-hidden","true"); b.appendChild(a); }
+    else b.appendChild(avatar(o.id,MEMBERS[o.id]));
+    var d=document.createElement("div"), n=document.createElement("b"), s=document.createElement("small");
+    n.textContent=o.id==="all"?"@all":o.name; s.textContent=o.title; d.appendChild(n); d.appendChild(s); b.appendChild(d);
+    b.addEventListener("mousedown",function(ev){ ev.preventDefault(); });   /* ไม่ให้คีย์บอร์ดหุบ */
+    b.onclick=function(){ pickMention(o); };
+    box.appendChild(b);
+  });
+  box.classList.remove("hide");
+}
+function pickMention(o){
+  var t=$("msg"), k=MQ||mentionToken(); if(!k) return;
+  t.value=t.value.slice(0,k.start)+o.ins+" "+t.value.slice(k.end);
+  var p=k.start+o.ins.length+1; t.focus(); t.setSelectionRange(p,p);
+  hideMention(); growMsg(); syncSend();
+}
+$("msg").addEventListener("input",function(){ MSEL=0; growMsg(); syncSend(); fErr(""); showMention(); });
+$("msg").addEventListener("click",showMention);
+$("msg").addEventListener("blur",function(){ setTimeout(hideMention,150); });
+$("msg").addEventListener("keydown",function(ev){
+  if(MQ && !$("mention").classList.contains("hide")){
+    var n=mentionOpts(MQ.q).length;
+    if(ev.key==="ArrowDown"){ ev.preventDefault(); MSEL=(MSEL+1)%n; showMention(); return; }
+    if(ev.key==="ArrowUp"){ ev.preventDefault(); MSEL=(MSEL+n-1)%n; showMention(); return; }
+    if(ev.key==="Enter"||ev.key==="Tab"){ ev.preventDefault(); pickMention(mentionOpts(MQ.q)[MSEL]); return; }
+    if(ev.key==="Escape"){ hideMention(); return; }
+  }
+  /* คอม: Enter = ส่ง · Shift+Enter = ขึ้นบรรทัด · มือถือกดปุ่มส่งเอง (Enter ขึ้นบรรทัด) */
+  if(ev.key==="Enter" && !ev.shiftKey && !ev.isComposing && !isIOS() && !/Android/.test(navigator.userAgent)){ ev.preventDefault(); sendMsg(); }
+});
+async function sendMsg(){
+  if(SENDING || !READY || !sb) return;
+  var body=$("msg").value.trim(); if(!body) return;
+  if(body.length>2000){ fErr("ข้อความยาวเกิน 2000 ตัวอักษร"); return; }
+  /* uuid ต่อ 1 ข้อความ: กดส่งซ้ำ/เน็ตหลุดแล้วลองใหม่ = งานเดิม ไม่ซ้ำ · แก้ข้อความ = uuid ใหม่ */
+  if(!SEND_CLIENT || SEND_FOR!==body){ SEND_CLIENT=uuid4(); SEND_FOR=body; }
+  var g=GEN; SENDING=true; $("msg").readOnly=true; syncSend(); fErr(""); hideMention();   /* r2 (Codex r1 #10): ล็อกช่องพิมพ์ระหว่างส่ง */
+  try{
+    var r=await sb.rpc("hq_chat_send",{p_body:body,p_mentions:mentionsOf(body),p_client:SEND_CLIENT});
+    if(g!==GEN) return;
+    if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(r.error){ fErr(r.error.code==="P0001" ? String(r.error.message||"").replace(/^hq_chat:\s*/,"") : "ส่งไม่สำเร็จ ลองกดส่งอีกครั้ง"); return; }
+    $("msg").value=""; SEND_CLIENT=null; SEND_FOR=""; growMsg();
+    await load();
+  }catch(e){ console.warn("send",e); if(g===GEN) fErr("เชื่อมต่อไม่ได้ ลองกดส่งอีกครั้ง (ไม่ส่งซ้ำ)"); }
+  finally{ SENDING=false; $("msg").readOnly=false; syncSend(); }
+}
 
 /* ---------- สมาชิก ---------- */
 function openMembers(){
@@ -525,6 +735,7 @@ async function renderDevices(){
   /* ดูตัวอย่างในเครื่อง: ใช้ไฟล์ข้อมูลในเครื่อง (ไฟล์นี้ไม่ขึ้นเว็บจริง) */
   if(PREVIEW){
     try{ var p=await (await fetch("preview-data.json",{cache:"no-store"})).json();
+      try{ TASKS=await (await fetch("preview-tasks.json",{cache:"no-store"})).json(); }catch(_e){}
       $("gate").classList.add("hide"); $("app").removeAttribute("aria-hidden"); $("app").inert=false; render(p);
       try{ showPins(await (await fetch("preview-pins.json",{cache:"no-store"})).json()); }catch(_e){}
       return; }catch(e){ console.warn(e); }

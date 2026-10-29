@@ -181,6 +181,7 @@ details.how ul{margin:6px 0 0;padding-left:20px;color:var(--muted)}
 /* ช่องยอดเงินหน้า 3 — ห้ามตัดเป็น … (ตัวเลขยาวลดขนาดตัวอักษรแทน) */
 .sheet td.m{font-weight:700;padding-left:0.8mm;padding-right:1.2mm;overflow:visible;text-overflow:clip}
 .sheet td.m.s1{font-size:9pt} .sheet td.m.s2{font-size:8pt}
+.sheet td.wr{white-space:normal;line-height:1.15;padding-top:0.5mm;padding-bottom:0.5mm} .sheet td.wr .nm{font-size:7pt} .sheet td.wr i{font-style:normal;white-space:nowrap}
 .sheet .two{display:grid;grid-template-columns:1fr 1fr;gap:5mm}
 .sheet .photo-box{border:0.6pt solid #555;height:62mm;display:grid;place-items:center;color:#666;overflow:hidden}
 .sheet .photo-box img{max-width:100%;max-height:100%;object-fit:contain}
@@ -1570,8 +1571,14 @@ function pageHTML(id){
     return `<div class="sheet">${sheetHead('ลงบัญชี (รวมงานสั่งทำ)',true)}<div class="two" style="grid-template-columns:0.88fr 1.12fr">
      <div><b>ลูกค้าปลีก</b><table><tr><th style="width:12mm">ลำดับ</th><th>เลขบิล</th><th style="width:24mm">ยอดเงิน</th></tr>${padRows(L,30).map((r,i)=>`<tr><td class="c">${i+1}</td><td>${r?esc(r.bill):''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`).join('')}<tr class="t"><td colspan="2">ยอดรวม</td><td class="r">${fmt(L.reduce((s,r)=>s+num(r.amt),0))}</td></tr></table></div>
      <div><b>สมาชิก/ร้านค้า</b><table><tr><th style="width:12mm">ลำดับ</th><th>เลขบิล / ร้านค้า</th><th style="width:24mm">ยอดเงิน</th></tr>${padRows(Rr,30).map((r,i)=>`<tr><td class="c">${i+1}</td><td>${r?esc(r.bill)+`<span class="nm">${esc(shortName(nm(r.bill)))}</span>`:''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`).join('')}<tr class="t"><td colspan="2">ยอดรวม</td><td class="r">${fmt(Rr.reduce((s,r)=>s+num(r.amt),0))}</td></tr></table></div></div></div>`}
-  if(id==='p5'){const tb=(t,a,cl)=>`<span class="lab2 ${cl}">${t}</span><table><tr><th style="width:12mm">ลำดับ</th><th style="width:32mm">เลขบิล</th><th>สมาชิก/ร้านค้า</th><th style="width:26mm">ยอดเงิน</th></tr>${padRows(a,12).map((r,i)=>`<tr><td class="c">${i+1}</td><td>${r?esc(r.bill)+(r.chq?'<span class="nm">(เช็ค)</span>':''):''}</td><td>${r?esc(nm(r.bill)):''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`).join('')}<tr class="t"><td colspan="3" class="r">ยอดรวม</td><td class="r">${fmt(a.reduce((s,r)=>s+num(r.amt),0))}</td></tr></table>`;
-    return `<div class="sheet">${sheetHead('บิลเก่า',true)}${tb('เงินสด',S.oldc,'')}<div style="height:6mm"></div>${tb('โอนเข้าบัญชี',S.oldx,'xblue')}</div>`}
+  if(id==='p5'){
+    /* บิลเก่า-โอน: ลูกค้าสมาชิก/ร้านค้ารหัสเดียวกัน (และเช็คเลขเดียวกัน) รวมเป็น 1 บรรทัด 1 ยอด · ลูกค้าปลีก/บิลที่ไม่รู้รหัส/เช็คไม่มีเลข ยังแยกบรรทัด · ยอดรวมท้ายตารางยังคิดจากรายการเดิม */
+    const grp=a=>{const out=[],by={};a.forEach(r=>{if(!r||(!r.bill&&!num(r.amt)))return;const b=BILL[r.bill],cq=r.chq?chqKey(String(r.chqNo||'').trim()):'',k=b&&b.code&&b.code!==RETAIL&&(!r.chq||cq)?(r.chq?'Q'+cq:'X')+'|'+b.code:null;
+      if(k&&by[k]){by[k].amt=(Math.round(by[k].amt*100)+Math.round(num(r.amt)*100))/100;by[k].bills.push(r.bill);return}const g={bill:r.bill,amt:num(r.amt),chq:r.chq,bills:[r.bill]};if(k)by[k]=g;out.push(g)});return out};
+    /* เลขบิลในบรรทัดรวม: ขึ้นต้นเหมือนใบก่อนหน้า (KM6909-) เขียนแค่เลขท้าย · ไม่ตัดขึ้นบรรทัดกลางเลข */
+    const blist=bs=>bs.map((b,i)=>{const p=String(b).split('-'),q=i?String(bs[i-1]).split('-'):[];return `<i>${esc(p.length===2&&q.length===2&&p[0]===q[0]?p[1]:b)}</i>`}).join(', ');
+    const tb=(t,a,cl,src)=>`<span class="lab2 ${cl}">${t}</span><table><tr><th style="width:12mm">ลำดับ</th><th style="width:32mm">เลขบิล</th><th>สมาชิก/ร้านค้า</th><th style="width:26mm">ยอดเงิน</th></tr>${padRows(a,12).map((r,i)=>{const n=r&&r.bills?r.bills.length:1;return `<tr><td class="c">${i+1}</td><td>${r?(n>1?n+' บิล':esc(r.bill))+(r.chq?'<span class="nm">(เช็ค)</span>':''):''}</td><td${n>1?' class="wr"':''}>${r?esc(nm(r.bill))+(n>1?`<span class="nm">${blist(r.bills)}</span>`:''):''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`}).join('')}<tr class="t"><td colspan="3" class="r">ยอดรวม</td><td class="r">${fmt((src||a).reduce((s,r)=>s+num(r&&r.amt),0))}</td></tr></table>`;
+    return `<div class="sheet">${sheetHead('บิลเก่า',true)}${tb('เงินสด',S.oldc,'')}<div style="height:6mm"></div>${tb('โอนเข้าบัญชี',grp(S.oldx),'xblue',S.oldx)}</div>`}
   if(id==='p7'){
     const o=padRows(exRows("other"),12),r=padRows(exRows("refund"),12);
     return `<div class="sheet">${sheetHead('รายรับอื่นๆ / คืนเงิน')}

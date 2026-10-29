@@ -942,6 +942,9 @@ function cpHTML(){
   if(cpCan()&&!blocked){
     const fileBtn=(lab,pri)=>`<label class="btn${pri?' pri':''}" style="padding:4px 10px">${lab}<input type="file" accept="image/*" capture="environment" id="cp_file" data-own="cp" hidden></label>`;
     if(!has) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn('📷 ถ่าย/เลือกรูปใบนับ',true)}</div><span class="small">กรอกจำนวนในตารางนับให้ครบก่อน แล้วถ่าย/เลือกรูปใบนับ (บังคับแนบรูป)</span>`;
+    /* ยอดรวมจากตารางเท่ายอดที่บันทึกไว้เป๊ะ = แค่เติม/จัดจำนวนแยกชนิด → บันทึกได้เลย ไม่ต้องขออนุมัติ (คุณหลิงเลือก 29 ต.ค.69) */
+    else if(dirty&&!d.bad&&Math.abs(d.total-num(S.count))<0.009) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="btn pri" id="cp_fill">💾 บันทึกจำนวนแยกชนิด (ยอดเท่าเดิม)</button><button type="button" class="btn" id="cp_undo">ยกเลิกที่แก้</button></div>
+      <span class="small">รวมได้ ${fmt(d.total)} เท่ากับยอดที่บันทึกไว้ — บันทึกได้เลย ไม่ต้องขออนุมัติ (ถ้ายอดไม่เท่า ต้องส่งคำขอแก้ยอด)</span>`;
     else if(dirty) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนใบนับ + รูปใหม่':'📷 ส่งคำขอแก้ยอด + รูปใหม่',true)}<button type="button" class="btn" id="cp_keep">${ROLE==='owner'?'📝 แทนยอด (ใช้รูปเดิม)':'📝 ส่งคำขอแก้ยอด (ใช้รูปเดิม)'}</button><button type="button" class="btn" id="cp_undo">ยกเลิกที่แก้</button></div>
       <span class="small" style="color:var(--warn)">แก้จำนวนหลังบันทึกแล้ว = แก้ยอดเงินสด ${ROLE==='owner'?'(เจ้าของแทนได้ ต้องใส่เหตุผล)':'ต้องส่งคำขอให้เจ้าของอนุมัติ'}</span>`;
     else h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนรูปใบนับ (ใส่เหตุผล)':'📷 ส่งคำขอเปลี่ยนรูปใบนับ',false)}</div><span class="small">บันทึกแล้ว — แก้จำนวนในตาราง/เปลี่ยนรูป ต้องส่งคำขอให้เจ้าของอนุมัติ</span>`;
@@ -996,6 +999,18 @@ async function cpUpload(file){
     }
     await cpReload(date,tok);
   }catch(err){ setChip('saveChip','bad','บันทึกใบนับไม่สำเร็จ: '+(err.message||err)); }
+  finally{ _cpBusy=false; renderAll(); }
+}
+/* เติม/จัดจำนวนแยกชนิด ยอดเท่าเดิม — แก้แค่ช่อง counts (ฐานยอมเฉพาะกรณีนี้ + บังคับรวม = ยอด) · ยอด/รูปไม่เปลี่ยน */
+async function cpFill(){
+  if(!cpCan()) return renderAll();
+  const date=DATA.date, tok=_loadTok, d=cpDraft(), amt=num(S.count);
+  if(!cpHas()||!d.any||d.bad||Math.abs(d.total-amt)>0.009){ setChip('saveChip','bad',d.bad||'ยอดรวมไม่เท่ายอดที่บันทึกไว้ — ต้องส่งคำขอแก้ยอด'); return; }
+  _cpBusy=true; setChip('saveChip','warn','กำลังบันทึก…'); renderAll();
+  try{ const r=await sb.from('rev_cash_proof').update({counts:d.counts}).eq('date',date).eq('amount',amt).select('date');
+    if(r.error) throw r.error; if(!r.data||!r.data.length) throw new Error('ใบนับของวันนี้เปลี่ยนไปแล้ว — เปิดหน้าใหม่');
+    setChip('saveChip','ok','บันทึกจำนวนแยกชนิดแล้ว (ยอดเท่าเดิม)'); await cpReload(date,tok); }
+  catch(err){ setChip('saveChip','bad','บันทึกไม่สำเร็จ: '+(err.message||err)); }
   finally{ _cpBusy=false; renderAll(); }
 }
 async function cpDecide(id,ok){
@@ -1198,7 +1213,7 @@ function compute(){
   R.cashSend=z.cash.r+z.cash.s+R.ex.oc+R.old.c-R.ex.rc;R.cnt={lv:'',st:''};
   if(S.count===''||S.count==null){R.cnt={lv:'bad',st:'ยังไม่ได้ใส่'};R.issues.push({lv:'bad',t:'ยังไม่ได้ใส่ยอดเงินสดที่นับได้จริง',d:TRIAL?'ใส่ที่แท็บสรุปรายรับ ช่องยอดที่นับได้จริง':'ใส่ยอด + แนบรูป ที่กล่องใบนับเงินสด แท็บสรุปรายรับ',tab:'sum'});bump('sum','bad')}
   else{const cd=Math.round((num(S.count)-R.cashSend)*100)/100;if(Math.abs(cd)>0.009){R.cnt={lv:'bad',st:`${cd<0?'ขาด':'เกิน'} ${fmt(Math.abs(cd))}`};R.issues.unshift({lv:'bad',sum:true,t:`เงินสดนับได้ ${fmt(num(S.count))} · ตามฟอร์ม ${fmt(R.cashSend)} → ${cd<0?'ขาด':'เกิน'} ${fmt(Math.abs(cd))}`,tab:'sum'});bump('sum','bad')}else{R.cnt={lv:'ok',st:'ตรงกับฟอร์ม ✓'};R.issues.push({lv:'ok',t:`เงินสดนับได้ ${fmt(num(S.count))} ตรงกับยอดตามฟอร์ม`,tab:'sum'})}}
-  if(!TRIAL&&cpHas()&&cpDirty()){R.issues.push({lv:'warn',t:'แก้จำนวนในตารางนับเงินแล้ว ยังไม่ได้ส่งคำขอแก้ยอด',d:'ยอดนับที่ใช้ตรวจยังเป็นค่าเดิม '+fmt(num(S.count))+' — กดส่งคำขอ หรือ "ยกเลิกที่แก้" ในกล่องใบนับ',tab:'sum'});bump('sum','warn')}
+  if(!TRIAL&&cpHas()&&cpDirty()){R.issues.push({lv:'warn',t:Math.abs(cpDraft().total-num(S.count))<0.009?'กรอกจำนวนแยกชนิดแล้ว ยังไม่ได้กดบันทึก':'แก้จำนวนในตารางนับเงินแล้ว ยังไม่ได้ส่งคำขอแก้ยอด',d:'ยอดนับที่ใช้ตรวจยังเป็นค่าเดิม '+fmt(num(S.count))+' — กดส่งคำขอ หรือ "ยกเลิกที่แก้" ในกล่องใบนับ',tab:'sum'});bump('sum','warn')}
   if(!TRIAL&&!cpHas()&&cpDraft().any){R.issues.push({lv:'warn',t:'นับเงินในตารางแล้ว ยังไม่ได้แนบรูปใบนับ (ยังไม่บันทึก)',d:'กด "ถ่าย/เลือกรูปใบนับ" ในกล่องใบนับเงินสด',tab:'sum'});bump('sum','warn')}
   if(!S.photo&&!TRIAL){R.issues.push({lv:'warn',t:'ยังไม่ได้แนบรูปใบนับเงินสด',d:'แนบที่กล่องใบนับเงินสด แท็บสรุปรายรับ',tab:'sum'});bump('sum','warn')}
   const bad=R.issues.filter(x=>x.lv==='bad').length,warn=R.issues.filter(x=>x.lv==='warn').length;
@@ -1351,6 +1366,7 @@ function bind(){
     /* วาดใหม่หลังโฟกัสย้ายไปช่องใหม่เสร็จ (renderAll คืนโฟกัสให้ช่องที่ถืออยู่) — เดิมวาดทันทีตอน change ช่องถัดไปถูกแทนที่ โฟกัสหลุด พิมพ์ต่อไม่ติด (คุณหลิงแจ้ง 29 ต.ค.69) */
     el.onchange=()=>setTimeout(()=>renderAll(),0); });
   const ck=document.getElementById('cp_keep'); if(ck) ck.onclick=()=>cpUpload(null);
+  const cfl=document.getElementById('cp_fill'); if(cfl) cfl.onclick=()=>cpFill();
   const cu=document.getElementById('cp_undo'); if(cu) cu.onclick=()=>{ cpInitDraft(); renderAll(); };
   const cf=document.getElementById('cp_file'); if(cf) cf.onchange=()=>{ const f=cf.files&&cf.files[0]; cf.value=''; if(f) cpUpload(f); };
   document.querySelectorAll('#panes [data-cpview]').forEach(a=>a.onclick=e=>{ e.preventDefault(); openPath(a.dataset.cpview); });

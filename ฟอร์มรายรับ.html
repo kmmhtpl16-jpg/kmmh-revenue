@@ -1283,7 +1283,12 @@ function renderTrialCards(R){
 }
 /* ---------- render ---------- */
 let R;
+/* renderSoon(f): ทำ f ทันที (บันทึกค่า) แต่เลื่อนการวาดหน้าที่เกิดระหว่างนั้นไปรอบถัดไป (setTimeout 0) — ถ้ามีปุ่มอื่นวาดหน้าก่อน ค่าก็อยู่ใน S แล้ว ไม่หาย (Codex r8) */
+let _deferRender=false, _renderQ=0;
+function renderSoon(f){ const was=_deferRender; _deferRender=true; try{ return f(); } finally{ _deferRender=was; } } /* ซ้อนกันได้ (Codex r9) */
 function renderAll(keepFocus){
+  if(_deferRender){ if(!_renderQ) _renderQ=setTimeout(()=>{ _renderQ=0; renderAll(); },0); return; }
+  if(_renderQ){ clearTimeout(_renderQ); _renderQ=0; }
   const fid=document.activeElement&&document.activeElement.id,sel=document.activeElement&&document.activeElement.selectionStart;
   /* ช่องที่กำลังพิมพ์ค้าง (ยังไม่ Enter/ออกช่อง) ไม่ให้ถูกวาดทับด้วยค่าเก่า เช่นตอนข้อมูล ACC ตอบกลับระหว่างพิมพ์ (Codex kbd r2) */
   const ae=document.activeElement, pend=(ae&&ae.tagName==='INPUT'&&ae.dataset&&(ae.dataset.k||ae.id==='cnt_amt_0')&&ae.closest('#panes')&&ae.value!==ae.defaultValue)?{id:ae.id,v:ae.value,s:ae.selectionStart,e:ae.selectionEnd}:null;
@@ -1318,9 +1323,10 @@ function renderAll(keepFocus){
 function bind(){
   document.querySelectorAll('#panes [data-k]').forEach(el=>{
     el.oninput=()=>{};
-    el.onchange=()=>commit(el);
+    /* ออกช่องด้วยเมาส์/Tab: บันทึกค่าลง S ทันที แต่ "วาดหน้าใหม่" หลังโฟกัสย้ายไปช่องใหม่เสร็จ — เดิมวาดทันที ช่องที่เพิ่งคลิกถูกแทนที่ โฟกัสหลุด พิมพ์ไม่ติด (คุณหลิงแจ้ง 29 ต.ค.69) · Enter/ลูกศรบันทึก+วาดทันทีใน navKey เหมือนเดิม */
+    el.onchange=()=>renderSoon(()=>commit(el));
     /* ออกช่อง (เมาส์/Tab) ทั้งที่ค่ายังไม่ได้บันทึก — เช่นค่าที่ renderAll ใส่คืนให้ ซึ่งเบราว์เซอร์ไม่ยิง change — บันทึกด้วย (Codex kbd r3) */
-    if(el.tagName==='INPUT') el.onblur=()=>{ if(el.isConnected&&el.value!==el.defaultValue) commit(el); };
+    if(el.tagName==='INPUT') el.onblur=()=>{ if(el.isConnected&&el.value!==el.defaultValue) renderSoon(()=>commit(el)); };
   });
   document.querySelectorAll('#panes table.entry tbody input:not([type=checkbox]):not([type=file]),#panes table.entry tbody select').forEach(el=>{ el.onkeydown=e=>navKey(e,el); });
   document.querySelectorAll('#panes [data-dep]').forEach(cb=>cb.onchange=()=>{const [k,i]=cb.dataset.dep.split(':');if(cb.checked){if(!canEdit()){renderAll();return}openDep(k,+i);return}else{if(!canEdit()){renderAll();return}if(S[k][+i]&&isRA(S[k][+i].bill)){S[k][+i].bill='';S[k]=S[k].filter(r=>Object.values(r).some(v=>v!==''&&v!=null))}renderAll();scheduleSave()}});
@@ -1341,7 +1347,9 @@ function bind(){
   document.querySelectorAll('#panes [data-exdel]').forEach(b=>b.onclick=()=>{ const [k,i]=b.dataset.exdel.split(':'); exDel(k,+i); });
   document.querySelectorAll('#panes [data-rfview]').forEach(b=>b.onclick=()=>{ if(EXO.rfPhoto) openPath(EXO.rfPhoto); });
   const rp=document.getElementById('rfPhIn'); if(rp) rp.onchange=()=>{ const f=rp.files&&rp.files[0]; rp.value=''; if(f) rfPhotoUp(f); };
-  document.querySelectorAll('#panes [data-den]').forEach(el=>{ const den=el.dataset.den; el.oninput=()=>{ if(den==='st') CP_ST=el.value; else CP_CNT[den]=el.value; cpLive(); }; el.onchange=()=>renderAll(); });
+  document.querySelectorAll('#panes [data-den]').forEach(el=>{ const den=el.dataset.den; el.oninput=()=>{ if(den==='st') CP_ST=el.value; else CP_CNT[den]=el.value; cpLive(); };
+    /* วาดใหม่หลังโฟกัสย้ายไปช่องใหม่เสร็จ (renderAll คืนโฟกัสให้ช่องที่ถืออยู่) — เดิมวาดทันทีตอน change ช่องถัดไปถูกแทนที่ โฟกัสหลุด พิมพ์ต่อไม่ติด (คุณหลิงแจ้ง 29 ต.ค.69) */
+    el.onchange=()=>setTimeout(()=>renderAll(),0); });
   const ck=document.getElementById('cp_keep'); if(ck) ck.onclick=()=>cpUpload(null);
   const cu=document.getElementById('cp_undo'); if(cu) cu.onclick=()=>{ cpInitDraft(); renderAll(); };
   const cf=document.getElementById('cp_file'); if(cf) cf.onchange=()=>{ const f=cf.files&&cf.files[0]; cf.value=''; if(f) cpUpload(f); };

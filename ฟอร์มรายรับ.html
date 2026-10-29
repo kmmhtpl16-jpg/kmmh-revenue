@@ -195,8 +195,10 @@ details.how ul{margin:6px 0 0;padding-left:20px;color:var(--muted)}
 .sheet .pfr{display:inline-block;border:0.6pt solid #555;padding:1.2mm;line-height:0;vertical-align:top}
 .sheet .pfr img{display:block;width:auto;height:auto;max-width:84mm;max-height:142mm;image-orientation:from-image}
 .sheet .pfr.empty{display:grid;place-items:center;width:84mm;height:40mm;line-height:1.3;color:#666;box-sizing:border-box}
-.sheet table.cnt td,.sheet table.cnt th{padding:1.3mm 2mm}
-.sheet .p1b .sig{width:100%;margin-top:7mm;display:flex;flex-direction:column;align-items:center;gap:2.5mm;font-size:10.5pt}
+/* ตารางนับ + ช่องลายเซ็นกระชับ: มีแถวเศษสตางค์ + หมายเหตุ "บันทึกแค่ยอดรวม" ก็ยังจบ 1 แผ่น (29 ต.ค.69) */
+.sheet table.cnt td,.sheet table.cnt th{padding:0.8mm 2mm}
+.sheet .p1b .sig{width:100%;margin-top:5mm;display:flex;flex-direction:column;align-items:center;gap:2mm;font-size:10.5pt}
+.sheet .p1b .sig .space{height:15mm}
 #printArea{display:none}
 @page{size:A4 portrait;margin:0}
 @media print{

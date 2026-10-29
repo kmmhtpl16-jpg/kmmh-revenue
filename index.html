@@ -182,7 +182,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.9</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.10</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -2688,6 +2688,19 @@ function posFileSave(){ try{ localStorage.setItem("rev_pos_file", JSON.stringify
     /* v0.6.7 (24 ต.ค.69 คุณหลิง) — เปิดมาที่วันล่าสุดที่มีข้อมูลอัป (rev_audit ไม่นับวันหยุด · ไม่เกินวันนี้) · วันนี้อัปแล้ว = วันนี้ · หาไม่ได้ = เมื่อวานเหมือนเดิม
        เช้าก่อนแคชเชียร์อัปวันนี้ = เมื่อวาน → การ์ดตัดบิลอัตโนมัติของเมื่อวานทำงานเหมือนเดิม */
     var _y0=null;
+    /* v0.7.10 (คุณหลิงเคาะ 27–28 ต.ค.69 · หมุดบิลพักใน HQ แชท 1 หมุดต่อวัน): ลิงก์ index.html?cut=YYYY-MM-DD = เปิดวันนั้น แล้วเลื่อนไปการ์ดตัดบิล
+       ทำเท่ากับเลือกวันที่ด้านบนด้วยมือ (การ์ดคำนวณตามปกติ ไม่มีอะไรเพิ่ม) · ค่าผิดรูปแบบ/ไม่ใช่วันจริง/เป็นวันอนาคต = ไม่สนใจ ทำงานแบบเดิม */
+    var _cut=null; try{ var _q=new URLSearchParams(location.search).get("cut"); if(/^\d{4}-\d{2}-\d{2}$/.test(_q||"")){ var _cd=new Date(_q+"T00:00:00Z"), _tn=new Date();
+      var _tdy=_tn.getFullYear()+"-"+pad2(_tn.getMonth()+1)+"-"+pad2(_tn.getDate());
+      if(!isNaN(_cd) && _cd.toISOString().slice(0,10)===_q && _q<=_tdy && _q>="2026-01-01") _cut=_q; } }catch(e){}
+    if(_cut && el){ el.value=_cut; window._cutLink=_cut;
+      try{ var _u=new URL(location.href); _u.searchParams.delete("cut"); history.replaceState(null,"",_u.pathname+_u.search+_u.hash); }catch(e){} /* ลบเฉพาะ cut · รีเฟรชทีหลัง = กลับเป็นปกติ (Codex c2) */
+      el.addEventListener("change",function(){ window._cutLink=null; },{once:true}); /* ผู้ใช้เปลี่ยนวันเอง = เลิกทันที (ถาวรสำหรับลิงก์นี้) */
+      var _cw=Date.now(), _kick=false, _ct=setInterval(function(){ var c=document.getElementById("cutCard");
+        if(window._cutLink!==_cut || cpDate()!==_cut || Date.now()-_cw>120000){ clearInterval(_ct); return; } /* เปลี่ยนวัน/รอนานเกิน = เลิก ก่อนทำอะไร */
+        if(c && c.style.display!=="none" && c.textContent.indexOf("กำลังคัดบิล")<0){ clearInterval(_ct); window._cutLink=null; try{ c.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ c.scrollIntoView(); } return; }
+        /* ล็อกอินด้วย PIN ทีหลัง (การ์ดยังซ่อน) → วาดการ์ดของวันนี้ 1 ครั้ง เท่ากับเลือกวันซ้ำด้วยมือ */
+        if(!_kick && c && c.style.display==="none" && (ROLE==="owner"||ROLE==="finance") && Date.now()-_cw>3000){ _kick=true; try{ renderCut(); }catch(e){} } },500); }
     if(el && !el.value){ var y=new Date(Date.now()-864e5);
       el.value=_y0=y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate()); }
     var _t=new Date(), _today=_t.getFullYear()+"-"+pad2(_t.getMonth()+1)+"-"+pad2(_t.getDate());

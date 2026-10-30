@@ -55,8 +55,13 @@
     var date=pickDate();
     if(DATA && DATA.form){ msg("มีไฟล์ฟอร์มที่อัปไว้แล้วในหน้านี้ — กด ✕ ลบไฟล์เดิมก่อน แล้วค่อยดึงจากฟอร์มในโปรแกรม (กันข้อมูลลงซ้ำ)","#b91c1c"); return; }
     msg("กำลังดึงฟอร์มของวันที่ "+beDate(date)+"…");
+    /* v0.8.0 (Codex r8): รอบแก้กล่องคืนเงิน/รายรับอื่น ณ ก่อนอ่านยอด — หน้าตรวจใช้ตัดสินว่าฟอร์มนี้ยอดล่าสุดหรือยัง */
+    var rv0=(typeof CF_AUTO!=="undefined"&&CF_AUTO.rev)? (CF_AUTO.rev[date]||0) : null;
     try{
       var r=await buildFor(date);
+      /* v0.8.0 (Codex r1 #1): เปลี่ยนวันระหว่างดึง → ยกเลิก ไม่ส่งไฟล์ของวันเก่าเข้าหน้า (หน้าเดิมจะพาวันกลับ + เขียนข้อมูลผิดวัน) */
+      if(pickDate()!==date){ msg("เปลี่ยนวันระหว่างดึง — ยกเลิกการดึงของวันที่ "+beDate(date),"#b45309"); return; }
+      if(DATA && DATA.form){ msg("มีฟอร์มเข้าหน้านี้แล้วระหว่างดึง — ไม่ทับ (กด ✕ แล้วดึงใหม่ถ้าต้องการ)","#b45309"); return; } /* Codex r3 #1 */
       /* 26 ต.ค.69: วันที่แคชเชียร์ทำฟอร์มเป็นไฟล์ Excel ฟอร์มในโปรแกรมว่าง → บอกให้อัปไฟล์แทน (ดึงฟอร์มว่าง = ยอดทั้งวันเป็น 0 ทับของจริง) */
       var useXl=" — ถ้าวันนี้ทำฟอร์มเป็นไฟล์ Excel ให้คลิกกล่องนี้ หรือลากไฟล์มาวางในกล่อง";
       if(r.none||!r.nRows){ msg("ฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" ยังว่าง"+useXl,"#b45309"); return; }
@@ -68,7 +73,7 @@
       var buf=XLSX.write(r.wb,{type:"array",bookType:"xlsx"});
       var file=new File([buf],fileName(date),{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
       var inp=el("f_form"); if(!inp||inp.disabled){ msg("ช่องอัปฟอร์มถูกปิดอยู่ — ดึงไม่ได้","#b91c1c"); return; }
-      var dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files;
+      var dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files; window.__cfPullDate=date; window.__cfPullRev=rv0; /* v0.8.0: หน้าตรวจเช็กวันอีกครั้งตอนอ่านไฟล์เสร็จ (Codex r2 #1) + รอบแก้ตอนเริ่มดึง (r8) */
       inp.dispatchEvent(new Event("change",{bubbles:true}));
       msg(draft? "✓ ดึงร่างฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (แคชเชียร์ยังไม่กดส่ง) — ตรวจยอดก่อนกดยืนยัน · ถ้ายังไม่ครบ ให้แก้ฟอร์มแล้วกด ✕ ดึงใหม่"
                : "✓ ดึงฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (ส่งโดย "+esc(r.row.submitted_role||"-")+")", draft?"#b45309":"#15803d");

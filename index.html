@@ -182,7 +182,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.7.10</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.8.0</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -190,6 +190,8 @@
     <a class="r-fin" href="การเงินบริษัท.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 11c3 2 6 3 9 3s6-1 9-3"/><path class="ac" d="M10.5 12.5h3v3h-3z"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none"/><path class="in" d="M4 11.5c2.8 1.7 5.5 2.5 8 2.5s5.2-.8 8-2.5" fill="none"/><path class="bk" d="M10.5 12.5h3v3h-3z"/></svg></span><span class="tl">การเงิน<span class="dk">บริษัท</span></span></a>
     <a class="r-owner" href="Dashboard-สรุปรายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M4 20v-5h4v5"/><path d="M10 20v-8h4v8"/><path d="M16 20V9h4v11"/><path class="ac" d="M5 10l5-4 4 2 6-5"/><path class="ac" d="M16 3h4v4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><path d="M4 20v-5h4v5z"/><path d="M10 20v-8h4v8z"/><path d="M16 20V9h4v11z"/><path class="ac" d="M5 10l5-4 4 2 6-5" fill="none"/><path class="ac" d="M16 3h4v4" fill="none"/></svg></span><span class="tl"><span class="dk">Dashboard</span><span class="mb">ภาพรวม</span></span></a>
   </nav>
+
+  <div class="card" id="cfGuide" style="display:none;border:2px solid #f59e0b;background:#fffbeb"></div>
 
   <div class="card" id="dayBar">
     <div class="rowflex" style="gap:8px">
@@ -222,7 +224,7 @@
 
   <div class="card" id="statusCard">
     <h2>📅 สถานะการส่งรายงานเดือนนี้ <span class="badge info" id="statusBadge">…</span></h2>
-    <div class="muted" style="margin-bottom:8px">✓ เขียว = ตรวจครบ ยืนยันแล้ว · ⚠ เหลือง = ยืนยันแล้วแต่ข้อมูลไม่ครบ · ⏳ เทา = มีข้อมูลแต่ยังไม่ยืนยัน</div>
+    <div class="muted" style="margin-bottom:8px">✓ เขียว = ตรวจครบ ยืนยันแล้ว · ⚠ เหลือง = ยืนยันแล้วแต่ข้อมูลไม่ครบ · 📝 เทา = ส่งฟอร์มแล้ว รอใส่รายละเอียด · ⏳ เทา = มีข้อมูลแต่ยังไม่ยืนยัน</div>
     <div id="monthStatus" class="muted">กำลังโหลด…</div>
     <div id="dayDetail"></div>
   </div>
@@ -332,10 +334,10 @@ function isoFromExcel(v){
 }
 const FMAP={form:["d_form","fn_form"],pos:["d_acc","fn_pos"],kplus:["d_kplus","fn_kplus"],bank:["d_bank","fn_bank"]};
 function setFn(fnId,name,kind){ (DATA._files=DATA._files||{})[kind]=name; const el=document.getElementById(fnId); if(!el) return;
-  el.innerHTML = name + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
+  el.innerHTML = esc(name) + ' <span style="color:#dc2626;cursor:pointer;font-weight:800" title="ลบไฟล์" onclick="event.preventDefault();event.stopPropagation();clearFile(\''+kind+'\')">✕</span>'; }
 function bankPartialNote(bk){ const el=document.getElementById("fn_bank"); if(!el||!bk||!bk.partial) return; const ks=Object.keys(bk.partial); if(!ks.length) return;
   el.insertAdjacentHTML("beforeend",'<div style="color:#b45309;font-size:12px;margin-top:4px">⏳ '+ks.map(d=>beDate(d)+' มีถึง '+bk.partial[d]+' น.').join(", ")+' — ยังไม่ครบวัน (ยังไม่มียอด K+ เข้าบัญชีตอนปิดวัน) · พรุ่งนี้อัปไฟล์เต็มทับได้เลย</div>'); }
-function clearFile(kind){ DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="pos"){ DATA._posFile=null; DATA._posFileDate=null; DATA._posFileName=null; try{ localStorage.removeItem("rev_pos_file"); }catch(e){} setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
+function clearFile(kind){ if(typeof CF_AUTO!=="undefined" && CF_AUTO.busy) return; /* v0.8.0 (Codex r6 #1): กำลังบันทึกส่ง */ if(kind==="form"){ window._formGen=(window._formGen||0)+1; DATA._formSrc=null; } DATA[kind]=null; DATA["_e_"+kind]=null; if(DATA._files) DATA._files[kind]=null; if(kind==="pos"){ DATA._posFile=null; DATA._posFileDate=null; DATA._posFileName=null; try{ localStorage.removeItem("rev_pos_file"); }catch(e){} setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
   const m=FMAP[kind]||[]; const d=document.getElementById(m[0]); if(d){ d.classList.remove("on"); const i=d.querySelector('input[type=file]'); if(i) i.value=""; }
   const f=document.getElementById(m[1]); if(f) f.innerHTML=""; render(); matchReminder(); }
 function clearAll(){ ["form","pos","kplus","bank"].forEach(clearFile); const m=document.getElementById("audit_msg"); if(m) m.textContent=""; }
@@ -359,9 +361,16 @@ function readFile(input, kind, onName){
   input.addEventListener("change", e=>{
     const file = e.target.files[0]; if(!file) return; onName(file.name);
     const r = new FileReader();
+    const _pd=(kind==="form")? window.__cfPullDate : null; if(kind==="form") window.__cfPullDate=null;
+    const _gen=(kind==="form")? (window._formGen=(window._formGen||0)+1) : 0;
+    const _rv=_pd? window.__cfPullRev : null; if(kind==="form") window.__cfPullRev=null; /* รอบแก้กล่องคืนเงิน ณ ก่อนอ่านยอด (Codex r8) */
     r.onload = ev=>{
+      if(kind==="form" && _gen!==window._formGen) return; /* v0.8.0 (Codex r4 #2): มีไฟล์ใหม่กว่า/ถูกล้างระหว่างอ่าน — ทิ้ง */
+      if(typeof CF_AUTO!=="undefined" && CF_AUTO.busy){ try{ input.value=""; }catch(_e){} return; } /* กำลังบันทึกส่ง — ไม่รับไฟล์ (Codex r6 #1) */
+      /* v0.8.0 (Codex r2 #1): ไฟล์ที่ได้จากปุ่มดึงฟอร์ม แต่ผู้ใช้เปลี่ยนวันระหว่างอ่านไฟล์ → ทิ้ง ไม่ติดตั้งฟอร์มวันเก่า/ไม่เปลี่ยนวันกลับ/ไม่เขียนข้อมูล */
+      if(_pd && cpDate()!==_pd){ try{ input.value=""; }catch(_e){} const _fn=document.getElementById("fn_form"); if(_fn) _fn.innerHTML=""; const _m=document.getElementById("cf_msg"); if(_m) _m.textContent="เปลี่ยนวันระหว่างดึง — ยกเลิกการดึงของวันที่ "+beDate(_pd); return; }
       try{ const wb = XLSX.read(new Uint8Array(ev.target.result), {type:"array"});
-        DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null;
+        DATA[kind] = (kind==="form") ? parseForm(wb) : parsePos(wb); DATA["_e_"+kind] = null; if(kind==="form"){ DATA._formSrc=_pd?"pull":"file"; if(_pd && typeof CF_AUTO!=="undefined"){ CF_AUTO.from=_pd; CF_AUTO.pullRev[_pd]=(_rv==null?-1:_rv); } } /* ไม่รู้รอบ = ถือว่ายังไม่ล่าสุด → ดึงซ้ำเอง */ /* v0.8.0 (Codex r5) · กดปุ่มดึงเอง = นับเป็นฟอร์มที่ระบบดึง */
         if(kind==="pos"){ var _ad=document.getElementById("accDate"); DATA._posFile=DATA.pos; DATA._posFileDate=(DATA.form&&DATA.form.date)||(_ad&&_ad.value)||null; DATA._posFileName=file.name; DATA.pos.fromFile=true; posFileSave(); setTimeout(function(){ try{ loadAccDay(); }catch(e){} },0); }
       }catch(err){ DATA["_e_"+kind] = err.message; DATA[kind]=null;
         if(kind==="pos"){ try{ document.getElementById("fn_pos").innerHTML="<span style='color:#b91c1c'>อ่านไฟล์ไม่ได้: "+esc(err.message)+"</span>"; }catch(_e){} } }
@@ -2701,6 +2710,11 @@ function posFileSave(){ try{ localStorage.setItem("rev_pos_file", JSON.stringify
         if(c && c.style.display!=="none" && c.textContent.indexOf("กำลังคัดบิล")<0){ clearInterval(_ct); window._cutLink=null; try{ c.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ c.scrollIntoView(); } return; }
         /* ล็อกอินด้วย PIN ทีหลัง (การ์ดยังซ่อน) → วาดการ์ดของวันนี้ 1 ครั้ง เท่ากับเลือกวันซ้ำด้วยมือ */
         if(!_kick && c && c.style.display==="none" && (ROLE==="owner"||ROLE==="finance") && Date.now()-_cw>3000){ _kick=true; try{ renderCut(); }catch(e){} } },500); }
+    /* v0.8.0: ลิงก์ index.html?d=YYYY-MM-DD จากปุ่มส่งฟอร์ม = เปิดวันนั้น (เหมือนเลือกวันเอง) · กติกาตรวจค่าเดียวกับ ?cut= */
+    if(!_cut && el){ try{ var _qd=new URLSearchParams(location.search).get("d"); if(/^\d{4}-\d{2}-\d{2}$/.test(_qd||"")){ var _dd=new Date(_qd+"T00:00:00Z"), _tn2=new Date();
+      var _td2=_tn2.getFullYear()+"-"+pad2(_tn2.getMonth()+1)+"-"+pad2(_tn2.getDate());
+      if(!isNaN(_dd) && _dd.toISOString().slice(0,10)===_qd && _qd<=_td2 && _qd>="2026-01-01") el.value=_qd; }
+      var _u2=new URL(location.href); if(_u2.searchParams.has("d")){ _u2.searchParams.delete("d"); history.replaceState(null,"",_u2.pathname+_u2.search+_u2.hash); } }catch(e){} }
     if(el && !el.value){ var y=new Date(Date.now()-864e5);
       el.value=_y0=y.getFullYear()+"-"+pad2(y.getMonth()+1)+"-"+pad2(y.getDate()); }
     var _t=new Date(), _today=_t.getFullYear()+"-"+pad2(_t.getMonth()+1)+"-"+pad2(_t.getDate());
@@ -2802,13 +2816,13 @@ async function taskAlertRun(){
 
 function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
-<script src="credit.js?v=20261022a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+<script src="credit.js?v=20261030a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261028c"></script>
 <script src="cutbill.js?v=20261028c"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>
-<script src="cashierform-pull.js?v=20261026a"></script>
+<script src="cashierform-pull.js?v=20261030a"></script>
 <script>
 /* ===== v0.4.0 ใบนับเงินสด (บังคับ) + การ์ดตัดบิลประจำวัน ===== */
 const CASHP_FROM="2026-09-30";
@@ -2889,8 +2903,11 @@ async function uflRender(date,p,reqs,oth,rst){
   const st=document.getElementById("ufl_st"), go=document.getElementById("ufl_go"); if(!st) return;
   const _t=(window._uflTok=(window._uflTok||0)+1);
   if(go) go.href="ฟอร์มรายรับ.html?d="+encodeURIComponent(date);
-  let f=null, fe=false; try{ const q=await sb.from("rev_cashier_form").select("status,submitted_at,updated_at").eq("date",date).maybeSingle(); if(q.error) fe=true; f=q.data; }catch(e){ fe=true; }
+  let f=null, fe=false, au=null, ae=false; try{ const q=await Promise.all([ sb.from("rev_cashier_form").select("status,submitted_at,updated_at").eq("date",date).maybeSingle(), sb.from("rev_audit").select("date,status").eq("date",date).maybeSingle() ]);
+    if(q[0].error) fe=true; f=q[0].data; if(q[1].error) ae=true; au=q[1].data; }catch(e){ fe=true; ae=true; }
   if(_t!==window._uflTok || cpDate()!==date) return;
+  window._dayForm={date:date, status:fe?null:(f?f.status:"none"), audit:ae?null:(au?au.status:"none"), lock:!!(rst&&rst.dayLock)};
+  try{ cfAuto(date); cfGuideRender(); }catch(e){ console.warn("cfGuide",e); }
   const pend=(reqs||[]).filter(function(r){ return r.status==="pending"; }).length;
   const fTxt=fe?"<span style=\"color:#b45309\">อ่านสถานะไม่ได้</span>":!f?"<span style=\"color:#b45309\">ยังไม่มี</span>":f.status==="submitted"?"<b style=\"color:#15803d\">ส่งแล้ว ✓</b>":"<span style=\"color:#b45309\">ร่าง (ยังไม่ส่ง)</span>";
   const pTxt=!p?"<span style=\"color:#b45309\">ยังไม่มีรูป/ยอด</span>":(p.image_path?"<b style=\"color:#15803d\">มีรูป + ยอด "+TH(+p.amount)+" ✓</b>":"ยอด "+TH(+p.amount)+" (ไม่มีรูป)");
@@ -3558,6 +3575,135 @@ async function cutNotify(date,R){
 (function(){ if(typeof render!=="function") return; const _r=render; let _t=null;
   render=function(){ const x=_r.apply(this,arguments); clearTimeout(_t); _t=setTimeout(function(){ try{ loadCashProof(); }catch(e){} },300); return x; };
 })();
+/* ===== v0.8.0 (30 ต.ค.69 คุณหลิง 08:53) ลำดับงานแคชเชียร์: กรอกฟอร์ม → กดส่งฟอร์ม = เข้าหน้าตรวจรายได้เอง → กล่องนำทางให้ใส่รายละเอียดที่หน้านี้ → "บันทึกส่งข้อมูลทั้งหมด"
+   ① วันที่ฟอร์ม "ส่งแล้ว" และยังไม่บันทึกผลตรวจ (ไม่มีแถว rev_audit) → ดึงฟอร์มเข้าหน้านี้ให้เอง ทางเดียวกับปุ่ม 📥 ดึงจากฟอร์มในโปรแกรม (ด่านเดิมครบ) · ทุกบทบาท · ครั้งเดียวต่อวันต่อการเปิดหน้า
+      แคชเชียร์ = เฉพาะวันนี้/เมื่อวาน (วันที่บันทึกได้)
+   ② แคชเชียร์: กล่องบนสุดบอกสิ่งที่ต้องใส่ แต่ละข้อมีปุ่มพาไป · ครบแล้วปุ่ม "บันทึกส่งข้อมูลทั้งหมด" = ปุ่มยืนยันเดิม (saveAudit ด่านเดิมทุกด่าน)
+      ส่งแล้ว = "แคชเชียร์ส่งครบแล้ว รอเจ้าของยืนยัน" · แก้ได้จนเจ้าของอนุมัติตัดบิลของวันนั้น (dayLock เดิม)
+   ไม่แตะฐานข้อมูล/สิทธิ์ — ใช้ตารางและสิทธิ์เดิมทั้งหมด */
+const CF_AUTO={tried:{}, legacy:{}, edit:{}, from:null, busy:false, note:{}, prev:{}, keep:{}, rev:{}, pullRev:{}};
+/* แคชเชียร์แก้กล่องคืนเงิน/รายรับอื่นๆ หลังฟอร์มเข้าหน้าแล้ว → ดึงฟอร์มใหม่เอง (ยอดคืนเงิน/รายรับอื่นในฟอร์มต้องตรงกล่อง) · เก็บเหตุผล/ผู้ขาย/คืนสดที่พิมพ์เองไว้เติมกลับ */
+function cfRepull(date){
+  if(ROLE!=="cashier"||CF_AUTO.busy||!DATA.form||DATA._formSrc!=="pull"||DATA.form.date!==date||cpDate()!==date) return; /* อัป Excel เอง = ไม่ดึงทับ */
+  const s=window._dayForm; if(!s||s.date!==date||s.status!=="submitted"||s.lock||!(s.audit==="none"||CF_AUTO.edit[date])) return;
+  CF_AUTO.keep[date]=[].slice.call(document.querySelectorAll("#out tr[data-i]")).map(function(tr){ const x=((DATA.pos&&DATA.pos.cns)||[])[+tr.getAttribute("data-i")]||{}, ce=tr.querySelector(".cash"), ra=tr.querySelector(".rsninp"), sa=tr.querySelector(".appinp");
+    const cv=ce?String(ce.value).trim():""; return {cn_no:x.cn_no, reason:ra?ra.value:"", seller:sa?sa.value:"", typed:(ce&&cv!==""&&cv!==ce.dataset.cfauto)?cv:null}; });
+  CF_AUTO.from=null; CF_AUTO.tried[date]=false; clearFile("form"); cfAuto(date);
+}
+["rfAdd","rfSave","rfDel","cpOtherAdd","cpOtherDel"].forEach(function(n){ const o=window[n]; if(typeof o!=="function") return;
+  window[n]=async function(){ if(CF_AUTO.busy){ alert("กำลังบันทึกส่งข้อมูล รอสักครู่แล้วค่อยแก้"); return; } /* Codex r7 #1 */
+    const d=cpDate(); CF_AUTO.mut=(CF_AUTO.mut||0)+1; let r;
+    try{ r=await o.apply(this,arguments); } finally{ CF_AUTO.mut--; CF_AUTO.rev[d]=(CF_AUTO.rev[d]||0)+1; }
+    try{ cfRepull(d); }catch(e){ console.warn("cfRepull",e); } return r; }; }); /* rev = นับครั้งที่กล่องเปลี่ยน · กำลังดึงอยู่ → ดึงซ้ำหลังเสร็จ (Codex r4 #1) */
+function cfAuto(date){
+  const s=window._dayForm; if(!s||s.date!==date||!ROLE) return;
+  /* ฟอร์มที่ดึงให้เองของวันอื่นค้างอยู่ (เปลี่ยนวัน) → เอาออก ไม่ให้ผลตรวจวันเก่าโชว์ปนวันใหม่ */
+  if(DATA.form && CF_AUTO.from && DATA._formSrc==="pull" && DATA.form.date===CF_AUTO.from && DATA.form.date!==date){ CF_AUTO.tried[CF_AUTO.from]=false; CF_AUTO.from=null; clearFile("form"); } /* กลับมาวันนั้น = ดึงใหม่ให้อีกครั้ง */
+  const want=(s.status==="submitted" && s.audit==="none") || (CF_AUTO.edit[date] && s.status==="submitted");
+  if(!want || CF_AUTO.tried[date] || DATA.form) return;
+  if(ROLE==="cashier" && (!cpCanEdit(date) || s.lock)) return;
+  const b=document.getElementById("cf_pull"), inp=document.getElementById("f_form"); if(!b||!inp||inp.disabled) return;
+  if(window.__cfPulling){ clearTimeout(CF_AUTO.wt); CF_AUTO.wt=setTimeout(function(){ const d=cpDate(); if(window._dayForm&&window._dayForm.date===d){ cfAuto(d); cfGuideRender(); } },3600); return; } /* กำลังดึงอยู่ — ไม่เริ่มซ้อน รอจบแล้วเช็กวันปัจจุบันใหม่ (Codex r1 #7 · r2 #5) */
+  CF_AUTO.tried[date]=true; CF_AUTO.from=date; CF_AUTO.pullRev[date]=CF_AUTO.rev[date]||0;
+  uflPull();
+  const um=document.getElementById("ufl_msg"); if(um && !CF_AUTO.obs){ CF_AUTO.obs=new MutationObserver(function(){ cfGuideSoon(); }); CF_AUTO.obs.observe(um,{childList:true,subtree:true,characterData:true}); }
+}
+function cfPickDay(dt){ if(CF_AUTO.busy) return; const el=document.getElementById("accDate"); if(!el||el.disabled) return; el.value=dt; loadAccDay(); try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){ window.scrollTo(0,0); } }
+function cfRetry(){ if(window.__cfPulling) return; const d=cpDate(); CF_AUTO.tried[d]=false; const m=document.getElementById("ufl_msg"); if(m) m.textContent=""; cfAuto(d); cfGuideRender(); }
+async function cfEdit(){ const d=cpDate(); CF_AUTO.edit[d]=true; CF_AUTO.tried[d]=false; CF_AUTO.keep[d]=null; CF_AUTO.prev[d]=null; /* รอบแก้ใหม่ เริ่มจากที่บันทึกล่าสุด (Codex r9) */
+  /* เหตุผล/ผู้ขายที่ส่งไปรอบก่อน → เติมกลับในข้อ ② ให้ (แก้เฉพาะที่ต้องแก้ ไม่ต้องพิมพ์ใหม่ทั้งหมด) */
+  try{ const r=await sb.from("rev_audit").select("detail").eq("date",d).maybeSingle(); const c=r&&!r.error&&r.data&&r.data.detail&&r.data.detail.cns; if(Array.isArray(c)) CF_AUTO.prev[d]=c; }catch(e){}
+  if(cpDate()!==d) return;
+  if(DATA.form && DATA.form.date===d && DATA._formSrc==="pull"){ CF_AUTO.from=null; clearFile("form"); } /* ฟอร์มวันนี้อยู่ในหน้าแล้ว → เอาออกแล้วดึงใหม่ ยอดคืนเงิน/รายรับอื่นล่าสุดเข้าฟอร์ม ข้อ ② วาดใหม่ + เติมของเดิม (Codex r1 #5 · r2 #3) */
+  cfAuto(d); cfGuideRender(); }
+function cfGo(id){ if(id==="d_cashp"||id==="cashp_other") upLegacyToggle(true); setTimeout(function(){ window.revFocus(id); },50); }
+function cfGoCn(){ const tr=[].slice.call(document.querySelectorAll("#out tr[data-i]")); for(const r of tr){ const a=r.querySelector(".rsninp"), b=r.querySelector(".appinp");
+    const t=(a&&!String(a.value).trim())?a:(b&&!String(b.value).trim())?b:null; if(t){ window.revFocus(t); try{ t.focus({preventScroll:true}); }catch(e){ t.focus(); } return; } } }
+/* สิ่งที่ต้องใส่ของวัน (อ่านจากหน้าจอที่วาดแล้ว: กรอบใบนับ · กล่องคืนเงิน · รายรับอื่นๆ · ตาราง ② ใบลดหนี้) */
+function cfItems(date){
+  const it=[];
+  const box=document.getElementById("d_cashp"), cpOk=!!(box&&box.classList.contains("on")), cpBad=!!(box&&box.classList.contains("bad"));
+  it.push({ok:cpOk, t:cpOk?"ใบนับเงินสด ยอดตรงกับที่ต้องมี":cpBad?"ใบนับเงินสด ยอดไม่ตรงกับที่ต้องมี — ตรวจยอด/รายการคืนเงิน":"ยังไม่มีรูปใบนับเงินสด + ยอดรวม", go:"cfGo('d_cashp')", gl:cpOk?"ดู":"ไปที่ใบนับ"});
+  if(RF && RF.date===date){ const ln=(document.getElementById("cashp_refund")||{}).textContent||""; const quiet=!RF.rows.length && !(RF.fi&&+RF.fi.refund>0) && !RF.photo;
+    it.push({ok:!!RF.ok, t:quiet?"คืนเงิน: วันนี้ไม่มี":RF.ok?"คืนเงิน (ใบลดหนี้) ลงครบ ตรงฟอร์ม มีรูปแล้ว":"คืนเงิน (ใบลดหนี้): "+ln.replace(/^\s*↩️\s*คืนเงิน/,"").replace(/(เปิด|＋ ลง)\s*$/,"").replace(/^[🚩⏳\s]+/u,"").trim(), go:"rfModal(true)", gl:RF.ok?"ดู":"เปิดกล่องคืนเงิน"}); }
+  const ob=document.getElementById("cashp_other"), oth=ob?ob.innerHTML:"";
+  if(oth.indexOf("🚩")>=0) it.push({ok:false, t:"รายรับอื่นๆ ไม่ตรงกับฟอร์ม", go:"cfGo('cashp_other')", gl:"ไปที่รายรับอื่นๆ"});
+  if(!DATA.pos) it.push({ok:false, t:"รอยอดจากเครื่อง (ACC-BILLING) ครบวัน — แล้วใบลดหนี้ของวันจะขึ้นให้ใส่รายละเอียด", go:"", gl:""});
+  else { const rows=[].slice.call(document.querySelectorAll("#out tr[data-i]")), miss=[];
+    rows.forEach(function(r,i){ const a=r.querySelector(".rsninp"), b=r.querySelector(".appinp"); if((a&&!String(a.value).trim())||(b&&!String(b.value).trim())){ const x=(DATA.pos.cns||[])[+r.getAttribute("data-i")]||{}; miss.push(x.cn_no||("แถว "+(i+1))); } });
+    it.push({ok:!miss.length, t:!rows.length?"ใบลดหนี้: วันนี้ไม่มี":!miss.length?"ใบลดหนี้ "+rows.length+" ใบ ใส่เหตุผล + ผู้ขายครบ":"ใบลดหนี้ ยังไม่ใส่เหตุผล/ผู้ขาย "+miss.length+" ใบ ("+miss.join(", ")+")", go:"cfGoCn()", gl:miss.length?"ไปใส่":""}); }
+  const ex=document.getElementById("exsum");
+  if(ex && DATA._refund>0){ const ok=/อธิบายครบ/.test(ex.textContent); it.push({ok:ok, t:ok?"ยอดคืนเงินในฟอร์ม อธิบายครบ":"ยอดคืนเงินในฟอร์ม ยังอธิบายไม่ครบ ("+ex.textContent.trim()+") — ใส่ช่อง “คืนสดจริง” ในข้อ ② หรือเพิ่มรายการมัดจำ/อื่นๆ", go:"window.revFocus('exsum')", gl:ok?"":"ไปดู"}); }
+  return it;
+}
+/* ช่อง "คืนสดจริง" ในข้อ ② ที่ยังว่าง → เติมจากกล่องคืนเงิน (ยอดคืนสดต่อ CN ที่แคชเชียร์ลงไว้แล้ว) ไม่ต้องพิมพ์ซ้ำ · ช่องที่พิมพ์เองไม่แตะ */
+function cfPrefillCn(date){
+  if(!DATA.pos) return; const bx=DATA._cnCash, bxOk=!!(bx&&bx.d===date&&!bx.err&&bx.m);
+  document.querySelectorAll("#out tr[data-i]").forEach(function(tr){ const i=+tr.getAttribute("data-i"), x=(DATA.pos.cns||[])[i]||{}, ce=tr.querySelector(".cash");
+    const pv=((CF_AUTO.keep[date]||[]).concat(CF_AUTO.edit[date]&&CF_AUTO.prev[date]||[])).find(function(z){ return z&&z.cn_no&&z.cn_no===x.cn_no; });
+    if(pv&&!tr.dataset.cfprev){ tr.dataset.cfprev="1"; const ra=tr.querySelector(".rsninp"), sa=tr.querySelector(".appinp");
+      if(ra&&!String(ra.value).trim()&&pv.reason) ra.value=String(pv.reason); if(sa&&!String(sa.value).trim()&&pv.seller) sa.value=String(pv.seller); }
+    if(!ce) return; const cur=String(ce.value).trim(), auto=ce.dataset.cfauto;
+    if(cur!=="" && cur!==auto) return; /* คนพิมพ์เอง = ไม่แตะ (Codex r3 #2) */
+    const kt=pv&&pv.typed!=null? String(pv.typed) : null; /* ที่พิมพ์เองไว้ก่อนดึงใหม่ */
+    if(kt!=null && auto==null && cur===""){ ce.value=kt; try{ recalc(i); }catch(e){} return; }
+    if(!bxOk) return; const v=+bx.m[String(x.cn_no||"").trim()]||0, nv=v>0?String(v):""; /* กล่องคืนเงินอย่างเดียว (ไม่ใช้ยอดเก่าที่บันทึกไว้ · Codex r1 #6) */
+    ce.dataset.cfauto=nv; if(cur!==nv){ ce.value=nv; try{ recalc(i); }catch(e){} } });
+}
+let _cfgT=null; function cfGuideSoon(){ clearTimeout(_cfgT); _cfgT=setTimeout(cfGuideRender,150); }
+function cfGuideRender(){
+  const g=document.getElementById("cfGuide"); if(!g) return;
+  const s=window._dayForm, date=cpDate();
+  if(ROLE!=="cashier" || !s || s.date!==date || s.status!=="submitted" || s.audit==="วันหยุด" || s.audit==null){ g.style.display="none"; return; }
+  g.style.display="";
+  const can=cpCanEdit(date), saved=(s.audit!=="none"), btn='class="btn" style="padding:7px 14px;margin:6px 6px 0 0"', btn2='class="btn sec" style="padding:4px 10px;margin:0;font-size:12.5px;white-space:nowrap"';
+  let h='<div style="margin:0 0 6px;font-size:17px;font-weight:800">🧭 งานแคชเชียร์ วันที่ '+beDate(date)+'</div>'; /* ไม่ใช้ h2 = mpager.js (มือถือ) ไม่หุบกล่องนี้ */
+  if(s.lock){ g.innerHTML=h+'<div style="font-weight:700;color:#3730a3">'+(saved?'✅ ส่งครบแล้ว · ':'')+'🔒 เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้ไม่ได้ ถ้าต้องแก้ แจ้งเจ้าของ</div>'; return; }
+  if(saved && !CF_AUTO.edit[date]){
+    g.innerHTML=h+'<div style="font-weight:700;color:#15803d">✅ แคชเชียร์ส่งครบแล้ว รอเจ้าของยืนยัน</div>'+(can?'<div class="muted" style="margin-top:4px">ต้องแก้รายละเอียด? กดปุ่มนี้ แก้แล้วกดบันทึกส่งอีกครั้ง (แก้ได้จนเจ้าของอนุมัติตัดบิล)</div><button type="button" '+btn.replace('class="btn"','class="btn sec"')+' onclick="cfEdit()">✏️ แก้รายละเอียด</button>':''); return; }
+  if(!can){ g.innerHTML=h+'<div style="color:#b45309;font-weight:700">⏰ แคชเชียร์บันทึกได้เฉพาะวันนี้และเมื่อวาน — วันนี้เลยเวลาแล้ว แจ้งการเงินหรือเจ้าของ</div>'; return; }
+  if(!DATA.form || DATA.form.date!==date){
+    const m=document.getElementById("ufl_msg"), m2=document.getElementById("cf_msg"), mt=(m&&m.innerHTML)||(m2&&m2.innerHTML)||"";
+    g.innerHTML=h+'<div>ฟอร์มรายรับส่งแล้ว ✓ — '+(CF_AUTO.tried[date]?(mt?'<span>'+mt+'</span>':'กำลังดึงฟอร์มเข้าหน้าตรวจ…'):'กำลังเตรียมดึงฟอร์ม…')+'</div>'+(CF_AUTO.tried[date]?'<button type="button" '+btn.replace('class="btn"','class="btn sec"')+' onclick="cfRetry()">↻ ดึงฟอร์มอีกครั้ง</button>':''); return; }
+  if(!CF_AUTO.legacy[date]){ CF_AUTO.legacy[date]=true; upLegacyToggle(true); } /* ช่องที่ต้องใส่ไม่หุบใน ▸ วิธีเดิม */
+  if(CF_AUTO.from===date && DATA._formSrc==="pull" && (CF_AUTO.rev[date]||0)!==(CF_AUTO.pullRev[date]||0)){ if(window.__cfPulling||CF_AUTO.busy){ clearTimeout(CF_AUTO.gt); CF_AUTO.gt=setTimeout(cfGuideRender,3700); } else { cfRepull(date); return; } } /* กล่องเปลี่ยนระหว่างดึง → ฟอร์มนี้ยอดเก่า ดึงใหม่ */
+  cfPrefillCn(date);
+  const items=cfItems(date), left=items.filter(function(x){ return !x.ok; }).length;
+  h+='<div class="muted" style="margin-bottom:6px">ฟอร์มรายรับเข้าหน้าตรวจแล้ว ✓ — ใส่รายละเอียดข้างล่างให้ครบ แล้วกด “บันทึกส่งข้อมูลทั้งหมด”</div>';
+  h+=items.map(function(x){ return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed #fde68a"><span style="width:20px;text-align:center;font-size:16px">'+(x.ok?'<span style="color:#16a34a">✓</span>':'<span style="color:#dc2626">✗</span>')+'</span><span style="flex:1;min-width:0;'+(x.ok?'color:#166534':'color:#991b1b;font-weight:600')+'">'+esc(x.t)+'</span>'+(x.go&&x.gl?'<button type="button" '+btn2+' onclick="'+x.go+'">'+esc(x.gl)+'</button>':'')+'</div>'; }).join("");
+  const off=!!(left||CF_AUTO.busy);
+  h+='<button type="button" id="cf_save" class="btn" style="padding:7px 14px;margin:6px 6px 0 0'+(off?';opacity:.45;cursor:not-allowed':'')+'"'+(off?' disabled':'')+' onclick="cfSave()">'+(CF_AUTO.busy?'⏳ กำลังบันทึก…':'💾 บันทึกส่งข้อมูลทั้งหมด')+'</button>'+(CF_AUTO.edit[date]?'<button type="button" '+btn.replace('class="btn"','class="btn sec"')+' onclick="CF_AUTO.edit[cpDate()]=false;cfGuideRender()">ยกเลิกแก้</button>':'');
+  h+='<div id="cf_note" style="font-size:13px;margin-top:6px">'+(left?'<span style="color:#b45309">เหลืออีก '+left+' ข้อ</span>':'')+(CF_AUTO.note[date]||'')+'</div>';
+  g.innerHTML=h;
+}
+async function cfSave(){
+  const date=cpDate(); if(CF_AUTO.busy||!DATA.form||DATA.form.date!==date) return;
+  if(cfItems(date).some(function(x){ return !x.ok; })){ cfGuideRender(); return; }
+  if(!cpCanEdit(date)){ CF_AUTO.note[date]='<div style="color:#b91c1c;margin-top:4px">แคชเชียร์บันทึกได้เฉพาะวันนี้และเมื่อวาน</div>'; cfGuideRender(); return; }
+  /* กำลังแก้คืนเงิน/รายรับอื่น หรือฟอร์มในหน้ายังเป็นยอดก่อนแก้ล่าสุด → ยังไม่บันทึก (Codex r7 #1) */
+  if((CF_AUTO.mut||0)>0 || window.__cfPulling || (DATA._formSrc==="pull" && (CF_AUTO.rev[date]||0)!==(CF_AUTO.pullRev[date]||0))){ CF_AUTO.note[date]='<div style="color:#b45309;margin-top:4px">กำลังอัปเดตยอดล่าสุด รอสักครู่แล้วกดอีกครั้ง</div>'; cfGuideRender(); return; }
+  CF_AUTO.busy=true; CF_AUTO.note[date]=""; cfGuideRender();
+  /* ระหว่างส่ง ห้ามเปลี่ยนวัน (ข้อมูลกับวันที่ต้องเป็นชุดเดียวกัน · Codex r1 #2) */
+  const _lk=["accDate","cf_pull","ufl_pull"].map(function(id){ return document.getElementById(id); }).concat([].slice.call(document.querySelectorAll('#dayBar button, #dayBar input[type=file]'))).filter(function(el){ return el && !el.disabled; }); /* ปิดเฉพาะที่เปิดอยู่ แล้วคืนเฉพาะที่ปิดเอง */
+  _lk.forEach(function(el){ el.disabled=true; });
+  let before=null, after=null, stop="";
+  try{ const q=await Promise.all([ sb.from("rev_audit").select("confirmed_at").eq("date",date).maybeSingle(), sb.rpc("rev_refund_appr",{p_date:date}) ]);
+    before=q[0]&&q[0].data?q[0].data.confirmed_at:null;
+    /* เจ้าของอนุมัติตัดบิลของวันนี้หลังเปิดหน้า → ไม่บันทึกทับ · อ่านสถานะไม่ได้ = ไม่บันทึก (Codex r1 #4) */
+    if(!q[1]||q[1].error) stop="เช็กสถานะอนุมัติตัดบิลไม่ได้ ลองกดใหม่อีกครั้ง";
+    else if((q[1].data||[]).some(function(z){ return z.status!=="cancelled" && z.bill_date===date; })) stop="เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้ไม่ได้ ถ้าต้องแก้ แจ้งเจ้าของ";
+    if(!stop && (cpDate()!==date || !DATA.form || DATA.form.date!==date)) stop="วันที่เปลี่ยนไป ลองใหม่อีกครั้ง";
+    if(!stop) await saveAudit();
+    const a=await sb.from("rev_audit").select("status,confirmed_at").eq("date",date).maybeSingle(); after=a&&a.data; }
+  catch(e){ console.warn("cfSave",e); }
+  finally{ CF_AUTO.busy=false; _lk.forEach(function(el){ el.disabled=false; }); }
+  if(cpDate()!==date) return;
+  if(stop){ if(stop.indexOf("เจ้าของอนุมัติตัดบิล")===0 && window._dayForm && window._dayForm.date===date) window._dayForm.lock=true; CF_AUTO.note[date]='<div style="color:#b91c1c;margin-top:4px">ยังไม่ได้บันทึก — '+esc(stop)+'</div>'; cfGuideRender(); return; }
+  if(after && after.status==="ตรวจแล้ว" && after.confirmed_at && after.confirmed_at!==before){ CF_AUTO.edit[date]=false; CF_AUTO.note[date]=""; CF_AUTO.keep[date]=null; CF_AUTO.prev[date]=null; if(window._dayForm&&window._dayForm.date===date) window._dayForm.audit=after.status; cfGuideRender(); try{ loadCashProof(); }catch(e){} return; }
+  const am=document.getElementById("audit_msg"); CF_AUTO.note[date]='<div style="color:#b91c1c;margin-top:4px">ยังไม่ได้บันทึก — '+(am&&am.innerHTML?am.innerHTML:'ลองกดใหม่อีกครั้ง')+'</div>';
+  cfGuideRender(); if(am&&am.innerHTML) window.revFocus(am);
+}
+document.addEventListener("input",function(e){ try{ if(e.target&&e.target.closest&&e.target.closest("#out")) cfGuideSoon(); }catch(_e){} });
 </script>
 <script src="nav.js?v=20261024b"></script>
 </body>

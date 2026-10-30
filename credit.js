@@ -64,10 +64,13 @@
     if(!sbReady()){ el.innerHTML='<span style="color:#b91c1c">เชื่อม Supabase ไม่ได้</span>'; return; }
     var res=await Promise.all([
       sb.from("rev_audit").select("date,status,kplus_today,bank_dep_today"),
-      sb.from("rev_daily").select("date,kplus_total,bank_dep_total")
+      sb.from("rev_daily").select("date,kplus_total,bank_dep_total"),
+      /* v0.8.0 (30 ต.ค.69): วันที่แคชเชียร์ส่งฟอร์มแล้ว ขึ้นแถบเลย (ยังไม่บันทึกผลตรวจ = 📝 เทา) · อ่านไม่ได้ = แบบเดิม */
+      sb.from("rev_cashier_form").select("date").eq("status","submitted").then(function(r){ return r; },function(){ return {data:[]}; })
     ]);
-    var audit=res[0].data||[], daily=res[1].data||[];
-    var months=[].concat(audit,daily).map(function(x){return String(x.date).slice(0,7);});
+    var audit=res[0].data||[], daily=res[1].data||[], sent=(res[2]&&!res[2].error&&res[2].data)||[];
+    var sMap={}; sent.forEach(function(x){ sMap[String(x.date).slice(0,10)]=1; });
+    var months=[].concat(audit,daily,sent).map(function(x){return String(x.date).slice(0,7);});
     months=months.filter(function(v,i,a){return a.indexOf(v)===i;});
     var cm=todayISO().slice(0,7); if(months.indexOf(cm)<0) months.push(cm);
     months.sort();
@@ -82,18 +85,19 @@
     var inM=function(s){ return String(s).slice(0,7)===month; };
     var aMap={}; audit.forEach(function(x){ if(inM(x.date)) aMap[x.date]=x; });
     var dMap={}; daily.forEach(function(x){ dMap[x.date]=x; });
-    var days=[].concat(audit,daily).filter(function(x){return inM(x.date);}).map(function(x){return x.date;});
+    var days=[].concat(audit,daily,sent).filter(function(x){return inM(x.date);}).map(function(x){return String(x.date).slice(0,10);});
     days=days.filter(function(v,i,a){return a.indexOf(v)===i;}).sort();
     var done=0, holiday=0;
     var chips=days.map(function(dt){
-      var a=aMap[dt]; var dl=dMap[dt]||{}; var bg,col,ic;
+      var a=aMap[dt]; var dl=dMap[dt]||{}; var bg,col,ic,tip="",go="showDayDetail";
       if(a && a.status==="วันหยุด"){ bg="#dbeafe";col="#1d4ed8";ic="🏖️";holiday++; }
       else if(a){
         var full=(a.kplus_today!=null||dl.kplus_total!=null)&&(a.bank_dep_today!=null||dl.bank_dep_total!=null);
         if(full){ bg="#dcfce7";col="#15803d";ic="✓";done++; } else { bg="#fef3c7";col="#b45309";ic="⚠"; }
       }
+      else if(sMap[dt] && typeof window.cfPickDay==="function"){ bg="#f1f5f9";col="#475569";ic="📝";tip="ส่งฟอร์มแล้ว รอแคชเชียร์ใส่รายละเอียด + บันทึกส่ง";go="cfPickDay"; }
       else { bg="#f1f5f9";col="#64748b";ic="⏳"; }
-      return '<span style="display:inline-block;margin:3px 5px 0 0;padding:3px 9px;border-radius:6px;font-size:12.5px;cursor:pointer;background:'+bg+';color:'+col+'" onclick="showDayDetail(\''+dt+'\')">'+ic+" "+beDate(dt)+"</span>";
+      return '<span title="'+tip+'" style="display:inline-block;margin:3px 5px 0 0;padding:3px 9px;border-radius:6px;font-size:12.5px;cursor:pointer;background:'+bg+';color:'+col+'" onclick="'+go+'(\''+dt+'\')">'+ic+" "+beDate(dt)+"</span>";
     }).join("");
     if(bd) bd.textContent=month.split("-")[1]+"/"+(parseInt(month.split("-")[0],10)+543)+" · ยืนยันแล้ว "+done+"/"+(days.length-holiday)+(holiday?" · วันหยุด "+holiday:"");
     el.innerHTML=days.length? chips : '<div class="muted">ยังไม่มีข้อมูลเดือนนี้</div>';

@@ -25,7 +25,9 @@
      เด้งเตือน (27 ต.ค.): ปุ่มกระดิ่ง → เปิด/ปิดเตือนเครื่องนี้ · service worker hq-sw.js scope "chat" (คุมแค่หน้านี้)
      ข้อความเตือนสร้างในฐาน ไม่มียอดเงิน · กุญแจ VAPID สาธารณะด้านล่าง (ส่วนลับอยู่ใน Supabase เท่านั้น)
      ขั้น ③ (28 ต.ค.): เจ้าของพิมพ์สั่งงาน + แท็ก @ / @all → ฟังก์ชัน hq_chat_send (ฐานตรวจเจ้าของเอง · ไม่เขียนตารางตรง)
-     Claude ในคอมร้านตอบในชื่อผู้ช่วย · กดค้างที่ข้อความ = ยกเลิก (ก่อนผู้ช่วยหยิบ) -->
+     Claude ในคอมร้านตอบในชื่อผู้ช่วย · กดค้างที่ข้อความ = ยกเลิก (ก่อนผู้ช่วยหยิบ)
+     ขั้น ④ (29 ต.ค.): พิมพ์ "ตัดบิล 28/10" → การ์ดยอด (hq_cut_preview) → ยืนยัน (hq_cut_request · ฐานตรวจเจ้าของ+ยอดซ้ำ)
+     → ตัวเฝ้าในคอมร้านตัดเฉพาะบิลที่อนุมัติแล้ว (ไม่ใช้ AI) · กดค้างที่คำสั่ง = หยุดตัด (hq_cut_stop) -->
 <style>
 :root{
   --bg:#0F1A2E; --bar:#132139; --line:#22324F; --chip:#1C2B45; --bubble:#1C2B45; --day:#18263F;
@@ -128,6 +130,10 @@ a{color:var(--amber)}
 .mopt div{display:flex;flex-direction:column}
 .mopt b{font-size:14px;font-weight:600}
 .mopt small{font-size:12px;color:var(--muted)}
+/* ขั้น ④ การ์ดยืนยันตัดบิล */
+.cutsum{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;line-height:1.6;white-space:pre-wrap}
+.cutsum b{font-size:16px}
+.cutwarn{font-size:13px;color:var(--amber);line-height:1.5;margin:10px 0 0}
 </style>
 </head>
 <body>
@@ -187,6 +193,17 @@ a{color:var(--amber)}
   </div>
 </div>
 
+<div class="sheet hide" id="cut" onclick="if(event.target===this)closeCut()">
+  <div class="sbox" role="dialog" aria-label="ยืนยันตัดบิล">
+    <div class="shead"><b>ตัดบิลใน ACC</b><button class="ibtn" aria-label="ปิด" onclick="closeCut()">✕</button></div>
+    <div class="cutsum" id="cutSum">กำลังดูยอด…</div>
+    <p class="cutwarn" id="cutWarn"></p>
+    <button class="nbtn pri" id="cutOk" disabled>ยืนยันตัด</button>
+    <button class="nbtn" onclick="closeCut()">ไม่ตัด</button>
+    <div class="nmsg" id="cutMsg" role="status"></div>
+  </div>
+</div>
+
 <div class="sheet hide" id="members" onclick="if(event.target===this)closeMembers()">
   <div class="sbox" role="dialog" aria-label="สมาชิกในห้อง">
     <div class="shead"><b>สมาชิก 8 คน + เจ้าของ</b><button class="ibtn" aria-label="ปิด" onclick="closeMembers()">✕</button></div>
@@ -235,7 +252,7 @@ function showGate(msg,isDeny){
   $("list").innerHTML="";                          /* ไม่ทิ้งข้อความไว้บนจอเมื่อสิทธิ์หลุด */
   $("nDevs").innerHTML=""; $("notify").classList.add("hide"); $("members").classList.add("hide");
   PINS=[]; $("pinbar").classList.add("hide"); $("pinbar").textContent=""; $("pinCount").textContent="";
-  TASKS={}; $("msg").value=""; SEND_CLIENT=null; hideMention(); closeAct(); fErr(""); syncSend();   /* ไม่ทิ้งข้อความที่พิมพ์ค้างไว้เมื่อสิทธิ์หลุด */
+  TASKS={}; CUTS={}; closeCut(); $("msg").value=""; SEND_CLIENT=null; hideMention(); closeAct(); fErr(""); syncSend();   /* ไม่ทิ้งข้อความที่พิมพ์ค้างไว้เมื่อสิทธิ์หลุด */
   $("gateMsg").textContent=msg||"สำหรับเจ้าของเท่านั้น · ใส่ PIN";
   $("gateOut").classList.toggle("hide",!isDeny);
   $("pinInput").classList.toggle("hide",!!isDeny); $("pinBtn").classList.toggle("hide",!!isDeny);
@@ -345,12 +362,20 @@ function taskLabel(t){
   return ({queued:"ส่งแล้ว · รอ"+who+"หยิบ (กดค้างเพื่อยกเลิก)", claimed:who+"รับงานแล้ว", working:who+"กำลังทำ",
            waiting_approval:"รอคุณหลิงกดอนุมัติในแอป Claude", done:"เสร็จแล้ว", failed:"ทำไม่สำเร็จ", cancelled:"ยกเลิกแล้ว"})[t.status]||"ส่งแล้ว";
 }
+/* ขั้น ④ คำสั่งตัดบิล: message_id → {id,status,stop} จากตาราง hq_cut_requests (อ่านได้เฉพาะเจ้าของ) */
+var CUTS={};
+function cutLabel(c){
+  if(c.stop && c.status==="running") return "กำลังหยุด… (หยุดก่อนใบถัดไป)";
+  return ({requested:"ส่งคำสั่งแล้ว · รอคอมร้านหยิบ (กดค้างเพื่อหยุด)", running:"คอมร้านกำลังตัด · ตัดแล้ว "+c.done+"/"+c.total+" บิล (กดค้างเพื่อหยุด)", done:"ตัดเสร็จแล้ว · "+c.done+"/"+c.total+" บิล",
+           stopped:"หยุดแล้ว · ตัดไป "+c.done+"/"+c.total+" บิล", failed:"ตัดไม่สำเร็จ · ตัดไป "+c.done+"/"+c.total+" บิล · ดูข้อความข้าวโพด", offline:"คอมร้านปิด · ยังไม่ได้ตัด", expired:"หมดอายุ · ยังไม่ได้ตัด"})[c.status]||"ส่งแล้ว";
+}
 function mineNode(r){
-  var t=TASKS[r.id], d=new Date(r.posted_at);
+  var t=TASKS[r.id], c=CUTS[r.id], d=new Date(r.posted_at);
   var row=document.createElement("div"); row.className="me";
   var bub=document.createElement("div"); bub.className="mebub"+(t&&t.status==="cancelled"?" cx":""); fillMine(bub,r.body); row.appendChild(bub);
-  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=taskLabel(t)+" · "+hhmm(d); row.appendChild(meta);
-  if(t && t.status==="queued") holdToCancel(bub,r);
+  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=(c?cutLabel(c):taskLabel(t))+" · "+hhmm(d); row.appendChild(meta);
+  if(c){ if((c.status==="requested"||c.status==="running") && !c.stop) holdToCancel(bub,r); }
+  else if(t && t.status==="queued") holdToCancel(bub,r);
   return {row:row,bub:bub,col:row,meta:meta};
 }
 function holdToCancel(el,r){
@@ -365,9 +390,19 @@ var ACT_ID=null;
 function openAct(r){
   if(!READY) return;
   ACT_ID=r.id;
-  $("actTxt").textContent="“"+String(r.body||"").slice(0,120)+(String(r.body||"").length>120?"…":"")+"” — ยกเลิกได้จนกว่าผู้ช่วยจะหยิบไปทำ ข้อความยังอยู่แต่ขีดฆ่าไว้";
+  var c=CUTS[r.id];
+  if(c){   /* ขั้น ④: หยุดคำสั่งตัด */
+    $("act").querySelector(".shead b").textContent="คำสั่งตัดบิล";
+    $("actTxt").textContent="“"+String(r.body||"")+"” — ถ้ากดหยุด คอมร้านจะไม่เริ่มใบเสร็จใบถัดไป · ใบที่บันทึกไปแล้วยังอยู่ (ไม่ถูกยกเลิก)";
+    $("actCancel").textContent="หยุดตัด"; $("actCancel").onclick=doStopCut;
+    $("act").querySelector(".nbtn:not(.pri)").textContent="ตัดต่อ";
+  } else {
+    $("act").querySelector(".shead b").textContent="งานที่สั่ง";
+    $("actTxt").textContent="“"+String(r.body||"").slice(0,120)+(String(r.body||"").length>120?"…":"")+"” — ยกเลิกได้จนกว่าผู้ช่วยจะหยิบไปทำ ข้อความยังอยู่แต่ขีดฆ่าไว้";
+    $("actCancel").textContent="ยกเลิกงานนี้"; $("actCancel").onclick=doCancel;
+    $("act").querySelector(".nbtn:not(.pri)").textContent="ไม่ยกเลิก";
+  }
   $("actMsg").textContent=""; $("actCancel").disabled=false;
-  $("actCancel").onclick=doCancel;
   $("act").classList.remove("hide");
 }
 function closeAct(){ $("act").classList.add("hide"); ACT_ID=null; }
@@ -382,6 +417,17 @@ async function doCancel(){
     if(r.data===false){ $("actMsg").textContent="ผู้ช่วยหยิบไปทำแล้ว ยกเลิกไม่ได้ — พิมพ์บอกใหม่ว่า \"ยกเลิกงานเมื่อกี้\""; await load(); return; }
     closeAct(); await load();
   }catch(e){ console.warn("cancel",e); if(g===GEN){ $("actMsg").textContent="เชื่อมต่อไม่ได้ ลองใหม่"; $("actCancel").disabled=false; } }
+}
+async function doStopCut(){
+  var mid=ACT_ID, g=GEN, c=CUTS[mid]; if(!mid || !c || !sb) return;
+  $("actCancel").disabled=true; $("actMsg").textContent="กำลังสั่งหยุด…";
+  try{
+    var r=await sb.rpc("hq_cut_stop",{p_id:c.id});
+    if(g!==GEN) return;
+    if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(r.error){ $("actMsg").textContent="สั่งหยุดไม่สำเร็จ ลองใหม่"; $("actCancel").disabled=false; return; }
+    closeAct(); await load();
+  }catch(e){ console.warn("stopcut",e); if(g===GEN){ $("actMsg").textContent="เชื่อมต่อไม่ได้ ลองใหม่ (หรือขยับเมาส์ที่คอมร้าน)"; $("actCancel").disabled=false; } }
 }
 
 function render(rows){
@@ -442,7 +488,15 @@ async function load(){
       if(authErr(tq.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
       (tq.data||[]).forEach(function(t){ tk[t.message_id]={status:t.status,assignee:t.assignee}; });
     }
-    TASKS=tk;
+    /* ขั้น ④ สถานะคำสั่งตัดบิล (พลาด = แสดงแบบงานธรรมดาไปก่อน) */
+    var ck={};
+    if(mine.length){
+      var cq=await sb.from("hq_cut_requests").select("id,message_id,status,stop_requested,n_cut,n_bills").in("message_id",mine);
+      if(!READY || g!==GEN) return;
+      if(authErr(cq.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+      (cq.data||[]).forEach(function(c){ ck[c.message_id]={id:c.id,status:c.status,stop:!!c.stop_requested,done:Number(c.n_cut)||0,total:Number(c.n_bills)||0}; });
+    }
+    TASKS=tk; CUTS=ck;
     render((q.data||[]).slice().reverse());
     await loadPins(g);
     schedFast(g);
@@ -497,7 +551,8 @@ setInterval(function(){ if(document.visibilityState==="visible") load(); }, 5*60
 var FAST=null;
 function schedFast(g){
   clearTimeout(FAST); FAST=null;
-  var open=Object.keys(TASKS).some(function(k){ return ["queued","claimed","working"].indexOf(TASKS[k].status)>=0; });
+  var open=Object.keys(TASKS).some(function(k){ return ["queued","claimed","working"].indexOf(TASKS[k].status)>=0; })
+        || Object.keys(CUTS).some(function(k){ return ["requested","running"].indexOf(CUTS[k].status)>=0; });
   if(open) FAST=setTimeout(function(){ if(g!==GEN) return; if(document.visibilityState==="visible") load(); else schedFast(g); },20000);
 }
 
@@ -573,6 +628,10 @@ async function sendMsg(){
   if(SENDING || !READY || !sb) return;
   var body=$("msg").value.trim(); if(!body) return;
   if(body.length>2000){ fErr("ข้อความยาวเกิน 2000 ตัวอักษร"); return; }
+  /* ขั้น ④ "ตัดบิล 28/10" → การ์ดยืนยัน (ไม่ส่งเป็นงานให้ผู้ช่วย) · พิมพ์ผิดรูปวันที่ = บอกทันที */
+  var cd=parseCut(body);
+  if(cd===false){ fErr("วันที่ไม่ถูกต้อง — พิมพ์แบบ ตัดบิล 28/10"); return; }
+  if(cd){ openCut(cd); return; }
   /* uuid ต่อ 1 ข้อความ: กดส่งซ้ำ/เน็ตหลุดแล้วลองใหม่ = งานเดิม ไม่ซ้ำ · แก้ข้อความ = uuid ใหม่ */
   if(!SEND_CLIENT || SEND_FOR!==body){ SEND_CLIENT=uuid4(); SEND_FOR=body; }
   var g=GEN; SENDING=true; $("msg").readOnly=true; syncSend(); fErr(""); hideMention();   /* r2 (Codex r1 #10): ล็อกช่องพิมพ์ระหว่างส่ง */
@@ -585,6 +644,62 @@ async function sendMsg(){
     await load();
   }catch(e){ console.warn("send",e); if(g===GEN) fErr("เชื่อมต่อไม่ได้ ลองกดส่งอีกครั้ง (ไม่ส่งซ้ำ)"); }
   finally{ SENDING=false; $("msg").readOnly=false; syncSend(); }
+}
+
+/* ---------- ขั้น ④ สั่งตัดบิล: หน้าเว็บจับคำเอง (ไม่ใช้ AI) → ดูยอดจากฐาน → เจ้าของกดยืนยัน → ฐานตรวจสิทธิ์+ยอดซ้ำ → คอมร้านตัด ---------- */
+/* คืน "YYYY-MM-DD" · false = เป็นคำสั่งตัดแต่วันที่ผิด · null = ไม่ใช่คำสั่งตัด
+   รับ: [@ข้าวโพด] ตัดบิล [วันที่] 28/10[/69|/2569|/2026] [ตอนนี้|เลย|ทันที|ด้วย|ค่ะ|ครับ|นะ] */
+var CUT_RE=/^(?:@ข้าวโพด\s*)?ตัดบิล\s*(?:วันที่\s*)?(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:\s*[\/.\-]\s*(\d{4}|\d{2}))?(?:\s*(?:ตอนนี้|เลย|ทันที|ด้วย|ค่ะ|คะ|ครับ|นะ))*\s*$/;
+function bkkToday(){ return dayKey(new Date()); }
+function parseCut(body){
+  var m=CUT_RE.exec(String(body||"").trim()); if(!m) return null;
+  var d=+m[1], mo=+m[2], y, t=bkkToday(), ty=+t.slice(0,4);
+  if(m[3]){ y=+m[3]; if(m[3].length===2) y=2500+y-543; else if(y>2400) y-=543; }
+  else y=ty;
+  function iso(yy){ return yy+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0"); }
+  var s=iso(y);
+  if(!m[3] && s>t) s=iso(y-1);   /* ไม่ใส่ปี + วันที่ยังไม่ถึง = ปีที่แล้ว */
+  var x=new Date(s+"T00:00:00Z");
+  if(mo<1||mo>12||d<1||isNaN(x.getTime())||x.getUTCDate()!==d||x.getUTCMonth()+1!==mo) return false;
+  return s;
+}
+var CUT=null;   /* การ์ดที่เปิดอยู่: {date, n, amount, client, g} */
+function bahtFmt(v){ return Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function closeCut(){ $("cut").classList.add("hide"); CUT=null; }
+async function openCut(date){
+  if(!READY || !sb) return;
+  var g=GEN; CUT={date:date,client:uuid4(),g:g};
+  $("cutSum").textContent="กำลังดูยอด…"; $("cutWarn").textContent=""; $("cutMsg").textContent="";
+  $("cutOk").disabled=true; $("cutOk").onclick=confirmCut; $("cut").classList.remove("hide"); hideMention();
+  try{
+    var r=await sb.rpc("hq_cut_preview",{p_date:date});
+    if(g!==GEN || !CUT || CUT.date!==date) return;
+    if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(r.error){ $("cutSum").textContent=r.error.code==="P0001" ? String(r.error.message||"").replace(/^hq_cut:\s*/,"") : "ดูยอดไม่ได้ ลองใหม่"; return; }
+    var p=r.data||{}; CUT.n=p.n; CUT.amount=p.amount;
+    var box=$("cutSum"); box.textContent="";
+    var b=document.createElement("b"); b.textContent="บิลวันที่ "+p.label; box.appendChild(b);
+    box.appendChild(document.createTextNode("\nตัด "+p.n+" บิล · "+bahtFmt(p.amount)+" บาท (เฉพาะที่อนุมัติแล้ว)"
+      +(p.unapproved>0 ? "\nยังไม่อนุมัติ "+p.unapproved+" บิล · "+bahtFmt(p.unapproved_amount)+" บาท — ไม่ตัด" : "")
+      +(p.held>0 ? "\nกักไว้ "+p.held+" บิล (รอบก่อนผลไม่แน่นอน ต้องให้คนตรวจ ACC) — ไม่ตัด" : "")));
+    if(p.busy){ $("cutWarn").textContent="มีคำสั่งตัดที่ยังไม่จบอยู่ — รอให้เสร็จก่อนค่ะ"; return; }
+    if(p.offline){ $("cutWarn").textContent="คอมร้านปิดอยู่ (ไม่มีสัญญาณเกิน 10 นาที) — ตัดไม่ได้ตอนนี้ เปิดคอมร้านและ ACC แล้วสั่งใหม่"; return; }
+    if(!(p.n>0)){ $("cutWarn").textContent="ไม่มีบิลที่อนุมัติแล้วรอตัดของวันนี้"; return; }
+    $("cutWarn").textContent="กดแล้วคอมร้านจะเริ่มตัดภายใน ~2 นาที และคุมเมาส์/คีย์บอร์ดเอง — มีคนแตะเครื่อง = หยุด";
+    $("cutOk").disabled=false;
+  }catch(e){ console.warn("cutpreview",e); if(g===GEN && CUT) $("cutSum").textContent="เชื่อมต่อไม่ได้ ลองใหม่"; }
+}
+async function confirmCut(){
+  var c=CUT; if(!c || !sb || c.g!==GEN || !(c.n>0)) return;
+  $("cutOk").disabled=true; $("cutMsg").textContent="กำลังส่งคำสั่ง…";
+  try{
+    var r=await sb.rpc("hq_cut_request",{p_date:c.date,p_n:c.n,p_amount:c.amount,p_client:c.client});
+    if(c.g!==GEN || CUT!==c) return;
+    if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(r.error){ $("cutMsg").textContent=r.error.code==="P0001" ? String(r.error.message||"").replace(/^hq_cut:\s*/,"") : "ส่งไม่สำเร็จ ลองกดอีกครั้ง (ไม่ซ้ำ)"; $("cutOk").disabled=!!(r.error.code==="P0001"); return; }
+    $("msg").value=""; SEND_CLIENT=null; SEND_FOR=""; growMsg(); syncSend();
+    closeCut(); await load();
+  }catch(e){ console.warn("cutrequest",e); if(c.g===GEN && CUT===c){ $("cutMsg").textContent="เชื่อมต่อไม่ได้ ลองกดอีกครั้ง (ไม่ซ้ำ)"; $("cutOk").disabled=false; } }
 }
 
 /* ---------- สมาชิก ---------- */

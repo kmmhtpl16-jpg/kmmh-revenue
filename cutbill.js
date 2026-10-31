@@ -1,4 +1,4 @@
-/* cutbill.js — v0.9.12 (29 ต.ค.69 คุณหลิงเลือก "แก้กติกาในการ์ด": บิลที่จ่ายด้วยใบลดหนี้ของบิลอื่น (ACC inv_no2 = บิลนี้ เช่น CN6910-0043 จากบิล 1185 หักบิล 1194) แล้วร้านทอนสด — ไม่นับเป็นเงินสดที่ลูกค้าจ่าย (เดิมบวกยอดทอนเข้าบิลเงินสด เกิน 2 บาท บิลปลีก 28/10 พักทั้งกอง) · คืนเงินจากบิลตัวเอง (เคส 0738) นับเหมือนเดิม) · v0.9.11 (29 ต.ค.69: การ์ด 28/10 ขึ้น "โหลดรายการจากฟอร์มของวันนี้ไม่ได้ (ฐานข้อมูลตอบช้า)" — view rev_form_check คิดทุกวันย้อนหลังแล้วค่อยกรอง 6.6 วินาที ชนเพดาน 8 วินาที → อ่านจากฟังก์ชัน rev_form_check_day(p_date) คิดวันเดียว ~0.5 วินาที ผลเหมือนเดิม · ฐานยังไม่มีฟังก์ชัน = กลับไปอ่าน view แบบเดิม) · v0.9.10 (28 ต.ค.69 คุณหลิงเลือก "แยก 2 เรื่อง": ธงโอนกสิกร = แถวชีตโอนที่หาเงินไม่เจอ · เงินที่ฟอร์มไม่ลงแยกแสดง — ksksplit) · v0.9.9 (28 ต.ค.69 คุณหลิงสั่ง: ธง "โอนกสิกรในฟอร์มเกินสเตทเมนต์" หักบิลที่เงินเข้ามาก่อนวันเปิดบิล ด้วยกติกาเดียวกับการ์ด — pastAdj) · v0.9.8 (28 ต.ค.69 คุณหลิงสั่ง: เงินโอนก่อนวันเปิดบิล — หาเงินย้อนหลัง 7 วันด้วยยอดอย่างเดียว ไม่ต้องลงมัดจำ ไม่ตรวจชื่อ · เจอก้อนเดียว+ไม่มีรายการอื่นอ้าง = พร้อมตัด · หลายก้อน/มีคนอ้าง = พัก · เช็ค: บิลเก่าที่จ่ายด้วยเช็ค (ข้อมูลเช็คครบ) พร้อมตัด method เช็ค จาก rev_cut_chequebills) · v0.9.7 (27 ต.ค.69: บิลที่ตัดแล้ว/อนุมัติแล้วแต่ยังไม่ตัด ยังนับเข้าด่านของวัน (เงินสดในฟอร์มเป็นของทั้งวัน) — เดิมข้ามไป ทำให้วันที่ตัดบางส่วนแล้ว บิลที่เหลือไม่ผ่านด่านเงินสดตลอด (เคส 24/10 1040/1049) · R.apprCheck = ผลคิดตอนนี้ของใบที่อนุมัติแล้ว ให้ตัวคำนวณใหม่ในหน้าตรวจรายได้ถอยใบที่ไม่ผ่านแล้ว) · v0.9.6 (27 ต.ค.69: บิลที่มีใบลดหนี้คืนเงิน — ป้ายหลักฐานบอกเลขใบลดหนี้+ช่องทางคืน "K+ 3,100 − คืนสด 465 (CN6910-0032)" · เงินเข้าเกินยอดค้างเท่าที่ ACC ลดหนี้แต่กล่องคืนเงินยังไม่มีแถว = พักพร้อมเหตุผล · คู่กับแก้ view acc_bill_outstanding ให้หัก CN คืนเงินสด · เคสรำพัด KM6910-1043) · v0.9.5b (26 ต.ค.69: คำสั่งช้า rev_form_check/rev_shop_cash_decl ยิงทีละคำสั่งหลังคำสั่งอื่น + ลองซ้ำ 1 ครั้ง กันฐานตัดเพราะเกินเวลา) · v0.9.5 (26 ต.ค.69: ด่านเงินสดกักเฉพาะบิลที่ชี้ตัวได้ — ส่วนต่างของด่าน = ส่วนต่างกองปลีก (เทียบชีต ง-ส คุณ1 ทีละยอด) + ร้านค้าที่พัก พอดี → พักเฉพาะใบนั้น บิลอื่นผ่าน · ชี้ไม่ได้ = กักกองปลีกแบบเดิม แต่ร้านค้าเงินสดที่ตรงพอดีผ่าน · บิลยอดเท่ากันหลายใบแต่ฟอร์มน้อยกว่า = พักทั้งกลุ่ม · บิลผิดรูปแบบใน ACC (เคส 00010) ธงแยก ไม่นับเงินสด ไม่เสนอตัด) · v0.9.4 (26 ต.ค.69: ฟอร์มมียอดลงบัญชีแต่รายชื่อลงบัญชีไม่เข้าระบบ = ด่านเงินสดไม่ผ่านพร้อมบอกให้อัปฟอร์มใหม่ ไม่นับบิลลงบัญชีเป็นเงินสด · เคส 24/10 เกิน 38,615 + 1024) · v0.9.3 (24 ต.ค.69: บิลมีมัดจำ ส่วนที่เหลือจ่ายเงินสดวันนี้ — นับเข้ายอดบิลเงินสดเมื่อรวมแล้วตรงเงินสดในฟอร์มพอดี (ชุดเดียว) ด่านเงินสดของวันผ่าน ตัดได้ · ไม่ตรง = พักบิลมัดจำ ไม่ทำให้บิลอื่นติด · เคส 0986 23/10 มัดจำสด 10,182 + สด 2,000) · v0.9.2 (23 ต.ค.69: อ่านผ่าน view rev_form_check แทน — v0.9.1 อ่านตาราง rev_form_declared ตรงแล้วโดน permission denied ทำให้ตัวอนุมัติอัตโนมัติปิดทั้งวัน) · v0.9.1 (23 ต.ค.69: ชื่อร้านลงบัญชีอ่านจาก rev_form_declared ด้วย — หลังตรวจรายได้ v0.6.0 ไม่เก็บแถวลงบัญชีชื่อร้านใน rev_credit_bills · เคส 0941 ส่งเสริมบริการ 760) · v0.9.0 (22 ต.ค.69: ตัดบิลอัตโนมัติ ขั้นที่ 2 — autoPick() คัดใบ "พร้อมตัด" ที่กฎอนุมัติให้เองได้ (ไม่รวมลูกค้าปลีกโอนก้อนเดียวหลายบิล · ใบที่เคยมีรายการอนุมัติ/ยกเลิก) · วันที่ข้อมูลไม่ครบ · โหลดส่วนไหนไม่ได้ · มีเลขบิลชีตโอนหาไม่เจอ · บิลก่อนวันเริ่มใช้ 22 ต.ค.69 หรือเก่าเกิน 7 วัน = ไม่คัดทั้งวัน · load() ส่ง loadErr) · v0.8.1 (22 ต.ค.69: มัดจำที่รับเป็นเงินสดวันนี้ นับเข้ายอดบิลเงินสด เคส 0842 RA6910-0006 5,000 · ด่านเงินสดของวันแสดงบรรทัดเดียวบนหัวรายการ ไม่แปะซ้ำทุกบิล) · v0.8.0 (21 ต.ค.69: ลูกค้าปลีกลงบัญชี (เลขบิลในชีตลงบัญชี) = ไม่ต้องตัด เคส 0824 · ลูกค้าปลีกโอนก้อนเดียวจ่ายหลายบิล เฉพาะเลขบิลติดกัน เคส 0817+0818=120 · บิลเปิดย้อนหลัง (เลขอยู่หลังบิลแรกของวันถัดไป) แยกพัก ไม่ทำให้บิลเงินสดอื่นติด เคส 0850 · R.unk เลขบิลในชีตโอนที่ไม่มีใน ACC (ย้ายมาจากตาราง ④)) · v0.7.0 (20 ต.ค.69: กล่อง "คืนเงิน (ไม่ออกบิล)" rev_cash_refund — คืนเพราะโอนเกิน (เคส 0770 พูนกิจ โอน 12,610 บิล 12,510 คืนสด 100) · บิลเงินสดที่ใบลดหนี้คืนเงินจนคงค้าง 0 นับเข้ายอดเงินสด (เคส 0738 210) · โอนคืนอ่านจากกล่องแทนรายจ่ายหมวดโอนเงินคืนลูกค้า · K+ หลังตัดรอบดู "วันที่มีข้อมูลล่าสุด" แทนเมื่อวาน (วันจันทร์ไปดูวันเสาร์ เคส 0710 25,220 / 0713 200)) · v0.6.0 (14 ต.ค.69: แคชเชียร์ลงช่องโอนผิดช่อง (K+ ↔ กสิกร) — เจอเงินในอีกบัญชี = พักไว้ + เตือน "เงินเข้าจริงทาง K+/กสิกร โปรดแก้รายการในไฟล์ Excel แล้วอัปเอกสารใหม่" ไม่ตัดให้เอง · เคส KM6910-0456 ป้ายอะแด็ปดีไซน์ 4,250 ลงช่องกสิกร แต่เข้า K+ 12/10 17:36) · v0.5.9 (13 ต.ค.69: บิลเก่าที่มีเงินเข้าแต่แคชเชียร์ยังไม่แจ้งในชีตบิลเก่า = รอแคชเชียร์แจ้ง ขึ้นเตือนแต่อนุมัติไม่ได้ · เคสเจียง-ฟิวเจอร์ 10,878.80) · v0.5.8 (13 ต.ค.69: คืนเงินตามใบลดหนี้ที่โอนคืน (รายจ่ายหมวด "โอนเงินคืนลูกค้า") ไม่หักจากเงินสดในลิ้นชัก · เคสกราเซีย 970 โอน 10/10) · v0.5.7 (13 ต.ค.69: จ่ายเต็มบิลแล้วคืนเงินสดตามใบลดหนี้ ไม่นับเป็นเงินเกิน · เงินสดร้านค้านับส่วนเงินสดของบิลจ่ายผสม) · v0.5.6 (10 ต.ค.69: เงินเข้าบัญชีอื่นที่มีสลิป นับเป็นเงินจริง) · v0.5.1 (9 ต.ค.69: เงินสดร้านค้าในฟอร์มต้องเท่ากับบิลเงินสดของร้านนั้น ไม่งั้นพัก + บอกว่าร้านค้าขาด/ลูกค้าปลีกเกินเท่าไร เคส FFF 945 vs 970) · v0.5.0 (9 ต.ค.69: (1) ลูกค้าโอนก้อนเดียวจ่ายหลายบิล → รวมยอดบิลลูกค้าเดียวกันแล้วหาในเงินที่เหลือ เคสอ้วนกลม 0196+0198=1,290 (2) โอนเกินยอดค้าง แล้วส่วนเกินถูกออกเป็นมัดจำ RA หักบิลอื่นของลูกค้าเดียวกัน เคสรุ่งชัย 0225 โอน 29,395 ค้าง 29,095 + RA6910-0002 300 หักบิล 0226) · v0.4.9 (8 ต.ค.69: เงินโอนที่เข้าบัญชีมาก่อนวันออกบิล (ทะเบียนมัดจำจับคู่บิลแล้ว + เจอในสเตทเมนต์/K+ วันที่เงินเข้า) นับเป็นเงินของบิล — เคส KM6910-0118/0119) · v0.4.7 (3 ต.ค.69: บิลเก่าที่มีเงินจ่ายวันนี้ RevCut.old) · v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
+/* cutbill.js — v0.10.0 (31 ต.ค.69 คุณหลิงสั่ง "แก้ไขคำสั่งให้ตัดบิลเก่าที่อยู่ในฟอร์มด้วย": บิลเก่าในแท็บบิลเก่าของฟอร์มรายรับวันไหน เข้ารอบตัดอัตโนมัติของวันนั้น — formOldPick ใช้กฎหลักฐานเดิม (โอนต้องเจอยอดในบัญชีที่แถวเลือก จากเงินที่บิลของวันยังไม่ใช้ · เงินสดต้องผ่านใบนับ/ด่านเงินสด · ยอดฟอร์มต้องเท่ายอดค้าง ACC · หาเงินไม่เจอ/โอนขาด = พักรอคุณหลิง · ลูกค้าร้านค้าโอนรวมหลายบิลเก่าได้ ลูกค้าปลีกไม่ได้ · เช็คทางเดิม) · บิลเก่าที่ไม่อยู่ในฟอร์มไม่แตะ) · v0.9.12 (29 ต.ค.69 คุณหลิงเลือก "แก้กติกาในการ์ด": บิลที่จ่ายด้วยใบลดหนี้ของบิลอื่น (ACC inv_no2 = บิลนี้ เช่น CN6910-0043 จากบิล 1185 หักบิล 1194) แล้วร้านทอนสด — ไม่นับเป็นเงินสดที่ลูกค้าจ่าย (เดิมบวกยอดทอนเข้าบิลเงินสด เกิน 2 บาท บิลปลีก 28/10 พักทั้งกอง) · คืนเงินจากบิลตัวเอง (เคส 0738) นับเหมือนเดิม) · v0.9.11 (29 ต.ค.69: การ์ด 28/10 ขึ้น "โหลดรายการจากฟอร์มของวันนี้ไม่ได้ (ฐานข้อมูลตอบช้า)" — view rev_form_check คิดทุกวันย้อนหลังแล้วค่อยกรอง 6.6 วินาที ชนเพดาน 8 วินาที → อ่านจากฟังก์ชัน rev_form_check_day(p_date) คิดวันเดียว ~0.5 วินาที ผลเหมือนเดิม · ฐานยังไม่มีฟังก์ชัน = กลับไปอ่าน view แบบเดิม) · v0.9.10 (28 ต.ค.69 คุณหลิงเลือก "แยก 2 เรื่อง": ธงโอนกสิกร = แถวชีตโอนที่หาเงินไม่เจอ · เงินที่ฟอร์มไม่ลงแยกแสดง — ksksplit) · v0.9.9 (28 ต.ค.69 คุณหลิงสั่ง: ธง "โอนกสิกรในฟอร์มเกินสเตทเมนต์" หักบิลที่เงินเข้ามาก่อนวันเปิดบิล ด้วยกติกาเดียวกับการ์ด — pastAdj) · v0.9.8 (28 ต.ค.69 คุณหลิงสั่ง: เงินโอนก่อนวันเปิดบิล — หาเงินย้อนหลัง 7 วันด้วยยอดอย่างเดียว ไม่ต้องลงมัดจำ ไม่ตรวจชื่อ · เจอก้อนเดียว+ไม่มีรายการอื่นอ้าง = พร้อมตัด · หลายก้อน/มีคนอ้าง = พัก · เช็ค: บิลเก่าที่จ่ายด้วยเช็ค (ข้อมูลเช็คครบ) พร้อมตัด method เช็ค จาก rev_cut_chequebills) · v0.9.7 (27 ต.ค.69: บิลที่ตัดแล้ว/อนุมัติแล้วแต่ยังไม่ตัด ยังนับเข้าด่านของวัน (เงินสดในฟอร์มเป็นของทั้งวัน) — เดิมข้ามไป ทำให้วันที่ตัดบางส่วนแล้ว บิลที่เหลือไม่ผ่านด่านเงินสดตลอด (เคส 24/10 1040/1049) · R.apprCheck = ผลคิดตอนนี้ของใบที่อนุมัติแล้ว ให้ตัวคำนวณใหม่ในหน้าตรวจรายได้ถอยใบที่ไม่ผ่านแล้ว) · v0.9.6 (27 ต.ค.69: บิลที่มีใบลดหนี้คืนเงิน — ป้ายหลักฐานบอกเลขใบลดหนี้+ช่องทางคืน "K+ 3,100 − คืนสด 465 (CN6910-0032)" · เงินเข้าเกินยอดค้างเท่าที่ ACC ลดหนี้แต่กล่องคืนเงินยังไม่มีแถว = พักพร้อมเหตุผล · คู่กับแก้ view acc_bill_outstanding ให้หัก CN คืนเงินสด · เคสรำพัด KM6910-1043) · v0.9.5b (26 ต.ค.69: คำสั่งช้า rev_form_check/rev_shop_cash_decl ยิงทีละคำสั่งหลังคำสั่งอื่น + ลองซ้ำ 1 ครั้ง กันฐานตัดเพราะเกินเวลา) · v0.9.5 (26 ต.ค.69: ด่านเงินสดกักเฉพาะบิลที่ชี้ตัวได้ — ส่วนต่างของด่าน = ส่วนต่างกองปลีก (เทียบชีต ง-ส คุณ1 ทีละยอด) + ร้านค้าที่พัก พอดี → พักเฉพาะใบนั้น บิลอื่นผ่าน · ชี้ไม่ได้ = กักกองปลีกแบบเดิม แต่ร้านค้าเงินสดที่ตรงพอดีผ่าน · บิลยอดเท่ากันหลายใบแต่ฟอร์มน้อยกว่า = พักทั้งกลุ่ม · บิลผิดรูปแบบใน ACC (เคส 00010) ธงแยก ไม่นับเงินสด ไม่เสนอตัด) · v0.9.4 (26 ต.ค.69: ฟอร์มมียอดลงบัญชีแต่รายชื่อลงบัญชีไม่เข้าระบบ = ด่านเงินสดไม่ผ่านพร้อมบอกให้อัปฟอร์มใหม่ ไม่นับบิลลงบัญชีเป็นเงินสด · เคส 24/10 เกิน 38,615 + 1024) · v0.9.3 (24 ต.ค.69: บิลมีมัดจำ ส่วนที่เหลือจ่ายเงินสดวันนี้ — นับเข้ายอดบิลเงินสดเมื่อรวมแล้วตรงเงินสดในฟอร์มพอดี (ชุดเดียว) ด่านเงินสดของวันผ่าน ตัดได้ · ไม่ตรง = พักบิลมัดจำ ไม่ทำให้บิลอื่นติด · เคส 0986 23/10 มัดจำสด 10,182 + สด 2,000) · v0.9.2 (23 ต.ค.69: อ่านผ่าน view rev_form_check แทน — v0.9.1 อ่านตาราง rev_form_declared ตรงแล้วโดน permission denied ทำให้ตัวอนุมัติอัตโนมัติปิดทั้งวัน) · v0.9.1 (23 ต.ค.69: ชื่อร้านลงบัญชีอ่านจาก rev_form_declared ด้วย — หลังตรวจรายได้ v0.6.0 ไม่เก็บแถวลงบัญชีชื่อร้านใน rev_credit_bills · เคส 0941 ส่งเสริมบริการ 760) · v0.9.0 (22 ต.ค.69: ตัดบิลอัตโนมัติ ขั้นที่ 2 — autoPick() คัดใบ "พร้อมตัด" ที่กฎอนุมัติให้เองได้ (ไม่รวมลูกค้าปลีกโอนก้อนเดียวหลายบิล · ใบที่เคยมีรายการอนุมัติ/ยกเลิก) · วันที่ข้อมูลไม่ครบ · โหลดส่วนไหนไม่ได้ · มีเลขบิลชีตโอนหาไม่เจอ · บิลก่อนวันเริ่มใช้ 22 ต.ค.69 หรือเก่าเกิน 7 วัน = ไม่คัดทั้งวัน · load() ส่ง loadErr) · v0.8.1 (22 ต.ค.69: มัดจำที่รับเป็นเงินสดวันนี้ นับเข้ายอดบิลเงินสด เคส 0842 RA6910-0006 5,000 · ด่านเงินสดของวันแสดงบรรทัดเดียวบนหัวรายการ ไม่แปะซ้ำทุกบิล) · v0.8.0 (21 ต.ค.69: ลูกค้าปลีกลงบัญชี (เลขบิลในชีตลงบัญชี) = ไม่ต้องตัด เคส 0824 · ลูกค้าปลีกโอนก้อนเดียวจ่ายหลายบิล เฉพาะเลขบิลติดกัน เคส 0817+0818=120 · บิลเปิดย้อนหลัง (เลขอยู่หลังบิลแรกของวันถัดไป) แยกพัก ไม่ทำให้บิลเงินสดอื่นติด เคส 0850 · R.unk เลขบิลในชีตโอนที่ไม่มีใน ACC (ย้ายมาจากตาราง ④)) · v0.7.0 (20 ต.ค.69: กล่อง "คืนเงิน (ไม่ออกบิล)" rev_cash_refund — คืนเพราะโอนเกิน (เคส 0770 พูนกิจ โอน 12,610 บิล 12,510 คืนสด 100) · บิลเงินสดที่ใบลดหนี้คืนเงินจนคงค้าง 0 นับเข้ายอดเงินสด (เคส 0738 210) · โอนคืนอ่านจากกล่องแทนรายจ่ายหมวดโอนเงินคืนลูกค้า · K+ หลังตัดรอบดู "วันที่มีข้อมูลล่าสุด" แทนเมื่อวาน (วันจันทร์ไปดูวันเสาร์ เคส 0710 25,220 / 0713 200)) · v0.6.0 (14 ต.ค.69: แคชเชียร์ลงช่องโอนผิดช่อง (K+ ↔ กสิกร) — เจอเงินในอีกบัญชี = พักไว้ + เตือน "เงินเข้าจริงทาง K+/กสิกร โปรดแก้รายการในไฟล์ Excel แล้วอัปเอกสารใหม่" ไม่ตัดให้เอง · เคส KM6910-0456 ป้ายอะแด็ปดีไซน์ 4,250 ลงช่องกสิกร แต่เข้า K+ 12/10 17:36) · v0.5.9 (13 ต.ค.69: บิลเก่าที่มีเงินเข้าแต่แคชเชียร์ยังไม่แจ้งในชีตบิลเก่า = รอแคชเชียร์แจ้ง ขึ้นเตือนแต่อนุมัติไม่ได้ · เคสเจียง-ฟิวเจอร์ 10,878.80) · v0.5.8 (13 ต.ค.69: คืนเงินตามใบลดหนี้ที่โอนคืน (รายจ่ายหมวด "โอนเงินคืนลูกค้า") ไม่หักจากเงินสดในลิ้นชัก · เคสกราเซีย 970 โอน 10/10) · v0.5.7 (13 ต.ค.69: จ่ายเต็มบิลแล้วคืนเงินสดตามใบลดหนี้ ไม่นับเป็นเงินเกิน · เงินสดร้านค้านับส่วนเงินสดของบิลจ่ายผสม) · v0.5.6 (10 ต.ค.69: เงินเข้าบัญชีอื่นที่มีสลิป นับเป็นเงินจริง) · v0.5.1 (9 ต.ค.69: เงินสดร้านค้าในฟอร์มต้องเท่ากับบิลเงินสดของร้านนั้น ไม่งั้นพัก + บอกว่าร้านค้าขาด/ลูกค้าปลีกเกินเท่าไร เคส FFF 945 vs 970) · v0.5.0 (9 ต.ค.69: (1) ลูกค้าโอนก้อนเดียวจ่ายหลายบิล → รวมยอดบิลลูกค้าเดียวกันแล้วหาในเงินที่เหลือ เคสอ้วนกลม 0196+0198=1,290 (2) โอนเกินยอดค้าง แล้วส่วนเกินถูกออกเป็นมัดจำ RA หักบิลอื่นของลูกค้าเดียวกัน เคสรุ่งชัย 0225 โอน 29,395 ค้าง 29,095 + RA6910-0002 300 หักบิล 0226) · v0.4.9 (8 ต.ค.69: เงินโอนที่เข้าบัญชีมาก่อนวันออกบิล (ทะเบียนมัดจำจับคู่บิลแล้ว + เจอในสเตทเมนต์/K+ วันที่เงินเข้า) นับเป็นเงินของบิล — เคส KM6910-0118/0119) · v0.4.7 (3 ต.ค.69: บิลเก่าที่มีเงินจ่ายวันนี้ RevCut.old) · v0.4.6 (3 ต.ค.69: นับ K+ หลัง 15:30 ของเมื่อวานด้วย) · v0.4.5 (2 ต.ค.69: ใบนับเทียบยอดที่ต้องมี = เงินสดขาย+รายรับอื่นๆ+บิลเก่าเงินสด−คืนเงิน) · v0.4.4 (1 ต.ค.69: UPK ไม่นับเป็นเงินสด · บิลเงินสดต้องรวมแล้วตรงกับเงินสดในฟอร์ม · บิลจ่ายผสม K+/โอน+เงินสด) · v0.4.0 (30 ก.ย.69)
    ตัดบิลประจำวัน: คัดบิลของวันว่าบิลไหน "ยอดตรงแล้ว พร้อมตัด" / "พักไว้" / "ไม่ต้องตัด" / "ตัดแล้ว"
    ใช้ร่วมกัน: การ์ดในหน้าตรวจรายได้ (index.html) + กระดิ่ง (bell.js)
    หลัก: ไม่มีเงินจริง ไม่ตัด · เงินโอนต้องเจอยอดใน K+/สเตทเมนต์ · เงินสดต้องมีรูปใบนับเงินสดที่ยอดตรงกับฟอร์ม
@@ -310,6 +310,8 @@
     ["t","c","h","s","done","late"].forEach(function(k){ if(Array.isArray(R[k])) R[k]=R[k].filter(keep); });
     R.appr=(R.appr||[]).filter(function(x){ return !(x && x.b && x.b._cut); });
     R.bad=(R.bad||[]).filter(function(b){ return !b._cut && !b._apr; });
+    /* v0.10.0: เงิน K+/สเตทเมนต์ที่บิลของวันยังไม่ได้ใช้ — บิลเก่าในฟอร์มหาเงินจากกองที่เหลือนี้ (บิลของวันได้ก่อนเสมอ) */
+    R.poolLeft={kp:kp.slice(), bk:bk.slice()};
     return R;
   }
   /* v0.9.5 (26 ต.ค.69): เทียบกองเงินสดปลีก (คุณ 1) กับยอดในชีต "ง-ส คุณ1" ทีละยอด
@@ -440,6 +442,7 @@
       acct:((q[2]&&q[2].data)||[]).map(function(x){ return x.customer; }).concat(((q[13]&&q[13].data)||[]).reduce(function(a,x){ return a.concat([x.acc_customer, x.declared_customer]); },[]).filter(function(n){ return /^KM\d{4}-\d{4}/i.test(String(n||"").trim()) || norm(n).length>=3; })).filter(Boolean), /* ชื่อสั้นเกิน (เช่น "1") จับผิดร้าน */
       kp:(dd.kplus_rows||[]).map(function(x){ return num(x.amt); }).concat(kLate),
       bk:(dd.bank_rows||[]).filter(function(x){ return num(x.dep)>0; }).map(function(x){ return num(x.dep); }),
+      bkOwn:(dd.bank_rows||[]).filter(function(x){ return x && num(x.dep)>0.005 && !x.kp && !/เช็คเลขที่/.test(String(x.detail||"")); }).map(function(x){ return num(x.dep); }), /* v0.10.0 เงินโอนเข้ากสิกรตรง (ไม่ใช่ K+ ไม่ใช่เช็คขึ้นเงิน) — บิลเก่าในฟอร์มช่องกสิกร */
       loadErr:q.map(function(x,i){ return (!x||x.error||(i===11&&nxtErr))? i : -1; }).filter(function(i){ return i>=0; }), /* v0.9.0 ส่วนไหนโหลดไม่ได้ → ตัวอนุมัติอัตโนมัติไม่บันทึกทั้งวัน */
       kLateWarn:kLateWarn, hasK:!!(dd.kplus_rows&&dd.kplus_rows.length), hasB:!!(dd.bank_rows&&dd.bank_rows.length),
       shop:((q[9]&&!q[9].error&&Array.isArray(q[9].data))? q[9].data : null),
@@ -711,7 +714,9 @@
     }catch(e){ console.warn("RevCut.preMoney",e); }
     return out;
   }
-  async function compute(date){ var D=await load(date); var R=classify(D); R.D=D; return R; }
+  async function compute(date){ var D=await load(date); var R=classify(D); R.D=D;
+    try{ R.fo=await formOld(date,R); }catch(e){ R.fo={date:date, rows:[], ready:[], hold:[], appr:[], done:[], chq:[], err:String((e&&e.message)||e)}; } /* v0.10.0 บิลเก่าในฟอร์ม */
+    return R; }
   /* v0.4.7 (3 ต.ค.69): บิลเก่าที่มีเงินจ่ายเข้ามาในวันนี้ (เงินโอนที่จับคู่บิลแล้ว + เงินสดจากชีตบิลเก่า) — คุณหลิงสั่งเพิ่มหลังเคส 2/10 ตราช้าง/เจริญสินชัย หลุด
      แยกเป็น พร้อมตัด / อนุมัติแล้ว รอตัด / ตัดแล้ว · ตัดแล้ว = ACC ไม่ค้าง หรือ rev_cut_approvals status=cut */
   async function old(date){
@@ -734,10 +739,173 @@
       else if(x.amt>0.01){ x.apc=cx[x.b.no]||null; if(x.amt<x.b.out-0.01) x.src+=" · จ่ายบางส่วน "+TH(x.amt)+" จากค้าง "+TH(x.b.out); O.ready.push(x); } });
     return O;
   }
+  /* v0.10.0 (31 ต.ค.69 คุณหลิงสั่ง "แก้ไขคำสั่งให้ตัดบิลเก่าที่อยู่ในฟอร์มด้วย") — บิลเก่าที่แคชเชียร์ลงแท็บ "บิลเก่า" ของฟอร์มรายรับวันไหน = อยู่ในรอบตัดของวันนั้น
+     อ่าน rev_cashier_form.entries ของวันนั้น: oldc (เงินสด) · oldx (โอน — ช่อง ch = kplus/ksk · ติ๊กเช็ค = chq) · บิลเก่าที่ไม่อยู่ในฟอร์ม = ไม่แตะ
+     ต่อบิล (รวมทุกแถวของบิล): ยอดในฟอร์มต้องเท่ายอดค้าง ACC (หลังใบลดหนี้/เพิ่มหนี้) ±0.01 · ไม่เท่า = พักรอคุณหลิง (ขาด = จ่ายบางส่วน/โอนขาด · เกิน = ข้ามใบนั้น)
+       โอน = ต้องเจอยอดในบัญชีที่แถวเลือก (K+ หรือสเตทเมนต์กสิกรโอนเข้าตรง) ของวันนั้น จากเงินที่บิลของวันยังไม่ได้ใช้ (R.poolLeft) · แถวเก่าไม่เลือกบัญชี = ลอง K+ ก่อนแล้วกสิกร
+         ไม่เจอรายบิล → ลูกค้าร้านค้า (รหัสเดียวกัน บัญชีเดียวกัน) ลองยอดรวมทุกบิลที่ยังไม่เจอเป็นก้อนเดียว · ลูกค้าปลีกไม่รวม (กติกาเดิม: ลูกค้าปลีกโอนก้อนเดียวหลายบิล = พัก)
+       เงินสด = ใบนับเงินสดตรงยอดที่ต้องมี + ด่านเงินสดของวันผ่าน + ยอดเงินสดบิลเก่าในฟอร์มตรงกับที่ตรวจรายได้บันทึกไว้ (form_old_cash)
+       เช็ค = ไม่คิดที่นี่ (ทางเดิม rev_cut_chequebills · คุณหลิงกดในการ์ด) · จ่ายผสมเงินสด+โอนในบิลเดียว = พัก
+     บิลที่อนุมัติ/ตัดแล้วจองเงินของตัวเองจากกองก่อน (กันบิลอื่นยอดเท่ากันมาใช้ซ้ำ) · เงินรอจับคู่ของวันนั้นที่จับคู่/ปิดกับบิลอื่นไปแล้ว (รวม K+ ตัดรอบ → บิลวันถัดไป) = ถูกอ้างแล้ว ไม่ใช้
+     ใบพร้อมตัด → แถว rev_cut_approvals (bill_date = วันที่บิลเก่า · receipt_group OB<วันที่ฟอร์ม>-F<เลขบิลแรก เช่น F6908-1127>: ลูกค้าร้านค้าเดียวกัน+วิธีจ่ายเดียวกัน = ใบเสร็จเดียว · ลูกค้าปลีกใบละใบเสร็จ) */
+  function obTag(d0){ return "OB"+String(+String(d0).slice(0,4)+543).slice(2)+String(d0).slice(5,7)+String(d0).slice(8,10); }
+  function beDmy(iso){ var p=String(iso||"").slice(0,10).split("-"); return p.length===3? (+p[2])+"/"+(+p[1])+"/"+(+p[0]+543) : String(iso||""); }
+  async function formOldLoad(s, date){
+    var X={date:date, form:null, outs:{}, dupOut:{}, appr:{}, cx:{}, claims:[], err:null};
+    try{
+      var f=await s.from("rev_cashier_form").select("oldc:entries->oldc,oldx:entries->oldx").eq("date",date).maybeSingle();
+      if(f.error) throw f.error;
+      var fd=f.data||{};
+      if((fd.oldc!=null && !Array.isArray(fd.oldc)) || (fd.oldx!=null && !Array.isArray(fd.oldx))) throw new Error("แท็บบิลเก่าในฟอร์มอ่านไม่ได้");
+      X.form={oldc:fd.oldc||[], oldx:fd.oldx||[]};
+      var nos=[]; X.form.oldc.concat(X.form.oldx).forEach(function(r){ var k=r&&typeof r==="object"? billKey(r.bill) : ""; if(/^KM\d{4}-\d{4}$/.test(k) && nos.indexOf(k)<0) nos.push(k); });
+      var q=await Promise.all([
+        nos.length? s.from("acc_bill_outstanding").select("doc_no,doc_date,cus_id,c_name,outstanding").in("doc_no",nos) : {data:[]},
+        nos.length? s.from("rev_cut_approvals").select("bill_no,status,amount,method,approved_role,receipt_group").in("bill_no",nos) : {data:[]},
+        s.from("rev_pending").select("amount,source,status,matched_bill_no").eq("date",date).in("status",["matched","owner_closed"]),
+        /* ใบที่อนุมัติจากบิลเก่าของรายรับวันนี้ (ทุกทาง: กฎ/เจ้าของ/เช็ค/แชท) — ตรวจว่าฟอร์มยังตรงกับที่อนุมัติ · ใบที่ไม่อยู่ในฟอร์มแล้วยังจองเงินไว้ (Codex r1 #2) */
+        s.from("rev_cut_approvals").select("bill_no,status,amount,method,approved_role,receipt_group,evidence").like("receipt_group",obTag(date)+"-%").neq("status","cancelled")
+      ]);
+      q.forEach(function(r){ if(!r || r.error || !Array.isArray(r.data)) throw ((r&&r.error)||new Error("โหลดข้อมูลบิลเก่าไม่ครบ")); });
+      q[0].data.forEach(function(o){ var k=String(o.doc_no||"").trim(); if(X.outs[k]) X.dupOut[k]=1; X.outs[k]=o; });
+      q[1].data.forEach(function(a){ if(a.status==="cancelled") X.cx[a.bill_no]=a; else if(X.appr[a.bill_no]) X.dupOut[a.bill_no]=1; else X.appr[a.bill_no]=a; });
+      X.claims=q[2].data; X.dayAppr=q[3].data;
+    }catch(e){ X.err=String((e&&(e.message||e.code))||e); }
+    return X;
+  }
+  function formOldPick(R, X){
+    var D=(R&&R.D)||{}, d0=String(D.date||"").slice(0,10);
+    var O={date:d0, rows:[], ready:[], hold:[], appr:[], done:[], chq:[], drift:[], err:(X&&X.err)||null};
+    if(!X || X.err || !X.form) { if(!O.err) O.err="ไม่มีข้อมูลบิลเก่าในฟอร์ม"; return O; }
+    var amtOf=function(v){ var t=String(v==null?"":v).replace(/,/g,"").trim(); return /^\d+(\.\d+)?$/.test(t)? r2(+t) : NaN; };
+    var eq=function(a,b){ return Math.abs(r2(a)-r2(b))<=0.01; };
+    var pick=function(pool,a){ var i=pool.findIndex(function(v){ return eq(v,a); }); if(i<0) return false; pool.splice(i,1); return true; };
+    /* กองเงินที่เหลือ: K+ = ที่บิลของวันไม่ได้ใช้ · กสิกร = โอนเข้าตรง (ไม่ใช่ K+/เช็ค) ที่ยังเหลือ
+       classify เก็บกองกสิกรเป็นยอดล้วน (รวม K+ เข้าบัญชี/เช็ค) → คิดแบบเลวสุด: ยอดไหนถูกใช้ไป n ก้อน ถือว่าเป็นโอนเข้าตรงก่อน (Codex r1 #3)
+       โอนเข้าตรงยอด v ที่ยังใช้ได้ = จำนวนโอนเข้าตรงยอด v − จำนวนยอด v ที่ classify ใช้ไป (ยอดตรงตัว) */
+    var PL=(R&&R.poolLeft)||{kp:[],bk:[]}, kp=(PL.kp||[]).map(r2), bk=[];
+    var cnt=function(L,v){ return L.reduce(function(c,x){ return c+(r2(x)===r2(v)?1:0); },0); };
+    var bkAll=(D.bk||[]).map(r2), bkLeft=(PL.bk||[]).map(r2), own=(D.bkOwn||[]).map(r2), seenV={};
+    own.forEach(function(v){ if(seenV[v]) return; seenV[v]=1; var used=Math.max(0, cnt(bkAll,v)-cnt(bkLeft,v)), n=Math.min(cnt(own,v)-used, cnt(bkLeft,v)); for(var i=0;i<n;i++) bk.push(v); });
+    var B={}, order=[], oldcSum=0;
+    var addRow=function(r, kind){
+      if(!r || typeof r!=="object") return;
+      var raw=String(r.bill==null?"":r.bill).trim(), a=amtOf(r.amt), k=billKey(raw);
+      if(!raw && (r.amt==null || String(r.amt).trim()==="")) return;
+      if(/^RA/i.test(k)) return; /* มัดจำ — ไม่ใช่บิลให้ตัด */
+      if(kind==="c" && isFinite(a)) oldcSum=r2(oldcSum+a);
+      if(!/^KM\d{4}-\d{4}$/.test(k)){ O.hold.push({b:{no:raw||"(ไม่มีเลขบิล)", name:"", out:isFinite(a)?a:0}, amt:isFinite(a)?a:0, why:"เลขบิลในแท็บบิลเก่าไม่ใช่รูปแบบ KM — ให้แคชเชียร์แก้ฟอร์ม"}); return; }
+      var e=B[k]; if(!e){ e=B[k]={no:k, cash:0, chq:0, x:{kplus:0, ksk:0}, none:[], bad:null, odd:false}; order.push(k); }
+      if(!isFinite(a) || !(a>0)){ e.bad="ยอดในฟอร์มอ่านไม่ได้ ("+String(r.amt)+")"; return; }
+      if(kind==="c"){ e.cash=r2(e.cash+a); return; }
+      if(r.chq===true){ e.chq=r2(e.chq+a); return; }
+      var ch=r.ch; if(ch==="kplus"||ch==="ksk") e.x[ch]=r2(e.x[ch]+a); else if(ch==null || ch==="") e.none.push(a); else e.odd=true;
+    };
+    (X.form.oldc||[]).forEach(function(r){ addRow(r,"c"); });
+    (X.form.oldx||[]).forEach(function(r){ addRow(r,"x"); });
+    /* เงินรอจับคู่ของวันนั้นที่คนจับคู่/ปิดไปแล้ว — ออกจากกองกลางเสมอ (Codex r1 #1)
+       ก้อนที่จับคู่บิลเก่าในฟอร์มนี้ = เงินเฉพาะของบิลพวกนั้น (ใช้ได้เมื่อยอดตรงกับบิลเดียว หรือรวมทุกบิลในฟอร์มที่ก้อนนั้นอ้าง พอดี · บัญชีต้องตรงกับแถว) · ก้อนอื่น = ถูกอ้างแล้ว ไม่ใช้ */
+    var EM=[];
+    (X.claims||[]).forEach(function(p){ var src=String(p.source||""); if(/อื่น|เงินสด/.test(src)) return;
+      var a=r2(num(p.amount)), ch=/K\+/.test(src)? "kplus" : "ksk";
+      var got=pick(ch==="kplus"? kp : bk, a); /* ไม่มีเงินจริงเหลือในกอง (บิลของวันใช้ไปแล้ว/รายงานไม่มี) = ไม่ใช่หลักฐาน (Codex r2 #1) */
+      var all=String(p.matched_bill_no||"").split(/\s*,\s*/).map(billKey).filter(Boolean);
+      /* ใช้เป็นเงินเฉพาะบิลได้เมื่อทุกบิลที่ก้อนนั้นอ้างอยู่ในฟอร์มนี้ — อ้างบิลนอกฟอร์มด้วย = ถูกอ้างแล้ว ไม่ใช้ (Codex r3 #2) */
+      if(got && p.status==="matched" && all.length && all.every(function(n){ return !!B[n]; })) EM.push({amt:a, ch:ch, bills:all.filter(function(n,i){ return all.indexOf(n)===i; }), used:false, src:src}); });
+    /* ใบที่อนุมัติจากบิลเก่าของรายรับวันนี้แล้ว แต่ฟอร์มตอนนี้ไม่ตรงกับที่อนุมัติ (ยอด/วิธีจ่ายเปลี่ยน หรือแถวหายจากฟอร์ม)
+       = ไม่รู้ว่าเงินก้อนไหนถูกใช้ไปแล้ว → วันนี้ไม่อนุมัติบิลเก่าในฟอร์มเพิ่มเอง (Codex r1 #2) */
+    var methodOf=function(e){ var xs=r2(e.x.kplus+e.x.ksk+e.none.reduce(function(s2,a){ return s2+a; },0)); var k=(e.cash>0?1:0)+(xs>0?1:0)+(e.chq>0?1:0);
+      return k!==1? "ผสม" : e.cash>0? "เงินสด" : e.chq>0? "เช็ค" : "เงินโอน"; };
+    var totOf=function(e){ return r2(e.cash+e.chq+e.x.kplus+e.x.ksk+e.none.reduce(function(s2,a){ return s2+a; },0)); };
+    var sigOf=function(e){ return "kp="+r2(e.x.kplus)+";ks="+r2(e.x.ksk)+";nn="+e.none.map(r2).sort(function(a,b){ return a-b; }).join("+")+";c="+r2(e.cash)+";q="+r2(e.chq); };
+    O.drift=[]; O.dayAppr=(X.dayAppr||[]).map(function(a){ return {bill_no:a.bill_no, status:a.status, approved_role:a.approved_role, receipt_group:a.receipt_group}; });
+    (X.dayAppr||[]).forEach(function(a){ var no=billKey(a.bill_no), e=B[no];
+      if(!e || e.bad || e.odd || methodOf(e)!==a.method || !eq(totOf(e), num(a.amount))){ O.drift.push(no); return; }
+      if(a.method==="เช็ค") return; /* เช็คไม่ใช้เงินในกอง K+/สเตทเมนต์ */
+      var m=/\[ฟอร์ม ([^\]]+)\]/.exec(String(a.evidence||""));
+      if(!m || m[1]!==sigOf(e)) O.drift.push(no); }); /* ช่องบัญชี/สัดส่วนเปลี่ยน หรือใบไม่มีลายเซ็น (Codex r2 #2) */
+    var lbl={kplus:"K+", ksk:"กสิกร"}, poolOf=function(ch){ return ch==="kplus"? kp : bk; };
+    var emLbl=function(m){ return "เงินรอจับคู่ "+m.src+" "+TH(m.amt)+" ที่จับคู่บิลนี้แล้ว ("+dmy(d0)+")"; };
+    var emTake=function(no, ch, need){ for(var i=0;i<EM.length;i++){ var m=EM[i]; if(m.used || m.ch!==ch || m.bills.length!==1 || m.bills[0]!==no || !eq(m.amt,need)) continue; m.used=true; return m; } return null; };
+    /* หาเงินเป็นชุด: รายบิล → เงินรอจับคู่ก้อนเดียวหลายบิล → ลูกค้าร้านค้าโอนรวม (ทั้งหมดภายในชุดเดียวกัน) */
+    var matchSet=function(set){
+      set.forEach(function(no){ var e=B[no]; e.src=[]; e.miss={}; e.noneMiss=[];
+        if(e.bad || e.odd || e.chq>0) return;
+        ["kplus","ksk"].forEach(function(ch){ var need=e.x[ch]; if(!(need>0)) return; var m;
+          if((m=emTake(no,ch,need))){ e.src.push(lbl[ch]+" "+TH(need)+" · "+emLbl(m)); return; }
+          if(pick(poolOf(ch),need)){ e.src.push(lbl[ch]+" "+TH(need)+" (เจอใน"+(ch==="kplus"?"รายงาน K+":"สเตทเมนต์กสิกร")+" "+dmy(d0)+")"); return; }
+          e.miss[ch]=need; });
+        e.none.forEach(function(a){ var m;
+          if((m=emTake(no,"kplus",a)||emTake(no,"ksk",a))) e.src.push(TH(a)+" · "+emLbl(m)+" (ฟอร์มไม่ได้เลือกบัญชี)");
+          else if(pick(kp,a)) e.src.push("K+ "+TH(a)+" (ฟอร์มไม่ได้เลือกบัญชี ระบบเจอใน K+ "+dmy(d0)+")");
+          else if(pick(bk,a)) e.src.push("กสิกร "+TH(a)+" (ฟอร์มไม่ได้เลือกบัญชี ระบบเจอในสเตทเมนต์ "+dmy(d0)+")");
+          else e.noneMiss.push(a); });
+      });
+      /* เงินรอจับคู่ก้อนเดียวที่คนจับคู่หลายบิลเก่าในฟอร์มไว้ — ทุกบิลที่ก้อนนั้นอ้างต้องอยู่ในชุดนี้และยังไม่เจอเงินช่องเดียวกัน รวมแล้วพอดี + ลูกค้าร้านค้ารหัสเดียวกัน */
+      EM.forEach(function(m){ if(m.used || m.bills.length<2) return;
+        if(!m.bills.every(function(no){ return set.indexOf(no)>=0 && B[no].miss && B[no].miss[m.ch]>0; })) return;
+        var L=m.bills, cus=L.map(function(no){ var o=X.outs[no]; return o&&o.cus_id? String(o.cus_id) : ""; });
+        if(!cus[0] || cus[0]===RETAIL_CUS || cus.some(function(c){ return c!==cus[0]; })){ L.forEach(function(no){ B[no].combinedHold=true; }); return; } /* ลูกค้าปลีก/ต่างลูกค้า = ไม่รวม (Codex r2 #3) */
+        var sum=r2(L.reduce(function(s2,no){ return s2+B[no].miss[m.ch]; },0)); if(!eq(sum,m.amt)) return;
+        m.used=true; L.forEach(function(no){ B[no].combined=true; B[no].src.push(lbl[m.ch]+" "+TH(B[no].miss[m.ch])+" · "+emLbl(m)+" (รวม "+L.map(function(n){ return n.slice(-4); }).join("+")+")"); delete B[no].miss[m.ch]; }); });
+      /* ลูกค้าร้านค้าโอนก้อนเดียวจ่ายหลายบิลเก่า (รหัสลูกค้าเดียวกัน บัญชีเดียวกัน ทุกบิลในชุดที่ยังไม่เจอ รวมเป็นก้อนเดียว) — ไม่ลองชุดย่อย (ไม่เดา) */
+      var G={}; set.forEach(function(no){ var e=B[no], o=X.outs[no]; if(!o || !o.cus_id || o.cus_id===RETAIL_CUS || !e.miss) return;
+        Object.keys(e.miss).forEach(function(ch){ var k=o.cus_id+"|"+ch; (G[k]=G[k]||[]).push(no); }); });
+      Object.keys(G).forEach(function(k){ var L=G[k], ch=k.split("|")[1]; if(L.length<2) return;
+        var sum=r2(L.reduce(function(s2,no){ return s2+B[no].miss[ch]; },0));
+        if(pick(poolOf(ch),sum)) L.forEach(function(no){ var e=B[no]; e.combined=true; e.src.push(lbl[ch]+" โอนรวม "+TH(sum)+" (จ่ายบิล "+L.map(function(n){ return n.slice(-4); }).join("+")+" · เจอใน"+(ch==="kplus"?"รายงาน K+":"สเตทเมนต์กสิกร")+" "+dmy(d0)+")"); delete e.miss[ch]; }); });
+    };
+    /* ขั้น 1: บิลที่อนุมัติ/ตัดแล้วจองเงินของตัวเองครบทุกแบบก่อน (รวมโอนรวม) · จองไม่ครบ = ไม่รู้ว่าเงินก้อนไหนเป็นของใบนั้น → ไม่อนุมัติใบใหม่ (Codex r3 #1)
+       ขั้น 2: บิลใหม่หาเงินจากที่เหลือ */
+    var done1=order.filter(function(no){ return !!X.appr[no]; }), new2=order.filter(function(no){ return !X.appr[no]; });
+    matchSet(done1);
+    done1.forEach(function(no){ var e=B[no], a=X.appr[no]; if(a.method==="เช็ค" || a.method==="เงินสด") return;
+      if(e.bad || e.odd || Object.keys(e.miss||{}).length || (e.noneMiss||[]).length){ if(O.drift.indexOf(no)<0) O.drift.push(no); } });
+    matchSet(new2);
+    /* จัดกลุ่มผล */
+    var cashOk=!!(R && R.proofOk && !R.cashGate && eq(oldcSum, num(D.oldCash)));
+    var cashWhy=!(R&&R.proofOk)? "ใบนับเงินสดยังไม่ตรงยอดที่ต้องมี" : (R&&R.cashGate)? "ด่านเงินสดของวันยังไม่ผ่าน" : "เงินสดบิลเก่าในฟอร์ม "+TH(oldcSum)+" ไม่ตรงกับที่ตรวจรายได้บันทึกไว้ "+TH(num(D.oldCash))+" — ให้ดึงฟอร์มใหม่";
+    var readyBy={};
+    order.forEach(function(no){ var e=B[no], o=X.outs[no], ap=X.appr[no], xs=r2(e.x.kplus+e.x.ksk+e.none.reduce(function(s2,a){ return s2+a; },0)), tot=r2(e.cash+xs+e.chq);
+      var b={no:no, name:o?String(o.c_name||""):"", date:o?String(o.doc_date||"").slice(0,10):null, out:o?r2(o.outstanding):0, cus:o?o.cus_id:null, retail:!!(o&&o.cus_id===RETAIL_CUS)};
+      var hold=function(why){ O.hold.push({b:b, amt:tot, why:why}); };
+      if(ap && ap.status==="cut"){ O.done.push({b:b, amt:tot, ap:ap}); return; }
+      if(ap && ap.status==="approved"){ O.appr.push({b:b, amt:tot, ap:ap}); return; }
+      if(X.dupOut[no]) return hold("เลขบิลซ้ำใน ACC/รายการอนุมัติ — ต้องตรวจเอง");
+      if(e.bad) return hold(e.bad);
+      if(e.chq>0){ if(e.cash>0 || xs>0) return hold("เช็คปนกับเงินสด/โอนในบิลเดียว — รอคุณหลิง"); O.chq.push({b:b, amt:tot}); return; }
+      if(!o) return hold("ไม่พบบิลนี้ในบิลค้างของ ACC (เลขบิลผิด หรือ ACC ยังไม่ซิงก์)");
+      if(!b.date || b.date>=d0) return hold("บิลวันที่ "+dmy(b.date)+" ไม่ใช่บิลเก่า (ลงในแท็บบิลเก่า) — ให้แคชเชียร์ย้ายไปช่องของวัน");
+      if(!(b.out>0.01)){ O.done.push({b:b, amt:tot}); return; }
+      if(X.cx[no]) return hold("เคยยกเลิกการอนุมัติ — รอคุณหลิงกดเอง");
+      if(e.odd) return hold("ช่อง \"เข้าบัญชี\" ในฟอร์มอ่านไม่ได้ — ให้แคชเชียร์เลือก K+/กสิกรใหม่");
+      if(!eq(tot,b.out)) return hold(tot<b.out? "ฟอร์ม "+TH(tot)+" น้อยกว่ายอดค้าง ACC "+TH(b.out)+" (จ่ายบางส่วน/โอนขาด) — พักรอคุณหลิง" : "ฟอร์ม "+TH(tot)+" มากกว่ายอดค้าง ACC "+TH(b.out)+" — ข้ามใบนี้ ให้ตรวจ");
+      if(e.cash>0 && xs>0) return hold("จ่ายผสมเงินสด+โอนในบิลเดียว — รอคุณหลิง");
+      var method, src;
+      if(e.cash>0){ if(!cashOk) return hold("เงินสดบิลเก่า "+TH(e.cash)+" — "+cashWhy); method="เงินสด"; src="ฟอร์มรายรับบิลเก่า "+dmy(d0)+" เงินสด "+TH(e.cash)+" · ใบนับเงินสดตรงกับยอดที่ต้องมี"; }
+      else {
+        var miss=Object.keys(e.miss).map(function(ch){ return lbl[ch]+" "+TH(e.miss[ch]); }).concat(e.noneMiss.map(function(a){ return TH(a)+" (ไม่ได้เลือกบัญชี)"; }));
+        if(miss.length && e.combinedHold) return hold("เงินรอจับคู่ก้อนเดียวจับคู่หลายบิลของลูกค้าปลีก/ต่างลูกค้า — รอคุณหลิงดูก่อน");
+        if(miss.length) return hold("หาเงินโอน "+miss.join(" + ")+" ไม่เจอใน K+/สเตทเมนต์กสิกรของ "+dmy(d0)+" (เงินที่เหลือหลังบิลของวัน) — พักรอคุณหลิง");
+        if(b.retail && e.combined) return hold("ลูกค้าปลีกโอนก้อนเดียวจ่ายหลายบิล — รอคุณหลิงดูก่อน");
+        method="เงินโอน"; src="ฟอร์มรายรับบิลเก่า "+dmy(d0)+" "+e.src.join(" + ");
+      }
+      if(O.drift.length){ O.driftHeld=(O.driftHeld||0)+1; return hold("ฟอร์มบิลเก่าวันนี้ไม่ตรงกับที่อนุมัติไว้แล้ว (บิล "+O.drift.map(function(n){ return n.slice(-4); }).join(", ")+" ยอด/วิธีจ่ายเปลี่ยน หรือแถวหาย) — ระบบไม่รู้ว่าเงินก้อนไหนใช้ไปแล้ว ไม่อนุมัติเพิ่มเอง รอคุณหลิง"); }
+      var gk=b.retail? "R|"+no : String(b.cus)+"|"+method;
+      var it={b:b, amt:b.out, method:method, src:src, gk:gk, sig:sigOf(e)}; O.ready.push(it); (readyBy[gk]=readyBy[gk]||[]).push(it);
+    });
+    var tag=obTag(d0);
+    Object.keys(readyBy).forEach(function(gk){ var L=readyBy[gk].slice().sort(function(a,b){ return a.b.no<b.b.no?-1:1; }), grp="F"+L[0].b.no.slice(2); /* เลขบิลเต็ม (ไม่รวม KM) — เลขท้ายซ้ำข้ามเดือนไม่ชนกลุ่ม (Codex r4) */
+      L.forEach(function(it){ it.grp=grp; O.rows.push({bill_date:it.b.date, bill_no:it.b.no, customer:it.b.name||null, amount:it.amt, method:it.method, evidence:it.src+" · รายรับวันที่ "+beDmy(d0)+" · [ฟอร์ม "+it.sig+"]", status:"approved", approved_role:AUTO_ROLE, receipt_group:tag+"-"+grp}); }); });
+    return O;
+  }
+  async function formOld(date, R){ var s=SB(); if(!s) return {date:date, rows:[], ready:[], hold:[], appr:[], done:[], chq:[], err:"เชื่อม Supabase ไม่ได้"};
+    return formOldPick(R, await formOldLoad(s, date)); }
   /* v0.9.0 (22 ต.ค.69) ตัดบิลอัตโนมัติ ขั้นที่ 2 — คุณหลิงอนุมัติวิธี "ก. หน้าตรวจรายได้บันทึกให้เอง"
      คัดเฉพาะบิลของวัน (R.t + R.c) ที่ cutbill ขึ้น "พร้อมตัด" → แถวสำหรับ rev_cut_approvals (approved_role = auto-rule)
      ไม่คัด (รอคุณหลิงกดเหมือนเดิม): ทุกใบที่พักไว้ (อยู่ใน R.h อยู่แล้ว) · ลูกค้าปลีกโอนก้อนเดียวหลายบิล (grp + retail)
-       · บิลที่มีแถวใน rev_cut_approvals แล้ว (รวมที่เคยยกเลิก — ไม่อนุมัติซ้ำให้เอง) · บิลเก่า (RevCut.old ไม่ผ่านฟังก์ชันนี้)
+       · บิลที่มีแถวใน rev_cut_approvals แล้ว (รวมที่เคยยกเลิก — ไม่อนุมัติซ้ำให้เอง) · บิลเก่าทางเดิม (RevCut.old — เงินรอจับคู่/เช็ค ยังให้คุณหลิงกด)
+     v0.10.0: บิลเก่าในแท็บบิลเก่าของฟอร์มวันนี้ที่ formOldPick ขึ้นพร้อมตัด → oldRows (ด่านทั้งวันชุดเดียวกัน)
      ทั้งวัน: ยังไม่กดยืนยันผลตรวจ · ไม่มี K+ / สเตทเมนต์ · K+ วันก่อนยังไม่ครบ · โหลดข้อมูลส่วนไหนไม่ได้ · มีเลขบิลในชีตโอนที่หาไม่เจอ
        · บิลก่อนวันเริ่มใช้ (AUTO_FROM) หรือเก่าเกิน AUTO_MAX_DAYS วัน (เปิดดูวันเก่าที่ "ตรวจแล้ว" ต้องไม่อนุมัติบิลค้างของวันนั้นเอง) → ไม่คัดเลย */
   var AUTO_ROLE="auto-rule", AUTO_METHODS=["เงินสด","เงินโอน","เงินโอน + เงินสด"];
@@ -760,7 +928,7 @@
     else if(D.loadErr.length) why.push("โหลดข้อมูลไม่ได้: "+D.loadErr.map(function(i){ return (LOAD_PART[i]||"ส่วนที่ "+i)+" (#"+i+")"; }).join(", "));
     if(D.refundErr) why.push("โหลดกล่องคืนเงินไม่ได้");
     if(R && Array.isArray(R.unk) && R.unk.length) why.push("มีเลขบิลในชีตโอนที่หาไม่เจอ "+R.unk.length+" รายการ");
-    if(why.length) return {ok:false, why:why.join(" · "), rows:[], skip:[]};
+    if(why.length) return {ok:false, why:why.join(" · "), rows:[], skip:[], oldRows:[], oldWhy:""};
     var seen={}; (D.appr||[]).forEach(function(a){ if(a && a.bill_no) seen[a.bill_no]=a; });
     var rows=[], skip=[], dup={};
     (R.t||[]).concat(R.c||[]).forEach(function(x){
@@ -771,7 +939,13 @@
       if(typeof b.out!=="number" || !isFinite(b.out) || !(r2(b.out)>0.01) || AUTO_METHODS.indexOf(x.method)<0){ skip.push({b:b, why:"ยอด/วิธีจ่ายไม่อยู่ในกฎ"}); return; }
       rows.push({bill_date:d0, bill_no:no, customer:b.name||null, amount:r2(b.out), method:x.method, evidence:x.src||null, status:"approved", approved_role:AUTO_ROLE});
     });
-    return {ok:true, why:"", rows:rows, skip:skip};
+    /* v0.10.0 บิลเก่าในฟอร์มของวันนี้ที่พร้อมตัด (formOldPick) — ใช้ด่านทั้งวันชุดเดียวกับบิลของวัน · bill_date = วันที่บิลเก่า · ตรวจว่าผลเป็นของวันนี้ */
+    var FO=R.fo||null, oldRows=[], oldWhy="";
+    if(!FO) oldWhy="ยังไม่ได้คิดบิลเก่าในฟอร์ม";
+    else if(FO.err) oldWhy="บิลเก่าในฟอร์ม: "+FO.err;
+    else if(FO.date!==d0) oldWhy="ผลบิลเก่าไม่ใช่ของวันนี้";
+    else oldRows=(FO.rows||[]).filter(function(x){ return x && !dup[x.bill_no] && x.approved_role===AUTO_ROLE && String(x.receipt_group||"").indexOf(obTag(d0)+"-F")===0 && x.bill_date && x.bill_date<d0 && AUTO_METHODS.indexOf(x.method)>=0 && r2(x.amount)>0.01; });
+    return {ok:true, why:"", rows:rows, skip:skip, oldRows:oldRows, oldWhy:oldWhy};
   }
-  window.RevCut={ ksksplit:ksksplit, pastMoney:pastMoney, pastClaims:pastClaims, pastFor:pastFor, pastAdj:pastAdj, autoPick:autoPick, AUTO_ROLE:AUTO_ROLE, AUTO_FROM:AUTO_FROM, classify:classify, load:load, refundXfer:refundXfer, refundData:refundData, REFUND_FROM:REFUND_FROM, compute:compute, old:old, TH:TH, num:num, r2:r2, RETAIL_CUS:RETAIL_CUS };
+  window.RevCut={ ksksplit:ksksplit, pastMoney:pastMoney, pastClaims:pastClaims, pastFor:pastFor, pastAdj:pastAdj, autoPick:autoPick, AUTO_ROLE:AUTO_ROLE, AUTO_FROM:AUTO_FROM, classify:classify, load:load, refundXfer:refundXfer, refundData:refundData, REFUND_FROM:REFUND_FROM, compute:compute, old:old, formOld:formOld, formOldPick:formOldPick, obTag:obTag, TH:TH, num:num, r2:r2, RETAIL_CUS:RETAIL_CUS };
 })();

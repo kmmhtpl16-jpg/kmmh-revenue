@@ -562,9 +562,15 @@ document.getElementById('chqCancel').onclick=()=>closeChq(false);
 function paneBillAmt(key,title,hint,R){
   const rows=rowsWithBlank(S[key],{bill:'',amt:''});
   const tot=S[key].reduce((s,r)=>s+num(r.amt),0), cq=key==='oldx';
-  return `<div class="pane"><h2>${title}</h2><p class="hint">${hint}${hint?' · ':''}${cq?'ลูกค้าจ่ายด้วยเช็ค ติ๊กช่อง "เช็ค" แล้วกรอกข้อมูลเช็ค + แนบรูป (ไม่ติ๊ก = โอน K+/กสิกร ปกติ) · ':''}Enter ไปช่องถัดไป · ลูกศร ↑↓←→ เลื่อนช่องเหมือน Excel</p><div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th>${key==='scash'?'<th class="depc">มัดจำ</th>':''}<th>ชื่อร้าน (จาก ACC)</th><th style="text-align:right">ยอดเงิน</th>${cq?'<th class="depc">เช็ค</th><th>รูปเช็ค</th>':''}<th>ตรวจ</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${cq?billCell(key,i,r,R).replace('</td>',chqTag(i,r)+'</td>'):billCell(key,i,r,R)}<td style="width:9em">${amtInput(key,i,'amt',r.amt)}</td>${cq?chqCells(i,r):''}${stCell(key,i,R)}</tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td colspan="${key==='scash'?3:2}">ยอดรวม</td><td style="text-align:right">${totTxt(key,tot)}</td>${cq?'<td colspan="2"></td>':''}<td></td></tr></tfoot></table></div></div>`;
+  /* 31 ต.ค.69 คุณหลิงสั่ง: บิลเก่าจ่ายได้ทั้ง K+ และกสิกร → แต่ละแถวเลือกบัญชีที่เงินเข้า (ch = kplus/ksk) หน้าตรวจรายได้เอาไปนับในช่อง K+/กสิกร ของวันนั้น */
+  const oxT=k=>S.oldx.filter(r=>!r.chq&&r.ch===k).reduce((s,r)=>s+num(r.amt),0);
+  return `<div class="pane"><h2>${title}</h2><p class="hint">${hint}${hint?' · ':''}${cq?'เลือกช่อง "เข้าบัญชี" ทุกแถวว่าเงินเข้า K+ หรือกสิกร · ลูกค้าจ่ายด้วยเช็ค ติ๊กช่อง "เช็ค" แล้วกรอกข้อมูลเช็ค + แนบรูป (ไม่ต้องเลือกบัญชี) · ':''}Enter ไปช่องถัดไป · ลูกศร ↑↓←→ เลื่อนช่องเหมือน Excel</p><div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th>${key==='scash'?'<th class="depc">มัดจำ</th>':''}<th>ชื่อร้าน (จาก ACC)</th><th style="text-align:right">ยอดเงิน</th>${cq?'<th>เข้าบัญชี</th><th class="depc">เช็ค</th><th>รูปเช็ค</th>':''}<th>ตรวจ</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="no">${i+1}</td>${cq?billCell(key,i,r,R).replace('</td>',chqTag(i,r)+'</td>'):billCell(key,i,r,R)}<td style="width:9em">${amtInput(key,i,'amt',r.amt)}</td>${cq?oxChSel(i,r)+chqCells(i,r):''}${stCell(key,i,R)}</tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td colspan="${key==='scash'?3:2}">ยอดรวม</td><td style="text-align:right">${totTxt(key,tot)}</td>${cq?`<td class="small">K+ ${fmt(oxT('kplus'))}<br>กสิกร ${fmt(oxT('ksk'))}</td><td colspan="2"></td>`:''}<td></td></tr></tfoot></table></div></div>`;
+}
+function oxChSel(i,r){ if(r.chq) return '<td class="small">เช็ค</td>';
+  const v=r.ch==='kplus'||r.ch==='ksk'?r.ch:'';
+  return `<td><select id="oldx_ch_${i}" data-k="oldx" data-i="${i}" data-f="ch"${v?'':' style="border-color:var(--bad)"'}><option value="" ${v?'':'selected'}>— เลือก —</option><option value="kplus" ${v==='kplus'?'selected':''}>K+</option><option value="ksk" ${v==='ksk'?'selected':''}>กสิกร</option></select></td>`;
 }
 function paneRcash(R){
   const rows=rowsWithBlank(S.rcash,{amt:'',ra:''});
@@ -1087,6 +1093,9 @@ function compute(){
     if(!chqInfoOk(r)){ R.issues.push({lv:'bad',block:true,code:'chq',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค ยังไม่กรอกข้อมูลเช็ค (เลขที่/ธนาคาร/วันที่บนเช็ค)`,d:'กด "กรอกข้อมูลเช็ค" ใต้เลขบิล',tab:'old'}); bump('old','bad'); }
     if(TRIAL) R.issues.push({lv:'info',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค (โหมดทดลองไม่ต้องแนบรูป)`,tab:'old'});
     else if(!chqOk(r.chqImg)){ R.issues.push({lv:'bad',block:true,code:'chq',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: จ่ายด้วยเช็ค ยังไม่ได้แนบรูปเช็ค`,d:'กด "📎 แนบรูปเช็ค" ในแท็บบิลเก่า',tab:'old'}); bump('old','bad'); } });
+  /* 31 ต.ค.69: แถวโอนบิลเก่า (ไม่ใช่เช็ค) ต้องเลือกว่าเงินเข้า K+ หรือกสิกร — หน้าตรวจรายได้ใช้นับเข้าช่องนั้น */
+  (S.oldx||[]).forEach((r,i)=>{ if(r.chq||(!r.bill&&(r.amt===''||r.amt==null))) return;
+    if(r.ch!=='kplus'&&r.ch!=='ksk'){ R.issues.push({lv:'bad',block:true,code:'och',t:`บิลเก่า-โอน แถว ${i+1} ${r.bill||''}: ยังไม่เลือกว่าเงินเข้าบัญชีไหน (K+ / กสิกร)`,d:'เลือกในช่อง "เข้าบัญชี" แท็บบิลเก่า',tab:'old'}); bump('old','bad'); } });
   Object.entries(BADAMT).forEach(([id,b])=>{ const k=id.split('_')[0], t=id==='cnt_amt_0'?'sum':(k==='other'||k==='refund')?'ex':tabOf(k);
     R.issues.push({lv:'bad',block:true,code:'amt',t:`ช่องยอดที่พิมพ์ "${b.raw}" ยังไม่ถูกต้อง — ยังไม่ได้บันทึก`,d:b.why,tab:t}); bump(t,'bad'); });
   if(!validStored(S.count)) R.issues.push({lv:'bad',block:true,code:'amt',t:`ยอดเงินสดที่นับได้ "${S.count}" ไม่ถูกต้อง`,d:TRIAL?'ต้องเป็นตัวเลขบวก — แก้ที่แท็บสรุปรายรับ':'ต้องเป็นตัวเลขบวก — แก้ที่กล่องใบนับเงินสดในหน้าตรวจรายได้',tab:'sum'});

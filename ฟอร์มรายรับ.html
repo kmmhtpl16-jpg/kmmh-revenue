@@ -1166,6 +1166,8 @@ function compute(){
       else if(rem>0.009){expRetailCash+=rem;retailCashParts.push({no:b.no,rem,total:b.total,part:ent.length||dep||cn,extra});if(Math.round(rem*100)%100)satang.push(b.no.slice(-4)+' ('+fmt(rem)+')')}
       if((ent.length||dep||cn)&&rem>0.009){R.issues.push({lv:'info',sum:true,t:`${b.no} คุณ 1 บิล ${fmt(b.total)} รับทางอื่น ${fmt(covered)} → ส่วนที่เหลือ ${fmt(rem)} นับเป็นเงินสดปลีก`,d:[ent.map(x=>boxName[x.src]+' '+fmt(x.amt)).join(' + '),...extra].filter(Boolean).join(' · ')})}
       if((dep||cn)&&rem<=0.009)R.issues.push({lv:'ok',t:`${b.no} ${extra.join(' · ')} — ดึงจาก ACC ให้เอง`});
+      /* 2 พ.ย.69: บิลคุณ 1 ที่ลงรับในกล่องครบยอดพอดี (เช่น มัดจำ + ลงบัญชีส่วนที่เหลือ เคส 1374) → ช่องตรวจขึ้น ครบ เหมือนบิลร้านค้า */
+      if(ent.length&&Math.abs(rem)<=0.009)markBill(R,b.no,'ok',ent.length>1?'ครบ (หลายทาง)':'ครบ ✓');
     }else{
       if(!ent.length&&!dep&&!cn){R.issues.push({lv:'bad',t:`${b.no} ${shortName(b.name)} ${fmt(b.total)} ยังไม่ได้ลงรับเงิน`,d:upk?'ลงในกล่อง UPK':'ถ้าลูกค้ายังไม่จ่าย ให้ลงกล่องลงบัญชี'})}
       else if(Math.abs(rem)>0.009){

@@ -182,7 +182,7 @@
 </div></div>
 <div class="wrap">
   <h1>🧮 โปรแกรมตรวจรายได้ — กิจมั่งมีโฮม</h1>
-  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.8.1</b></div>
+  <div class="lead">ยอดจากเครื่องดึงจาก ACC-BILLING อัตโนมัติ · เลือกวันที่แล้วตรวจได้เลย · <b>v0.8.2</b></div>
   <nav class="topnav">
     <a class="r-owner" href="สารบัญ-รายได้.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><rect x="5" y="4" width="14" height="17" rx="2"/><path class="ac" d="M9 5V3h6v2"/><path class="in" d="M9 10h6M9 14h6M9 18h4" fill="none"/></svg></span><span class="tl">สารบัญ</span></a>
     <a class="on" href="index.html"><span class="ti"><svg class="i-n" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><svg class="i-s" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21" fill="none"/></svg></span><span class="tl">ตรวจรายได้</span></a>
@@ -2165,6 +2165,7 @@ async function loadPending(){
   list.innerHTML=openHtml+(await _matchedHtml())+(await _ownerClosedHtml());
   if(window.mtRender) mtRender();
 }
+var CAT_DEPCASH="นำฝากเงินสดขาย (ย้ายเงินสดเข้าบัญชี ไม่ใช่รายได้ใหม่)";
 async function _ownerClosedHtml(){
   if(ROLE!=="owner") return '';
   try{
@@ -2172,10 +2173,14 @@ async function _ownerClosedHtml(){
     var rows=(r.data||[]);
     if(!rows.length) return '';
     var sum=rows.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0);
+    /* หมวดนำฝากเงินสดขาย = ย้ายเงินสดเข้าบัญชี แยกยอดให้เห็น (ไม่ใช่รายได้ใหม่) */
+    var dep=rows.filter(function(x){ return String(x.note||"").indexOf("🔒ปิดยอด | "+CAT_DEPCASH)===0; });
+    var depSum=dep.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0);
+    var depLine=dep.length?'<div style="font-size:12px;color:#0f766e;margin:-2px 0 4px">🏦 ในนี้เป็นนำฝากเงินสดขาย '+dep.length+' รายการ · '+TH(depSum)+' บาท (ย้ายเงินสด→ธนาคาร ไม่ใช่รายได้ใหม่) · หมวดอื่น '+(rows.length-dep.length)+' รายการ · '+TH(sum-depSum)+' บาท</div>':'';
     var body=rows.map(function(d){
       return '<tr><td style="white-space:nowrap">'+beDate(d.date)+'</td><td>'+esc(d.from_name||'—')+'</td><td style="font-size:12px;color:#6d28d9">'+esc(String(d.note||'').replace('🔒ปิดยอด | ',''))+'</td><td class="num" style="white-space:nowrap">'+TH(d.amount)+'</td><td><button class="btn sec" style="padding:3px 8px;margin:0;border-color:#fca5a5;color:#b91c1c" onclick="reopenOwner(\''+d.id+'\')">↩ ยกเลิกปิดยอด</button></td></tr>';
     }).join("");
-    return '<div class="r-owner" style="margin-top:14px"><div style="font-weight:700;font-size:13px;color:#6d28d9;margin-bottom:4px">🔒 ปิดยอด (เฉพาะเจ้าของ · ไม่นับเป็นรายได้ · พนักงานไม่เห็น) — '+rows.length+' รายการ · '+TH(sum)+' บาท</div>'+
+    return '<div class="r-owner" style="margin-top:14px"><div style="font-weight:700;font-size:13px;color:#6d28d9;margin-bottom:4px">🔒 ปิดยอด (เฉพาะเจ้าของ · ไม่นับเป็นรายได้ · พนักงานไม่เห็น) — '+rows.length+' รายการ · '+TH(sum)+' บาท</div>'+depLine+
       '<table><thead><tr><th>วันที่</th><th>ใครโอน</th><th>หมวด / เหตุผล</th><th style="white-space:nowrap">ยอด</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div>';
   }catch(e){ return ''; }
 }
@@ -2185,12 +2190,12 @@ window.closeOwner=async function(id){
   var pr=await sb.from("rev_pending").select("*").eq("id",id).single(); var p=pr.data;
   if(!p){ alert("ไม่พบรายการ"); return; }
   if(p.status!=="open"){ alert("รายการนี้ไม่ได้อยู่ในสถานะรอจับคู่แล้ว"); return; }
-  var k=prompt("ปิดยอดนี้เป็นหมวดอะไร? (เฉพาะเจ้าของเห็น · ไม่นับเป็นรายได้)\n\n"+beDate(p.date)+" · "+(p.from_name||"")+" · "+TH(p.amount)+" บาท\n\n1 = เงินรับฝากแทนพนักงาน (คอมมิชชั่นจากซัพ ส่งต่อพนักงาน = หนี้สิน)\n2 = ส่วนลดรับจากผู้ขาย (โรงงานคืน/ลืมหัก = ลดต้นทุนซื้อ)\n3 = รายได้อื่น\n4 = อื่นๆ (พิมพ์เอง)\n\nพิมพ์เลข 1-4:","1");
+  var k=prompt("ปิดยอดนี้เป็นหมวดอะไร? (เฉพาะเจ้าของเห็น · ไม่นับเป็นรายได้)\n\n"+beDate(p.date)+" · "+(p.from_name||"")+" · "+TH(p.amount)+" บาท\n\n1 = เงินรับฝากแทนพนักงาน (คอมมิชชั่นจากซัพ ส่งต่อพนักงาน = หนี้สิน)\n2 = ส่วนลดรับจากผู้ขาย (โรงงานคืน/ลืมหัก = ลดต้นทุนซื้อ)\n3 = รายได้อื่น\n4 = อื่นๆ (พิมพ์เอง)\n5 = นำฝากเงินสดขายหน้าร้าน (ย้ายเงินสด→ธนาคาร ไม่ใช่รายได้ใหม่)\n\nพิมพ์เลข 1-5:","1");
   if(k===null) return;
-  var CAT={"1":"เงินรับฝากแทนพนักงาน (ส่งต่อพนักงาน ไม่ใช่รายได้)","2":"ส่วนลดรับจากผู้ขาย (ลดต้นทุนซื้อ ไม่ใช่รายได้)","3":"รายได้อื่น"};
-  var cat=CAT[(k||"").trim()];
+  var CAT={"1":"เงินรับฝากแทนพนักงาน (ส่งต่อพนักงาน ไม่ใช่รายได้)","2":"ส่วนลดรับจากผู้ขาย (ลดต้นทุนซื้อ ไม่ใช่รายได้)","3":"รายได้อื่น","5":CAT_DEPCASH};
+  var kk=(k||"").trim(), cat=CAT[kk];
   if(!cat){ cat=prompt("พิมพ์ชื่อหมวด / คำอธิบาย:",""); if(cat===null) return; if(!cat.trim()){ alert("ต้องระบุหมวด"); return; } }
-  var detail=prompt("รายละเอียดเพิ่ม (เว้นว่างได้):",""); if(detail===null) detail="";
+  var detail=prompt(kk==="5"?"เงินขายของวันที่ไหนบ้าง / หักเบิกใช้หรือแลกเงินสดย่อยเท่าไร (เว้นว่างได้):":"รายละเอียดเพิ่ม (เว้นว่างได้):",""); if(detail===null) detail="";
   var by=prompt("ผู้ปิดยอด (ชื่อผู้ยืนยัน):"); if(by===null) return;
   var note="🔒ปิดยอด | "+cat+(detail.trim()?(" | "+detail.trim()):"")+" | โดย "+(by||"").trim()+" "+new Date().toISOString().slice(0,10);
   var up=await sb.from("rev_pending").update({status:"owner_closed",note:note}).eq("id",id).eq("status","open");
@@ -2878,7 +2883,7 @@ function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(RO
 </script>
 <script src="credit.js?v=20261030a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261028c"></script>
-<script src="cutbill.js?v=20261031a"></script>
+<script src="cutbill.js?v=20261102a"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>

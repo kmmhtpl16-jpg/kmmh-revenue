@@ -2515,23 +2515,35 @@ function mpShortHtml(diff){
 }
 async function mpRecompute(id){
   var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
-  var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
-  var b=await sb.from("rev_credit_bills").select("total_amount").eq("id",id).single();
+  var b=await sb.from("rev_credit_bills").select("total_amount,opening_paid").eq("id",id).single();
+  /* 5 พ.ย.69: ยอดจ่ายก่อนดึงเข้า (opening_paid เช่นใบลดหนี้) ต้องรวมด้วย — สูตรเดียวกับ rev_credit_bills_guard */
+  var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},num(b.data&&b.data.opening_paid));
   var tot=num(b.data&&b.data.total_amount);
   var status=paid>=tot-0.01?"paid":(paid>0.01?"partial":"open");
   await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100,status:status}).eq("id",id);
 }
+/* 5 พ.ย.69 ยอดคงเหลือของบิลในหน้าจับคู่ (เคส KM6910-1055 ใบลดหนี้ 1,413 / ร้าน UPK ใบลดหนี้ออกหลังดึงเข้า)
+   คงเหลือในทะเบียน = ยอดบิล − จ่ายแล้ว (อย่างน้อย opening_paid) · ถ้า ACC ยังค้างอยู่และน้อยกว่า ใช้ยอด ACC
+   ACC ค้าง 0 = อาจเพิ่งตัดบิลแล้ว (เงินยังรอจับคู่) → ใช้ยอดในทะเบียน ไม่ซ่อนบิล */
+function mpBillRem(b,acc){
+  var reg=Math.round((num(b.total_amount)-Math.max(num(b.paid_amount),num(b.opening_paid)))*100)/100;
+  var o=acc?acc[b.bill_no]:null;
+  if(o!=null&&num(o)>0.009&&num(o)<reg) return Math.round(num(o)*100)/100;
+  return reg;
+}
+async function mpAccOut(){ try{ var r=await sb.rpc("rev_credit_acc_out"); return (r&&!r.error&&r.data)||null; }catch(e){ return null; } }
 
 /* ---------- บิลขาย KM ---------- */
 window.matchKM=async function(id){
   if(!sb) return; MP_PID=id; MP_P=await mpLoadPend(id); if(!MP_P){ alert("ไม่พบรายการ"); return; }
-  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount").neq("status","paid").order("bill_date",{ascending:true});
+  var r=await sb.from("rev_credit_bills").select("id,bill_no,bill_date,customer,total_amount,paid_amount,opening_paid").neq("status","paid").order("bill_date",{ascending:true});
   if(r.error){ alert("โหลดบิลไม่ได้: "+r.error.message); return; }
+  var _acc=await mpAccOut();
   await loadPayerMap();
   var _h=payerHint(MP_P.from_name), _hc=_h?_h.customer:"";
-  var _list=(r.data||[]).filter(function(b){ return Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100>0.01; });
+  var _list=(r.data||[]).filter(function(b){ return mpBillRem(b,_acc)>0.01; });
   if(_hc){ _list.sort(function(a,b){ var ah=nameMatch(_hc,a.customer)?0:1, bh=nameMatch(_hc,b.customer)?0:1; if(ah!==bh) return ah-bh; return (a.bill_date<b.bill_date)?-1:1; }); }
-  var rows=_list.map(function(b,_ix){ var rem=Math.round((num(b.total_amount)-num(b.paid_amount))*100)/100; var hit=_hc&&nameMatch(_hc,b.customer); return '<tr class="mpkr'+(hit?' hint':'')+'" data-i="'+_ix+'" data-s="'+esc(mpNorm(b.bill_no)+" "+mpNorm(b.customer))+'"'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
+  var rows=_list.map(function(b,_ix){ var rem=mpBillRem(b,_acc); var hit=_hc&&nameMatch(_hc,b.customer); return '<tr class="mpkr'+(hit?' hint':'')+'" data-i="'+_ix+'" data-s="'+esc(mpNorm(b.bill_no)+" "+mpNorm(b.customer))+'"'+(hit?' style="background:#f5f3ff"':'')+'><td style="width:26px"><input type="checkbox" class="mpkb" data-id="'+b.id+'" data-rem="'+rem+'" data-no="'+esc(b.bill_no||"")+'" data-cust="'+esc(b.customer||"")+'" onchange="mpSumKM()"></td><td>'+beDate(b.bill_date)+'</td><td>'+esc(b.bill_no||"—")+'</td><td>'+esc(b.customer||"")+(hit?' <span style="color:#7c3aed;font-size:11px">🔁 เคยจ่าย</span>':'')+'</td><td class="num">'+TH(rem)+'</td></tr>'; }).join("");
   mpOpen('<h3>จับคู่ '+TH(MP_P.amount)+' ฿ — เลือกบิลขาย (เก่าสุดบน)</h3>'+
     '<div class="mpmut">จาก '+esc(MP_P.from_name||"")+' · ติ๊กบิลที่เงินก้อนนี้ปิด</div>'+
     (_hc?('<div style="margin-top:6px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 8px;font-size:12.5px;color:#6d28d9">🔁 บัญชีนี้เคยจ่ายในชื่อ <b>'+esc(_hc)+'</b>'+(_h.hit_count>1?(' ('+_h.hit_count+' ครั้ง)'):'')+' — ยกบิลของลูกค้ารายนี้ขึ้นบนให้แล้ว</div>'):'')+
@@ -2714,9 +2726,9 @@ window.mpDoBI=async function(nid){
   var by=prompt("ผู้ยืนยัน:",""); if(by===null) return; by=(by||"").trim();
   var pdate=(MP_P.date||mpToday()), batch=mpBatch();
   if(!n.is_manual){
-    var br=await sb.from("rev_credit_bills").select("id,total_amount,paid_amount,bill_date").eq("billing_note_id",nid).neq("status","paid").order("bill_date",{ascending:true});
+    var br=await sb.from("rev_credit_bills").select("id,bill_no,total_amount,paid_amount,opening_paid,bill_date").eq("billing_note_id",nid).neq("status","paid").order("bill_date",{ascending:true});
     var bills=br.data||[], cash=(mode==="part")?amt:rem, payments=[];
-    for(var i=0;i<bills.length;i++){ if(cash<=0.005) break; var brem=Math.round((num(bills[i].total_amount)-num(bills[i].paid_amount))*100)/100; var give=Math.round(Math.min(brem,cash)*100)/100; if(give>0.005){ payments.push({bill_id:bills[i].id,pay_date:pdate,amount:give,method:MP_P.source||"โอน",ref:"จับคู่ใบวางบิล BI "+n.note_no+(mode==="fee"?" (หักค่าธรรมเนียม)":mode==="disc"?" (ส่วนลด)":mode==="part"?" (แบ่งชำระ)":""),billing_note_no:n.note_no,batch_ref:batch,confirmed_by:by||null}); cash=Math.round((cash-give)*100)/100; } }
+    for(var i=0;i<bills.length;i++){ if(cash<=0.005) break; var brem=mpBillRem(bills[i],null); var give=Math.round(Math.min(brem,cash)*100)/100; if(give>0.005){ payments.push({bill_id:bills[i].id,pay_date:pdate,amount:give,method:MP_P.source||"โอน",ref:"จับคู่ใบวางบิล BI "+n.note_no+(mode==="fee"?" (หักค่าธรรมเนียม)":mode==="disc"?" (ส่วนลด)":mode==="part"?" (แบ่งชำระ)":""),billing_note_no:n.note_no,batch_ref:batch,confirmed_by:by||null}); cash=Math.round((cash-give)*100)/100; } }
     if(payments.length){ var ins=await sb.from("rev_credit_payments").insert(payments); if(ins.error){ alert("บันทึกไม่สำเร็จ: "+ins.error.message); return; } var bset={}; payments.forEach(function(p){bset[p.bill_id]=1;}); for(var k in bset){ await mpRecompute(k); } }
   }
   var addPaid=(mode==="part")?amt:rem;
@@ -2881,7 +2893,7 @@ async function taskAlertRun(){
 
 function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
-<script src="credit.js?v=20261030a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
+<script src="credit.js?v=20261105a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
 <script src="bell.js?v=20261028c"></script>
 <script src="cutbill.js?v=20261104a"></script>
 <script src="mpager.js?v=20261001a"></script>

@@ -251,8 +251,8 @@
   }
   async function recomputeBillCredit(id){
     var r=await sb.from("rev_credit_payments").select("amount").eq("bill_id",id);
-    var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},0);
-    var b=await sb.from("rev_credit_bills").select("total_amount").eq("id",id).single();
+    var b=await sb.from("rev_credit_bills").select("total_amount,opening_paid").eq("id",id).single();
+    var paid=(r.data||[]).reduce(function(s,p){return s+num(p.amount);},num(b.data&&b.data.opening_paid)); /* 5 พ.ย.69 รวม opening_paid เหมือน rev_credit_bills_guard */
     var tot=num(b.data&&b.data.total_amount);
     var status= paid>=tot-0.01?"paid":(paid>0.01?"partial":"open");
     await sb.from("rev_credit_bills").update({paid_amount:Math.round(paid*100)/100, status:status}).eq("id",id);

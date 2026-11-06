@@ -1316,9 +1316,14 @@ async function kskDepAdj(date,xfer,pend,brows,cns,fks){
     var _bd=(brows||[]).filter(function(r){return (+r.dep>0&&!r.kp);});
     if(_bd.length){
       var dq2=await sb.from("rev_deposits").select("deposit_no,customer,amount,used_amount,received_date,matched_bill_no,status").eq("received_date",date);
+      /* 6 พ.ย.69: แถว RA ในชีทโอนของฟอร์ม (ไม่อยู่ใน xfer เพราะตัวอ่านรับเฉพาะแถว KM) เคส 5/11 RA6911-0002 30,000 · อ่านไม่ได้ = สูตรเดิม */
+      var _fRa={}; try{ var _fq=await sb.from("rev_cashier_form").select("xf:entries->xfer").eq("date",date).maybeSingle();
+        ((_fq&&_fq.data&&Array.isArray(_fq.data.xf))?_fq.data.xf:[]).forEach(function(r){ var b=String((r&&r.bill)||"").trim(); if(!/^RA/i.test(b)) return;
+          var k=parseFloat(String(r.ks==null?"":r.ks).replace(/,/g,"")); if(k>0){ var n=normRA(b); _fRa[n]=(_fRa[n]||0)+k; } }); if(_fq&&_fq.error) _fRa={}; }catch(e){ _fRa={}; }
       (((dq2&&dq2.data)||[])).forEach(function(d){ if(d.status==="cancelled") return;
         var a=Math.round((+d.amount||0)*100)/100; if(a<=0.5) return;
         if(!_bd.some(function(r){return Math.abs((+r.dep||0)-a)<=1;})) return;
+        var _fk=_fRa[normRA(d.deposit_no)]; if(_fk&&Math.abs(_fk-a)<=1) return; /* ฟอร์มนับแล้ว ยอดไม่ตรง = สูตรเดิม */
         var mb=String(d.matched_bill_no||"").trim();
         var own=mb&&allBills.some(function(b){return b&&mb.indexOf(b)>=0;});
         var amt=own?Math.round((a-(+d.used_amount||0))*100)/100:a;
@@ -1338,6 +1343,23 @@ async function kskDepAdj(date,xfer,pend,brows,cns,fks){
   }catch(e){ console.warn("kskDepAdj",e); }
   out.pre=Math.round(out.pre*100)/100; out.oth=Math.round(out.oth*100)/100; return out;
 }
+/* 6 พ.ย.69: หน้ารายละเอียดวันบวกบิลเก่าโอนกสิกร (_obx.s) เข้าฝั่งฟอร์มแล้ว → รายการสเตทเมนต์ที่จับคู่บิลเก่าชุดเดียวกันต้องไม่หักฝั่งสเตทเมนต์ซ้ำ
+   เคส 5/11 KM6910-1024 33,350 · จับคู่ก้อนเดียวหลายบิลรวมกันได้ · ไม่หักส่วนที่ฟอร์มนับ · ส่วนเกินคงหัก · ก้อนมีบิลนอกฟอร์มหรือก้อนรวมซ้อนกัน = กำกวม คงหักทั้งก้อน · ไม่แตะ split (จับคู่รายแถวยังกันแถวนี้ไว้) */
+function kskObxOff(adj,obx){
+  if(!adj||!obx||!(obx.sRows||[]).length) return adj;
+  var left={}; obx.sRows.forEach(function(r){ var b=normBill(r.bill); if(b) left[b]=(left[b]||0)+(+r.amt||0); });
+  var L=(adj.othRows||[]).map(function(x){ return {x:x,bs:String(x.ref||"").split(/[,\s]+/).map(normBill).filter(function(b,j,A){ return b&&A.indexOf(b)===j; }),rest:+x.amt||0}; });
+  L.forEach(function(e){ if(!e.bs.every(function(b){ return left[b]>0; })) e.bs=[]; }); /* ก้อนที่มีบิลนอกฟอร์ม ไม่รู้ว่าส่วนไหนเป็นของบิลในฟอร์ม = คงหักตามเดิม */
+  /* รวมรายการที่ใช้บิลร่วมกันเป็นกลุ่ม · ก้อนรวมหลายบิลที่ซ้อนกับก้อนอื่น = กำกวม คงหักตามเดิม (ธงเกินดีกว่าบังเงินหาย) · คนละกลุ่มไม่หักกลบกัน */
+  var G=[]; L.forEach(function(e){ if(!e.bs.length) return; var g={rows:[e],bs:e.bs.slice()};
+    G=G.filter(function(o){ if(!o.bs.some(function(b){ return g.bs.indexOf(b)>=0; })) return true;
+      g.rows=o.rows.concat(g.rows); o.bs.forEach(function(b){ if(g.bs.indexOf(b)<0) g.bs.push(b); }); return false; }); G.push(g); });
+  G=G.filter(function(g){ return g.rows.length===1||g.bs.length===1; });
+  G.forEach(function(g){ var r=Math.min(g.rows.reduce(function(t,e){ return t+e.rest; },0),g.bs.reduce(function(t,b){ return t+left[b]; },0));
+    adj.oth=Math.round(((+adj.oth||0)-r)*100)/100;
+    g.rows.forEach(function(e){ var t=Math.min(e.rest,r); e.rest=Math.round((e.rest-t)*100)/100; r-=t; }); });
+  var keep=L.filter(function(e){ return e.rest>0.005; }).map(function(e){ return Object.assign({},e.x,{amt:e.rest}); }); /* ส่วนเกินจากยอดในฟอร์ม = เงินบิลเก่าที่ฟอร์มไม่ได้ลง ยังหัก */
+  adj.othRows=keep; return adj; }
 /* v0.7.8: ยอดธงโอนกสิกร — แยก 2 เรื่องเมื่อจับคู่รายแถวได้ (adj.split.ok) ไม่งั้นสูตรเดิม (ฟอร์ม − สเตทเมนต์) */
 function kskGap(adj, fa, sa){ return (adj && adj.split && adj.split.ok)? (+adj.split.missSum||0) : Math.round((fa-sa)*100)/100; }
 function kskSplitNote(adj, inFlag){ var S=adj&&adj.split; if(!S||!S.ok) return ""; var h="";
@@ -1976,7 +1998,7 @@ async function renderDay(date, edit){
       var _sd=(da&&da.bank_dep_total!=null)?Math.round((((+da.bank_dep_total)||0)-((+da.bank_kplus_settle)||0))*100)/100:((au.detail&&au.detail.stmt_direct!=null)?(+au.detail.stmt_direct):null);
       if(_sd==null) return;
       if(_fks==null){ html+='<div class="muted" style="margin:2px 0 0">— เงินโอนเข้าตรงตามสเตทเมนต์ '+TH(_sd)+' · วันนี้ไม่มีตัวเลขฝั่งฟอร์มเก็บไว้ เทียบอัตโนมัติไม่ได้ (วันใหม่จะเก็บให้เอง)</div>'; return; }
-      var _adj=await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null,(au.detail&&au.detail.cns)||[],_fks);
+      var _adj=kskObxOff(await kskDepAdj(date,(au.detail&&au.detail.xfer)||[],((pq&&pq.data)?pq.data:null),(da&&da.bank_rows)||null,(au.detail&&au.detail.cns)||[],_fks),_obx);
       var _fa=Math.round((_fks-_adj.pre+_obx.s)*100)/100, _sa=Math.round((_sd-_adj.oth)*100)/100; var _note=kskAdjNote(_adj);
       var _gb=kskGap(_adj,_fa,_sa); var Q8=String.fromCharCode(39); var _spl=!!(_adj.split&&_adj.split.ok); /* v0.7.8 */
       if(_gb>1){ var _fl=_otherAcct.filter(function(x){return /สเตทเมนต์|กสิกร/.test(x.ref||"")||x.source==="รับเข้าบัญชีอื่น";});

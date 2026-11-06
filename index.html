@@ -624,6 +624,9 @@ function baHit(a,b){ a=baKey(a); b=baKey(b); if(a==="ช่าง"||b==="ช่�
 /* ลูกค้าปลีกใน POS (ชื่อ "คุณ 1") */
 function baRetailCust(pos){ const ns=Object.keys(pos.custTotalByName||{}); return ns.find(c=>baKey(c)==="1")||null; }
 
+/* ติดป้ายใบลดหนี้เมื่อส่วนต่างเท่ายอดใบลดหนี้พอดี · เรียกซ้ำหลังหักมัดจำ ป้ายต้องตามยอดล่าสุด */
+function baCnRetag(o){ delete o.cnAmt; delete o.cnNos; const e=o.cnRef; if(e&&o.diff>BA_TOL&&Math.abs(o.diff-e.amt)<=BA_TOL){ o.cnAmt=e.amt; o.cnNos=e.nos.slice(); } }
+
 function buildBillAudit(form,pos){
   const bt=pos.billTotal||{}, bc=pos.billCust||{}, out={bills:[],custs:[],cash:[],ok:true};
   if(!Object.keys(bt).length) return out;
@@ -653,7 +656,7 @@ function buildBillAudit(form,pos){
   (pos.cns||[]).forEach(c=>{ const b=normBill(String(c.bill2_no||"").trim()||c.bill_no||""), v=+c.cn||0, k=String(c.cn_no||"").trim(); /* bill2 = บิลที่ใช้เครดิตใบลดหนี้ (ถ้ามี) */
     if(!b||!k||bt[b]==null||!(v>0)) return; const cu=bc[b];
     [[cnBill,b],[cnCust,cu]].forEach(([m,key])=>{ if(!key) return; const e=m[key]=m[key]||{amt:0,nos:[]}; e.amt=r2c(e.amt+v); if(e.nos.indexOf(k)<0) e.nos.push(k); }); });
-  const cnTag=(o,e)=>{ if(e&&o.diff>BA_TOL&&Math.abs(o.diff-e.amt)<=BA_TOL){ o.cnAmt=e.amt; o.cnNos=e.nos.slice(); } return o; };
+  const cnTag=(o,e)=>{ if(e) o.cnRef=e; baCnRetag(o); return o; };
   /* ระดับบิล (เฉพาะบิลที่มีเลขบิลในชีท "โอน") */
   Object.keys(paid).forEach(b=>{ const tot=bt[b];
     if(tot==null){ out.bills.push({bill:b,kind:"nopos"}); return; }
@@ -662,7 +665,7 @@ function buildBillAudit(form,pos){
 
   /* ระดับลูกค้า */
   names.forEach(c=>{ const tot=r2c(pos.custTotalByName[c]), got=r2c(byCust[c]||0), diff=r2c(tot-got);
-    if(Math.abs(diff)>BA_TOL) out.custs.push(cnTag({cust:c,tot:tot,got:got,diff:diff,kind:diff>0?"short":"over"},cnCust[c])); });
+    if(Math.abs(diff)>BA_TOL) out.custs.push(cnTag({cust:c,tot:tot,got:got,diff:diff,kind:diff>0?"short":"over",custBills:Object.keys(bt).filter(b=>bc[b]===c&&!raBill[normBill(b)])},cnCust[c])); }); /* 6 พ.ย.69 custBills ให้ baApplyDeposits หักมัดจำระดับลูกค้า · บิลที่มี RA ในชีทโอนนับมัดจำใน got แล้ว ไม่หักซ้ำ */
   unknown.forEach(u=>out.custs.push({cust:u.name,got:r2c(u.amt),kind:"nocust"}));
 
   /* เจาะรายการเงินสดลูกค้าปลีก — หาใบที่ลงยอดผิด / ไม่มีบิลคู่ */
@@ -689,8 +692,10 @@ function buildBillAudit(form,pos){
    ข้อมูลมัดจำอยู่คนละตารางกับไฟล์ที่อัป (ช่อง ra ในไฟล์ว่างเสมอ) ต้องมาชนกันที่นี่ */
 async function baApplyDeposits(a){
   try{
-    if(!sb||!a||!a.bills||!a.bills.length) return;
-    const nos=a.bills.filter(b=>b.kind==="short"&&b.bill).map(b=>normBill(b.bill));
+    if(!sb||!a||!a.bills) return;
+    const scs=(a.custs||[]).filter(c=>c.kind==="short"&&c.custBills&&c.custBills.length);
+    const nos=a.bills.filter(b=>b.kind==="short"&&b.bill&&!b.ra).map(b=>normBill(b.bill));
+    scs.forEach(c=>c.custBills.forEach(b=>{ const n=normBill(b); if(nos.indexOf(n)<0) nos.push(n); }));
     if(!nos.length) return;
     const q=await sb.from("rev_deposit_uses").select("bill_no,amount,used_date").in("bill_no",nos);
     if(q.error){ console.warn("baApplyDeposits",q.error); return; }
@@ -699,15 +704,25 @@ async function baApplyDeposits(a){
     rows.forEach(function(r){ const b=normBill(r.bill_no); dep[b]=r2c((dep[b]||0)+(+r.amount||0)); });
     const keep=[]; a.depOk=a.depOk||[];
     a.bills.forEach(function(b){
-      const d=(b.kind==="short")?(dep[normBill(b.bill)]||0):0;
+      const d=(b.kind==="short"&&b.dep==null&&!b.ra)?(dep[normBill(b.bill)]||0):0; /* b.dep = หักแล้ว ห้ามหักซ้ำ · b.ra = ฟอร์มนับมัดจำใน paid แล้ว */
       if(!d){ keep.push(b); return; }
-      b.dep=d; b.diff=r2c(b.diff-d);
+      b.dep=d; b.diff=r2c(b.diff-d); if(b.diff<-BA_TOL) b.kind="over"; baCnRetag(b);
       if(Math.abs(b.diff)<=BA_TOL){ b.kind="depok"; a.depOk.push(b); } else keep.push(b);
     });
     a.bills=keep;
+    /* 6 พ.ย.69: บิลลงบัญชีที่หักมัดจำ (เคส KM6911-0183 66,545 หัก RA6911-0002 30,000 ฟอร์มลง 36,545) ขึ้นแถวระดับลูกค้า → เทียบกับยอดหลังหักมัดจำ · เหลือส่วนต่าง = ยังเตือน */
+    a.depOkCust=a.depOkCust||[];
+    a.custs=a.custs.filter(function(c){
+      if(c.kind!=="short"||!c.custBills||c.dep!=null) return true;
+      const d=r2c(c.custBills.reduce(function(s,b){ return s+(dep[normBill(b)]||0); },0));
+      if(!d) return true;
+      c.dep=d; c.diff=r2c(c.diff-d); baCnRetag(c);
+      if(Math.abs(c.diff)<=BA_TOL){ c.kind="depok"; a.depOkCust.push(c); return false; }
+      c.kind=c.diff>0?"short":"over"; return true;
+    });
     a.ok=!a.bills.length&&!a.custs.length&&!a.cash.length;
     const box=document.getElementById("billAuditBox");
-    if(box) box.innerHTML=billAuditHtml(a);
+    if(box&&a===DATA._billAudit) box.innerHTML=billAuditHtml(a); /* เปิดวันอื่นระหว่างรอ = ห้ามทับ */
   }catch(e){ console.warn("baApplyDeposits",e); }
 }
 
@@ -722,7 +737,7 @@ async function baApplyCns(a,date){
     a.cnOk=(a.cnOk||[]).concat(a.bills.filter(free),a.custs.filter(free));
     a.bills=a.bills.filter(x=>!free(x)); a.custs=a.custs.filter(x=>!free(x));
     a.ok=!a.bills.length&&!a.custs.length&&!a.cash.length;
-    const box=document.getElementById("billAuditBox"); if(box) box.innerHTML=billAuditHtml(a);
+    const box=document.getElementById("billAuditBox"); if(box&&a===DATA._billAudit) box.innerHTML=billAuditHtml(a);
   }catch(e){ console.warn("baApplyCns",e); }
 }
 function billAuditHtml(a){
@@ -731,13 +746,15 @@ function billAuditHtml(a){
   const sign=d=>d>0?'<b style="color:#b91c1c">ขาด '+TH(d)+'</b>':'<b style="color:#b45309">เกิน '+TH(-d)+'</b>';
   let h='<div class="card"><h2>🧾 ตรวจยอดบิล (เครื่อง ↔ ฟอร์ม) <span class="badge '+(a.ok?"ok":"warn")+'">'+(a.ok?"ตรงทุกใบ ✓":tot+" รายการต้องตรวจ 🚩")+'</span></h2>'
     + '<div class="muted" style="margin:2px 0 10px">ยอดบิล = มัดจำ/โอน + ลงบัญชี + เงินสด · บิลที่มีเลขใบมัดจำ (RA…) ยอดที่เหลือต้องไปอยู่ชีท “ลงบัญชี” · ระบบหักมัดจำจากทะเบียนมัดจำให้อัตโนมัติก่อนตีธง · เตือนเมื่อต่างเกิน '+BA_TOL+' บาท</div>';
-  const depBox=(a.depOk&&a.depOk.length)
-    ? '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-bottom:10px"><b style="color:#047857">💰 ปิดด้วยมัดจำแล้ว '+a.depOk.length+' ใบ (ไม่ใช่จ่ายขาด)</b>'
-      + a.depOk.map(function(b){ return '<div class="muted" style="margin-top:2px">'+esc(b.bill)+' '+esc(b.cust||"")+' · ยอดบิล '+TH(b.tot)+' = รับ '+TH(b.paid+(b.acct||0))+' + <b>หักมัดจำ '+TH(b.dep)+'</b></div>'; }).join('')
+  const depN=(a.depOk||[]).length+(a.depOkCust||[]).length;
+  const depBox=depN
+    ? '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-bottom:10px"><b style="color:#047857">💰 ปิดด้วยมัดจำแล้ว '+depN+' รายการ (ไม่ใช่จ่ายขาด)</b>'
+      + (a.depOkCust||[]).map(function(c){ return '<div class="muted" style="margin-top:2px">'+esc(c.cust)+' · ยอดเครื่อง '+TH(c.tot)+' = ฟอร์ม '+TH(c.got)+' + <b>หักมัดจำ '+TH(c.dep)+'</b></div>'; }).join('')
+      + (a.depOk||[]).map(function(b){ return '<div class="muted" style="margin-top:2px">'+esc(b.bill)+' '+esc(b.cust||"")+' · ยอดบิล '+TH(b.tot)+' = รับ '+TH(b.paid+(b.acct||0))+' + <b>หักมัดจำ '+TH(b.dep)+'</b></div>'; }).join('')
       + '</div>' : '';
   const cnBox=(a.cnOk&&a.cnOk.length)
     ? '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;margin-bottom:10px"><b style="color:#047857">🧾 ฟอร์มลงยอดหลังหักใบลดหนี้ '+a.cnOk.length+' รายการ (ไม่มีคืนเงิน — ไม่ใช่ขาด)</b>'
-      + a.cnOk.map(function(x){ return '<div class="muted" style="margin-top:2px">'+esc(x.bill||x.cust||"")+(x.bill&&x.cust?' '+esc(x.cust):'')+' · ยอดเครื่อง '+TH(x.tot)+' − <b>ใบลดหนี้ '+esc(x.cnNos.join(", "))+' '+TH(x.cnAmt)+'</b> = ฟอร์ม '+TH(r2c(x.tot-x.diff))+'</div>'; }).join('')
+      + a.cnOk.map(function(x){ return '<div class="muted" style="margin-top:2px">'+esc(x.bill||x.cust||"")+(x.bill&&x.cust?' '+esc(x.cust):'')+' · ยอดเครื่อง '+TH(x.tot)+' − <b>ใบลดหนี้ '+esc(x.cnNos.join(", "))+' '+TH(x.cnAmt)+'</b> = ฟอร์ม '+TH(r2c(x.tot-x.diff-(x.dep||0)))+(x.dep?' + หักมัดจำ '+TH(x.dep):'')+'</div>'; }).join('')
       + '</div>' : '';
   if(a.ok) return h+depBox+cnBox+'<div class="verdict v-ok">✓ ทุกบิล/ทุกลูกค้ายอดตรงกับเครื่อง</div></div>';
   h+=depBox+cnBox;
@@ -749,7 +766,7 @@ function billAuditHtml(a){
   if(a.custs.length){ h+='<div style="margin:12px 0 8px"><b>ลูกค้าที่ยอดรวมไม่ตรง</b></div><div class="scroll"><table><thead><tr><th>ลูกค้า</th><th class="num">ยอดเครื่อง</th><th class="num">ยอดฟอร์ม</th><th>ผล</th></tr></thead><tbody>';
     a.custs.forEach(c=>{ h+= c.kind==="nocust"
       ? '<tr><td>'+esc(c.cust)+'</td><td class="num">—</td><td class="num">'+TH(c.got)+'</td><td class="muted">⚠️ ไม่พบชื่อนี้ในเครื่อง</td></tr>'
-      : '<tr><td>'+esc(c.cust)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.got)+'</td><td>'+sign(c.diff)+'</td></tr>'; });
+      : '<tr><td>'+esc(c.cust)+'</td><td class="num">'+TH(c.tot)+'</td><td class="num">'+TH(c.got)+'</td><td>'+sign(c.diff)+(c.dep?'<div class="muted" style="font-size:11px">หักมัดจำแล้ว '+TH(c.dep)+'</div>':'')+'</td></tr>'; });
     h+='</tbody></table></div>'; }
   if(a.cash.length){ h+='<div style="margin:12px 0 8px"><b>เงินสดลูกค้าปลีก (ชีท “ง-ส คุณ1”)</b></div><div class="scroll"><table><thead><tr><th>บิล</th><th class="num">ยอดจริง</th><th class="num">ฟอร์มลง</th><th>ผล</th></tr></thead><tbody>';
     const _grpShown={};
@@ -972,7 +989,7 @@ function render(){
     ${p.cns.length?'<button class="btn sec" onclick="exportCN()">⬇ ดาวน์โหลดสมุดคุม CN (CSV)</button>':''}
   </div>`;
 
-  if(!mPend) try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += '<div id="billAuditBox">'+billAuditHtml(DATA._billAudit)+'</div>'; baApplyDeposits(DATA._billAudit); baApplyCns(DATA._billAudit, f.date); }
+  if(!mPend) try{ DATA._billAudit = buildBillAudit(f, p); out.innerHTML += '<div id="billAuditBox">'+billAuditHtml(DATA._billAudit)+'</div>'; const _ba=DATA._billAudit; baApplyDeposits(_ba).then(function(){ return baApplyCns(_ba, f.date); }); }
   catch(e){ console.warn('billAudit', e); }
 
   /* 31 ต.ค.69 โอนบิลเก่า (แท็บบิลเก่า-โอน) → บวกเข้าฝั่งฟอร์ม K+/กสิกร · ยอดดิบ f.knv/f.ksk ที่บันทึกลง detail ไม่เปลี่ยน (หน้าดูวันบวกเอง) */

@@ -244,6 +244,7 @@
       if(gap<=1) return;
       var left=r2(gap-(flagged[dt]||0));
       if(left<=1) return;
+      if(a.ov && /^owner/.test(String(a.ov.by||""))) return; /* 9 พ.ย.69 คุณหลิงสั่ง: เจ้าของใส่เหตุผลข้ามเอง = ไม่ขึ้นกระดิ่ง (แคชเชียร์ข้ามยังเตือน) — เคส 4/11 เจียง มัดจำ RA6911-0001 */
       out.push({date:dt, left:left, k:(gapK>1?gapK:0), b:(gapB>1?gapB:0), ov:!!a.ov});
     });
     return out;

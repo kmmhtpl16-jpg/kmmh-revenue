@@ -166,6 +166,7 @@ a{color:var(--amber)}
   </div>
   <div class="tools" aria-label="เครื่องมือห้อง">
     <button class="tool on" id="pinBtn2" onclick="openPins()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>ปักหมุด <b class="pcount" id="pinCount"></b></button>
+    <button class="tool" id="syncBtn" onclick="openSync()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>ซิงก์เครื่องแม่</button>
     <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>โน๊ต</button>
     <button class="tool" disabled title="ขั้นต่อไป"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>อัลบั้ม</button>
   </div>
@@ -201,6 +202,16 @@ a{color:var(--amber)}
     <button class="nbtn pri" id="cutOk" disabled>ยืนยันตัด</button>
     <button class="nbtn" onclick="closeCut()">ไม่ตัด</button>
     <div class="nmsg" id="cutMsg" role="status"></div>
+  </div>
+</div>
+
+<div class="sheet hide" id="syncS" onclick="if(event.target===this)closeSync()">
+  <div class="sbox" role="dialog" aria-label="สั่งซิงก์เครื่องแม่">
+    <div class="shead"><b>สั่งซิงก์เครื่องแม่</b><button class="ibtn" aria-label="ปิด" onclick="closeSync()">✕</button></div>
+    <p class="ntxt">ดึงบิล/เงิน/สต๊อกจาก ACC ขึ้นระบบใหม่อีกรอบ ใช้ตอนรอบ 16:30 ไม่เข้า หรือแคชเชียร์ส่งฟอร์มไม่ได้ · เครื่องแม่จะเริ่มภายในไม่กี่นาที ใช้เวลาราว 2 นาที</p>
+    <button class="nbtn pri" id="syncOk">สั่งซิงก์</button>
+    <button class="nbtn" onclick="closeSync()">ไม่สั่ง</button>
+    <div class="nmsg" id="syncMsg" role="status"></div>
   </div>
 </div>
 
@@ -252,7 +263,7 @@ function showGate(msg,isDeny){
   $("list").innerHTML="";                          /* ไม่ทิ้งข้อความไว้บนจอเมื่อสิทธิ์หลุด */
   $("nDevs").innerHTML=""; $("notify").classList.add("hide"); $("members").classList.add("hide");
   PINS=[]; $("pinbar").classList.add("hide"); $("pinbar").textContent=""; $("pinCount").textContent="";
-  TASKS={}; CUTS={}; closeCut(); $("msg").value=""; SEND_CLIENT=null; hideMention(); closeAct(); fErr(""); syncSend();   /* ไม่ทิ้งข้อความที่พิมพ์ค้างไว้เมื่อสิทธิ์หลุด */
+  TASKS={}; CUTS={}; closeCut(); closeSync(); $("msg").value=""; SEND_CLIENT=null; hideMention(); closeAct(); fErr(""); syncSend();   /* ไม่ทิ้งข้อความที่พิมพ์ค้างไว้เมื่อสิทธิ์หลุด */
   $("gateMsg").textContent=msg||"สำหรับเจ้าของเท่านั้น · ใส่ PIN";
   $("gateOut").classList.toggle("hide",!isDeny);
   $("pinInput").classList.toggle("hide",!!isDeny); $("pinBtn").classList.toggle("hide",!!isDeny);
@@ -700,6 +711,38 @@ async function confirmCut(){
     $("msg").value=""; SEND_CLIENT=null; SEND_FOR=""; growMsg(); syncSend();
     closeCut(); await load();
   }catch(e){ console.warn("cutrequest",e); if(c.g===GEN && CUT===c){ $("cutMsg").textContent="เชื่อมต่อไม่ได้ ลองกดอีกครั้ง (ไม่ซ้ำ)"; $("cutOk").disabled=false; } }
+}
+
+/* ---------- ชั้น 4 ซิงก์ (13 พ.ย. 69): ปุ่มสั่งซิงก์เครื่องแม่ → acc_sync_request_hq() · ฐานตรวจเจ้าของ + กันกดซ้ำ ---------- */
+var SYNC_OP=0, SYNC_INFLIGHT=false;   /* SYNC_OP = เลขการเปิดแผ่นครั้งนี้ · คำตอบของครั้งก่อนห้ามเขียนทับ */
+function openSync(){
+  if(!sb) return;
+  SYNC_OP++; $("syncMsg").textContent=""; $("syncMsg").classList.remove("err");
+  $("syncOk").disabled=SYNC_INFLIGHT;   /* คำขอเก่ายังไม่ตอบ = ยังกดไม่ได้ (กันส่งซ้อน) */
+  if(SYNC_INFLIGHT) $("syncMsg").textContent="กำลังส่งคำขอก่อนหน้า…";
+  $("syncOk").onclick=confirmSync;
+  $("syncS").classList.remove("hide");
+}
+function closeSync(){ SYNC_OP++; $("syncS").classList.add("hide"); }
+async function confirmSync(){
+  if(!sb || SYNC_INFLIGHT) return;
+  var g=GEN, op=SYNC_OP; SYNC_INFLIGHT=true;
+  var mine=function(){ return g===GEN && op===SYNC_OP; };
+  var m=$("syncMsg"); $("syncOk").disabled=true; m.classList.remove("err"); m.textContent="กำลังส่งคำขอ…";
+  try{
+    var r=await sb.rpc("acc_sync_request_hq");
+    if(authErr(r.error)){ if(g===GEN){ closeSync(); showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); } return; }
+    if(!mine()) return;
+    if(r.error || !r.data || typeof r.data!=="object"){
+      m.classList.add("err"); m.textContent="ส่งไม่สำเร็จ ลองกดอีกครั้ง"; $("syncOk").disabled=false; return;
+    }
+    m.classList.toggle("err", r.data.ok!==true);
+    m.textContent=String(r.data.msg||(r.data.ok===true?"รับคำขอแล้ว":"ยังสั่งไม่ได้")).slice(0,300);   /* textContent: ข้อความจากฐานไม่ถูกตีความเป็น HTML */
+  }catch(e){ console.warn("syncrequest",e); if(mine()){ m.classList.add("err"); m.textContent="เชื่อมต่อไม่ได้ ลองกดอีกครั้ง"; $("syncOk").disabled=false; } }
+  finally{
+    SYNC_INFLIGHT=false;
+    if(op!==SYNC_OP && !$("syncS").classList.contains("hide")){ $("syncOk").disabled=false; $("syncMsg").textContent=""; }   /* เปิดแผ่นใหม่ระหว่างรอ (session เดิมหรือใหม่) → ปลดปุ่มให้แผ่นใหม่ · ไม่แสดงคำตอบเก่า */
+  }
 }
 
 /* ---------- สมาชิก ---------- */

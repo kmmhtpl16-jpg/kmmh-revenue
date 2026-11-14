@@ -117,6 +117,7 @@ table.entry input.bill{width:8.6em;font-family:var(--ui);text-transform:uppercas
 table.entry input.ra{width:9em}
 .who{font-size:.82rem;color:var(--muted);max-width:16em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who b{color:var(--ink);font-weight:600}
+.who .cnln{white-space:normal;color:var(--info);font-size:.78rem;line-height:1.3}
 /* ช่องชื่อร้านกินที่ว่างที่เหลือ ชื่อยาวตัดเป็น … (ไม่ดันตารางให้กว้างจนต้องเลื่อน) */
 table.entry td.who{width:100%;max-width:0}
 table.entry input.num{min-width:7em}
@@ -290,7 +291,7 @@ table.cpt tr.cpsum td{background:#d5fbef;font-weight:700}
   </div>
 </div>
 <script>
-let DATA={date:null,synced_at:null,bills:[],deps:[],uses:[],cns:[]};
+let DATA={date:null,synced_at:null,bills:[],deps:[],uses:[],cns:[],cns_self:[]};
 const RETAIL='66-00026';
 let YYMM='';
 const fmt=n=>(Math.round(n*100)/100).toLocaleString('th-TH',{minimumFractionDigits:Number.isInteger(Math.round(n*100)/100)?0:2,maximumFractionDigits:2});
@@ -303,7 +304,10 @@ function indexAcc(){BILL={};DEP={};USE={};CNUSE={};
   DATA.bills.forEach(b=>BILL[b[0]]={no:b[0],date:b[1],code:b[2],name:b[3],total:+b[4]});
   DATA.deps.forEach(x=>DEP[x[0]]={no:x[0],date:x[1],code:x[2],name:x[3],total:+x[4],method:x[5]});
   DATA.uses.forEach(u=>(USE[u[1]]=USE[u[1]]||[]).push({ra:u[0],amt:+u[2]}));
-  DATA.cns.forEach(c=>{if(c[2])(CNUSE[c[2]]=CNUSE[c[2]]||[]).push({cn:c[0],from:c[1],amt:+c[3]})});}
+  DATA.cns.forEach(c=>{if(c[2])(CNUSE[c[2]]=CNUSE[c[2]]||[]).push({cn:c[0],from:c[1],amt:+c[3]})});
+  /* 14 พ.ย.69 (เคสช่างเต่า KM6911-0547 · CN6911-0012): ใบลดหนี้คืนของจากบิลตัวเอง ที่ออกวันเดียวกับบิล (SQL คีย์ cns_self) = หักยอดบิลนั้น
+     ส่วนที่คืนเงินแล้ว (แถวคืนเงินเลข CN เดียวกัน) ไม่นับซ้ำ — ใช้ cnAmt ตัวเดียวกับใบลดหนี้จากบิลอื่น · กันเลข CN ซ้ำกับ cns */
+  (DATA.cns_self||[]).forEach(c=>{const no=c&&c[1];if(!no||!c[0])return;const L=(CNUSE[no]=CNUSE[no]||[]);if(L.some(x=>x.cn===c[0]))return;L.push({cn:c[0],from:no,amt:+c[2]||0,self:true})});}
 /* ACC ถือว่าครบวัน เมื่อซิงก์ตั้งแต่ 16:30 ของวันนั้น (กติกาเดียวกับหน้าตรวจรายได้ v0.4.8) */
 function accDone(){if(!DATA.synced_at||!DATA.date)return false;return new Date(DATA.synced_at).getTime()>=new Date(DATA.date+'T16:30:00+07:00').getTime()}
 function accHas(){return accDone()}
@@ -344,7 +348,7 @@ function setChip(id,cls,txt){const el=document.getElementById(id);if(!el)return;
 async function fetchAcc(date,extra){
   const r=await sb.rpc("rev_cashier_form_acc",{p_date:date,p_extra:extra||[]});
   if(r.error) throw r.error; const d=r.data||{};
-  return {date,synced_at:d.synced_at||null,bills:d.bills||[],deps:d.deps||[],uses:d.uses||[],cns:d.cns||[]};
+  return {date,synced_at:d.synced_at||null,bills:d.bills||[],deps:d.deps||[],uses:d.uses||[],cns:d.cns||[],cns_self:d.cns_self||[]};
 }
 function setAcc(d){ DATA=d; indexAcc(); }
 /* ส่งเลขอ้างอิงทั้งหมดในฟอร์มทุกครั้ง (รวม RA ของเงินสดปลีก) — ถ้าส่งเฉพาะที่ยังไม่มี ผลรอบใหม่จะแทนที่ map ทำให้บิลเก่าที่เคยโหลดหลุด */
@@ -1175,7 +1179,11 @@ function compute(){
     const dep=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);
     const cn=(CNUSE[b.no]||[]).reduce((s,x)=>s+cnAmt(x),0), cnRf=(CNUSE[b.no]||[]).reduce((s,x)=>s+x.amt-cnAmt(x),0);
     const covered=entSum+dep+cn;const rem=Math.round((b.total-covered)*100)/100;
-    const extra=[];if(dep)extra.push(`หักมัดจำ ${(USE[b.no]||[]).map(x=>x.ra).join(',')} ${fmt(dep)}`);if(cn||cnRf)extra.push(`ใช้เครดิต ${(CNUSE[b.no]||[]).map(x=>x.cn).join(',')} ${fmt(cn)}${cnRf>0.009?` (ใบลดหนี้ ${fmt(cn+cnRf)} − คืนเงิน ${fmt(cnRf)})`:''}`);
+    const extra=[];if(dep)extra.push(`หักมัดจำ ${(USE[b.no]||[]).map(x=>x.ra).join(',')} ${fmt(dep)}`);
+    /* 14 พ.ย.69: ข้อความใบลดหนี้รูปแบบเดียว (หักบิลตัวเอง / ใช้จากบิลอื่น) ให้แคชเชียร์เห็นว่าโปรแกรมหักอะไร */
+    const cnTxt=(CNUSE[b.no]||[]).length?(CNUSE[b.no].map(x=>{const c=cnAmt(x),r=r2x(x.amt-c);return c>0.009?`หักใบลดหนี้ ${x.cn} ${fmt(c)}${r>0.009?` (ใบลดหนี้ ${fmt(x.amt)} − คืนเงิน ${fmt(r)})`:''}`:`ใบลดหนี้ ${x.cn} ${fmt(x.amt)} คืนเงินแล้ว ไม่หักบิล`}).join(' · ')+' (จาก ACC)'):'';
+    if(cnTxt)extra.push(cnTxt);
+    if(cnTxt)['scash','xfer','credit','upk'].forEach(k=>S[k].forEach((r,i)=>{const o=R.rowInfo[k+':'+i];if(r.bill===b.no&&o&&o.who&&!o.cnln){o.cnln=1;o.who+=`<div class="cnln">${esc(cnTxt)}</div>`;o.full=(o.full||'')+' · '+cnTxt}}));
     const retail=b.code===RETAIL;const upk=/UPK/i.test(b.name);
     if(retail&&!upk){
       if(rem<-0.009){R.issues.push({lv:'warn',sum:true,t:`${b.no} คุณ 1 ลงรับรวม ${fmt(covered)} เกินยอดบิล ${fmt(b.total)}`,d:extra.join(' · ')})}
@@ -1303,7 +1311,7 @@ function renderTrialCards(R){
   if(amtProblems()){ const msg='<div class="big bad">มียอดที่ไม่ถูกต้อง — ยังสรุปไม่ได้ แก้ช่องสีแดง/เรื่องต้องแก้ก่อน</div>';
     ca.innerHTML='<h3>ยอดรวม ACC เทียบฟอร์ม <span class="chip bad">ยังสรุปไม่ได้</span></h3>'+msg; cx.innerHTML='<h3>เทียบกับ Excel ที่ยืนยันแล้ว <span class="chip bad">ยังสรุปไม่ได้</span></h3>'+msg; return; }
   if(!R.accOk||!R.accTot){ ca.innerHTML='<h3>ยอดรวม ACC เทียบฟอร์ม</h3><div class="small">ACC ของวันนี้ยังไม่ครบ (ซิงก์หลัง 16:30) — เลือกวันที่ผ่านมาแล้ว</div>'; }
-  else{ const a=R.accTot, b=a.box, L=[['เงินสดปลีก (ไม่รวมมัดจำ)',a.rc],['ร้านค้าเงินสด',b.scash||0],['โอน (K+NV + กสิกร)',b.xfer||0],['ลงบัญชี',b.credit||0],['UPK',b.upk||0],['บิลวันนี้ที่ลงในกล่องบิลเก่า',(b.oldc||0)+(b.oldx||0)],['หักมัดจำในบิล (ACC)',a.dep],['ใบลดหนี้ใช้เป็นเครดิต (ACC)',a.cn]].filter(x=>x[1]||x[0].startsWith('เงินสด'));
+  else{ const a=R.accTot, b=a.box, L=[['เงินสดปลีก (ไม่รวมมัดจำ)',a.rc],['ร้านค้าเงินสด',b.scash||0],['โอน (K+NV + กสิกร)',b.xfer||0],['ลงบัญชี',b.credit||0],['UPK',b.upk||0],['บิลวันนี้ที่ลงในกล่องบิลเก่า',(b.oldc||0)+(b.oldx||0)],['หักมัดจำในบิล (ACC)',a.dep],['หักใบลดหนี้ (ACC)',a.cn]].filter(x=>x[1]||x[0].startsWith('เงินสด'));
     ca.innerHTML=`<h3>ยอดรวม ACC เทียบฟอร์ม <span class="chip ${Math.abs(a.diff)<0.009?'ok':'bad'}">${Math.abs(a.diff)<0.009?'ตรง':'ไม่ตรง'}</span></h3>
      <div class="tblwrap"><table class="sum"><tbody>
      <tr><td>ยอดขายทั้งวันใน ACC (${a.n} บิล)</td><td><b>${fmt(a.tot)}</b></td></tr>

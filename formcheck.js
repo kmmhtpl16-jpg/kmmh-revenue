@@ -348,6 +348,9 @@
         else if(rem<0) line("bad","bill",no+" คุณ 1 ลงรวม "+baht(tot-rem)+" เกินยอดบิล "+baht(tot),{bill:no});
         return; }
       if(!ent.length && !depC && !cnC){ R.info.notInForm.push({bill:no,name:b.name,amt:tot}); return; }
+      /* ร้าน UPK: ยอดในกล่อง UPK ต่างจาก ACC ได้ตามปกติ — ส่วนต่าง = ราคาต้นทุนที่กิจมั่งมีโฮมจ่ายมาโฮมจริง (คุณหลิง 14 พ.ย.69) · UPK ไม่ใช่เงินสด/โอน */
+      if(rem!==0 && upk && ent.length && ent.every(function(x){ return x.src==="UPK"; }) && !usesOf(acc,no).length && !cnsOf(acc,no).length){   /* มีมัดจำ/ใบลดหนี้ผูกบิลอยู่ (แม้ยอดสุทธิเป็น 0) = ตรวจแบบเดิม */
+        line("note","upk",no+" "+(b.name||"")+" ฟอร์มลง UPK "+baht(entC)+" · ACC "+baht(tot)+" · ต่าง "+baht(Math.abs(rem))+" (ส่วนต่างราคาต้นทุนที่จ่ายมาโฮม ไม่ใช่เงินหาย)",{bill:no}); return; }
       if(rem!==0) line("bad","bill",no+" "+(b.name||"")+" บิล "+baht(tot)+" ลงรับรวม "+baht(tot-rem)+" → "+(rem>0?"ขาด ":"เกิน ")+baht(Math.abs(rem))+(how.length?" ("+how.join(" + ")+")":""),{bill:no,diff:-rem});
     });
     var rDiff=rcashC-expRetail;
@@ -397,6 +400,6 @@
     return o;
   }
 
-  var api={ checkDays:checkDays, moneyFromDaily:moneyFromDaily, accFromRpc:accFromRpc, cents:cents, baht:baht, dmy:dmy, RETAIL:RETAIL, EARLY_DAYS:EARLY_DAYS, SHORT_MAX:SHORT_MAX, version:"0.4.6" };
+  var api={ checkDays:checkDays, moneyFromDaily:moneyFromDaily, accFromRpc:accFromRpc, cents:cents, baht:baht, dmy:dmy, RETAIL:RETAIL, EARLY_DAYS:EARLY_DAYS, SHORT_MAX:SHORT_MAX, version:"0.4.7" };
   if(typeof module!=="undefined" && module.exports) module.exports=api; else root.FormCheck=api;
 })(typeof window!=="undefined"?window:this);

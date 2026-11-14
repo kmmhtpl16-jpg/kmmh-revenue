@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตรวจรายได้ (ฟอร์มเป็นตัวตั้ง) — กิจมั่งมีโฮม</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico?v=20261024">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=20261024">
+<meta name="theme-color" content="#16a34a">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="revauth.js?v=2"></script>
+<script src="formcheck.js?v=20261114d"></script>
+<script src="formcheck-load.js?v=20261114d"></script>
+<style>
+  :root{ color-scheme:light; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:#f4f4f5; color:#1c1917; font-family:"Sarabun","Segoe UI",system-ui,sans-serif; padding:20px 16px 60px; }
+  .wrap{ max-width:900px; margin:0 auto; }
+  h1{ font-size:22px; } .lead{ color:#57534e; font-size:14px; margin:6px 0 14px; line-height:1.5; }
+  .bar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px; background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:12px 14px; }
+  input[type=date]{ border:1.5px solid #d6d3d1; border-radius:8px; padding:7px 10px; font:inherit; }
+  .btn{ background:#16a34a; color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; font-weight:700; cursor:pointer; }
+  .btn.q{ background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:6px 11px; font-size:13px; }
+  .muted{ color:#78716c; font-size:13px; }
+  .day{ background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+  .day h2{ font-size:17px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .tag{ font-size:12px; font-weight:700; border-radius:999px; padding:2px 10px; }
+  .t-ok{ background:#dcfce7; color:#15803d; } .t-bad{ background:#fee2e2; color:#b91c1c; } .t-wait{ background:#fef3c7; color:#b45309; } .t-hold{ background:#e0e7ff; color:#4338ca; }
+  .old{ font-size:12px; color:#78716c; font-weight:400; }
+  ul{ list-style:none; margin-top:8px; } li{ padding:5px 0; border-top:1px dashed #e7e5e4; font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+  li.bad::before{ content:"❌ "; } li.wait::before{ content:"⏳ "; } li.hold::before{ content:"✋ "; } li.note::before{ content:"• "; color:#78716c; }
+  li.note{ color:#44403c; }
+  details{ margin-top:6px; } summary{ cursor:pointer; font-size:13px; color:#57534e; }
+  .err{ background:#fee2e2; color:#991b1b; border-radius:8px; padding:10px 12px; margin-bottom:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧾 ตรวจรายได้ — ฟอร์มแคชเชียร์เป็นตัวตั้ง <span class="muted">ช่วงทดลองคู่หน้าเดิม</span></h1>
+  <p class="lead">หน้านี้อ่านอย่างเดียว ไม่บันทึก ไม่อนุมัติ ไม่ตัดบิล · ตรวจทีละบรรทัดในฟอร์มที่ส่งแล้ว ว่าเจอเงินจริงใน K+ / สเตทเมนต์ / ใบนับเงินสด / ACC หรือไม่ · โชว์เฉพาะบรรทัดที่หาหลักฐานไม่เจอ<br><span class="muted">"ตรงครบ" = ทุกบรรทัดในฟอร์มเจอเงินจริง · ยอดค้างของบิลเก่ายังตรวจที่รอบตัดบิลตามเดิม · เช็คยังใช้ทางเดิม (คุณหลิงกดในการ์ด)</span></p>
+  <div class="bar">
+    <label>จาก <input type="date" id="from"></label>
+    <label>ถึง <input type="date" id="to"></label>
+    <button class="btn" id="go">ตรวจ</button>
+    <button class="btn q" data-q="1">เมื่อวาน</button>
+    <button class="btn q" data-q="7">7 วัน</button>
+    <span class="muted" id="status"></span>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+"use strict";
+const SB_URL="https://hfystbdqjhftrlelmkjm.supabase.co";
+const SB_KEY="sb_publishable_Cz_p8O1rAs2ohPDtnKS_BA_LYUGiw8r";
+const sb = window.supabase.createClient(SB_URL, SB_KEY,{auth:{storageKey:"sb-rev-kmmh",persistSession:true,autoRefreshToken:true}});
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const isoLocal=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function lock(msg,toLogin){
+  document.body.innerHTML='<div style="font-family:Sarabun,system-ui,sans-serif;text-align:center;padding:80px 20px"><div style="font-size:40px">🔒</div><div id="lockMsg" style="font-size:18px;margin-top:10px"></div>'
+    +(toLogin?'<a href="index.html" style="display:inline-block;margin-top:18px;padding:10px 20px;border-radius:8px;background:#1c1917;color:#fff;text-decoration:none">ไปหน้าเข้าระบบ</a>':'')+'</div>';
+  document.getElementById("lockMsg").textContent=msg;
+}
+async function gate(){
+  const r=await RevAuth.currentRole(sb);
+  if(!r){ lock("ยังไม่ได้เข้าระบบ — เข้าที่หน้าตรวจรายได้ครั้งเดียว แล้วกลับมาหน้านี้ได้เลย",true); return false; }
+  if(r!=="owner"){ lock(RevAuth.DENY_MSG+" (เฉพาะเจ้าของ)"); return false; }
+  return true;
+}
+const TAG={ok:["t-ok","✅ ตรงครบ"],bad:["t-bad","❌ ไม่ตรง"],wait:["t-wait","⏳ รอข้อมูล"],hold:["t-hold","✋ พักให้คุณหลิงดู"]};
+function thDate(iso){ const p=iso.split("-"); return p[2]+"/"+p[1]+"/"+(+p[0]+543); }
+function render(days, results){
+  const meta={}; days.forEach(d=>meta[d.date]=d);
+  const shown=results.filter(r=>meta[r.date]&&meta[r.date].shown).reverse();
+  if(!shown.length) return '<div class="day muted">ไม่มีฟอร์มที่ส่งแล้วในช่วงนี้</div>';
+  return shown.map(r=>{ const m=meta[r.date], t=TAG[r.status]||TAG.bad;
+    const li=r.lines.map(l=>`<li class="${esc(l.lv)}">${esc(l.text)}</li>`).join("");
+    const notes=r.notes.length?`<details${r.status!=="ok"?"":" open"}><summary>บรรทัดที่ผ่านตามกฎ แต่ให้ดูประกอบ (${r.notes.length})</summary><ul>${r.notes.map(l=>`<li class="note">${esc(l.text)}</li>`).join("")}</ul></details>`:"";
+    const nif=r.info.notInForm, um=r.info.unusedMoney;
+    const info=(nif.length||um.length)?`<details><summary>ข้อมูลประกอบ (ไม่นับเป็นผิด): บิลใน ACC ที่ไม่อยู่ในฟอร์ม ${nif.length} · เงินที่ไม่มีใครลง ${um.length}</summary><ul>`
+      +nif.map(x=>`<li class="note">บิล ${esc(x.bill)} ${esc(x.name)} ${FormCheck.baht(x.amt)} ไม่อยู่ในฟอร์ม</li>`).join("")
+      +um.map(x=>`<li class="note">${x.ch==="kp"?"K+":"กสิกร"} ${FormCheck.baht(Math.round(x.amt*100))}${x.t?" "+esc(String(x.t).slice(11,16)):""} ${esc(x.who||"")}</li>`).join("")+`</ul></details>`:"";
+    const part=m.bankPartial?`<div class="muted">สเตทเมนต์วันนี้ยังไม่ครบวัน (ดึงถึง ${esc(m.bankPartial)})</div>`:"";
+    return `<div class="day"><h2>${thDate(r.date)} <span class="tag ${t[0]}">${t[1]}</span><span class="old">หน้าเดิม: ${esc(m.oldStatus||"ยังไม่ตรวจ")}</span></h2>${part}${li?`<ul>${li}</ul>`:""}${notes}${info}</div>`;
+  }).join("");
+}
+let BUSY=false;
+async function run(){
+  if(BUSY) return; const st=document.getElementById("status"), out=document.getElementById("out");
+  let from=document.getElementById("from").value, to=document.getElementById("to").value;
+  if(!from||!to){ st.textContent="เลือกช่วงวันก่อน"; return; } if(from>to){ const x=from; from=to; to=x; }
+  BUSY=true; st.textContent="กำลังตรวจ…";
+  try{
+    const D=await FormCheckLoad(sb,from,to);
+    const R=FormCheck.checkDays(D.days,D.shared);
+    out.innerHTML=render(D.days,R); st.textContent="ตรวจแล้ว "+new Date().toLocaleTimeString("th-TH")+" · ตัวตรวจ v"+FormCheck.version+" · ไล่ตรวจตั้งแต่ฟอร์มวันที่ "+thDate(D.range.loadedFrom)+" (ไล่ตั้งแต่ฟอร์มแรกทุกครั้ง เพื่อกันเงินก้อนเดียวถูกใช้ซ้ำ)";
+  }catch(e){ out.innerHTML=`<div class="err">ตรวจไม่สำเร็จ: ${esc(e&&e.message||e)}</div>`; st.textContent=""; }
+  BUSY=false;
+}
+function quick(n){ const t=new Date(); t.setDate(t.getDate()-1); const to=isoLocal(t); const f=new Date(t); f.setDate(f.getDate()-(n-1));
+  document.getElementById("from").value=isoLocal(f); document.getElementById("to").value=to; run(); }
+(async()=>{ if(!(await gate())) return;
+  document.getElementById("go").onclick=run;
+  document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>quick(+b.dataset.q));
+  quick(7);
+})();
+</script>
+</body>
+</html>

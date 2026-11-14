@@ -178,9 +178,9 @@
     var X=[];
     function codeOf(no){ var b=billOf(no); if(b) return b.code; var dp=depOf(no); return dp?dp.code:""; }
     function nameOf(no){ var b=billOf(no); if(b) return b.name||""; var dp=depOf(no); return dp?(dp.name||""):""; }
-    rows("xfer").forEach(function(r){ var no=normBill(r.bill);
-      if(cents(r.kp)) X.push({bill:no, c:cents(r.kp), chs:["kp"], src:"โอน K+"});
-      if(cents(r.ks)) X.push({bill:no, c:cents(r.ks), chs:["ks"], src:"โอนกสิกร"}); });
+    rows("xfer").forEach(function(r){ var no=normBill(r.bill), both=!!(cents(r.kp)&&cents(r.ks));   /* both = แถวเดียวระบุสองบัญชี (ห้ามใช้กฎเลือกบัญชีผิด) */
+      if(cents(r.kp)) X.push({bill:no, c:cents(r.kp), chs:["kp"], src:"โอน K+", split:both});
+      if(cents(r.ks)) X.push({bill:no, c:cents(r.ks), chs:["ks"], src:"โอนกสิกร", split:both}); });
     rows("oldx").forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt); if(!c) return;
       if(r.chq){ line("hold","xfer","บิลเก่า "+no+" "+baht(c)+" จ่ายด้วยเช็ค — หน้านี้ไม่ตรวจเช็ค ให้คุณหลิงกดในการ์ดตามทางเดิม",{bill:no}); return; }
       var chs=r.ch==="kplus"?["kp"]:r.ch==="ksk"?["ks"]:["kp","ks"];
@@ -298,6 +298,12 @@
     X.forEach(function(x){ if(!x.done && !x.defer && !isRA(x.bill)) shortTry([x]); });
     var G2={}; X.forEach(function(x){ if(x.done||x.defer||!x.code||x.code===RETAIL||isRA(x.bill)) return; var k=x.code+"|"+x.chs.join(","); (G2[k]=G2[k]||[]).push(x); });
     Object.keys(G2).forEach(function(k){ if(G2[k].length>1) shortTry(G2[k]); });
+    /* 3e2) เลือกบัญชีผิด (คุณหลิงเคาะ 14 พ.ย.69): ระบุบัญชีเดียว แต่เจอยอดเดียวกันในอีกบัญชี "วันเดียวกัน" ที่ยังไม่มีใครใช้ → ผ่าน + แสดงบรรทัด
+       ทำหลังจับคู่ปกติครบทุกแบบแล้ว (ก้อนที่บรรทัดอื่นใช้จริงถูกกันไปก่อน) · ไม่ใช้กับเงินวันก่อน/หลัง */
+    X.forEach(function(x){ if(x.done||x.defer||x.split||x.chs.length!==1) return; var alt=x.chs[0]==="kp"?"ks":"kp";
+      var m=ctx.pool.list([alt],dn,false).filter(function(q){ return q.c===x.c; })[0]; if(!m) return;
+      ctx.pool.take(m,"wrong-acct:"+(x.bill||x.src));
+      done(x, lbl(x)+" — ฟอร์มเลือก"+(x.chs[0]==="kp"?"K+":"กสิกร")+" แต่เงินเข้า"+(alt==="kp"?"K+":"กสิกร")+" วันเดียวกัน"+(m.who?" ("+m.who+")":"")+" — ผ่าน (เลือกบัญชีผิด)", "note"); });
     settleTodayRA();
     X.forEach(function(x){ if(!x.defer||x.done) return; var ras=x.defer; x.defer=null;
       var bad=ras.filter(function(ra){ return !raVerify(ra); });
@@ -400,6 +406,6 @@
     return o;
   }
 
-  var api={ checkDays:checkDays, moneyFromDaily:moneyFromDaily, accFromRpc:accFromRpc, cents:cents, baht:baht, dmy:dmy, RETAIL:RETAIL, EARLY_DAYS:EARLY_DAYS, SHORT_MAX:SHORT_MAX, version:"0.4.7" };
+  var api={ checkDays:checkDays, moneyFromDaily:moneyFromDaily, accFromRpc:accFromRpc, cents:cents, baht:baht, dmy:dmy, RETAIL:RETAIL, EARLY_DAYS:EARLY_DAYS, SHORT_MAX:SHORT_MAX, version:"0.4.10" };
   if(typeof module!=="undefined" && module.exports) module.exports=api; else root.FormCheck=api;
 })(typeof window!=="undefined"?window:this);

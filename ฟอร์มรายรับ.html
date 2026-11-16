@@ -409,7 +409,7 @@ async function loadDay(date){
     const [f,o,rf,pf]=await Promise.all([
       sb.from("rev_cashier_form").select("*").eq("date",date).maybeSingle(),
       sb.from("rev_cash_other").select("id,item,amount,channel").eq("date",date).order("id"),
-      sb.from("rev_cash_refund").select("id,bill_no,cn_no,amount,pay,kind,cn_manual").eq("date",date).order("id"),
+      sb.from("rev_cash_refund").select("id,bill_no,cn_no,amount,pay,kind,cn_manual,ra_no").eq("date",date).order("id"), /* 16 พ.ย.69: ดึงเลข RA ของแถว "เก็บเป็นมัดจำ" ด้วย (เดิมไม่ดึง → เปิดหน้าใหม่ช่อง RA ว่าง) */
       sb.from("rev_cash_proof").select("amount,image_path,counts").eq("date",date).maybeSingle()]);
     if(tok!==_loadTok) return;
     /* ตารางไหนโหลดไม่ได้ = หยุด ไม่ถือว่า "ไม่มีรายการ" (ไม่งั้นคืนเงิน/รายรับอื่นเป็น 0 แล้วเงินสดนำส่งผิด) */

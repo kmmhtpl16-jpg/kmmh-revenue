@@ -848,7 +848,7 @@ function exCheckRefund(r,i,amt,op,dp,bill,cn){
   if(!EXO.bills) return {ok:false,unk:true,lv:'warn',t:'ตรวจยอดบิลกับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
   const b=EXO.bills.find(z=>z.no===bill);
   if(!b) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินได้เฉพาะบิลของวันนี้ — ถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
-  const got=r2x(S.xfer.filter(x=>normBill(x.bill)===bill).reduce((s,x)=>s+num(x.kp)+num(x.ks),0)), need=r2x(+b.out||0), exc=r2x(got-need);
+  const got=r2x(S.xfer.filter(x=>normBill(x.bill)===bill).reduce((s,x)=>s+num(x.kp)+num(x.ks),0)), need=r2x(+(b.due!=null?b.due:b.out)||0), exc=r2x(got-need); /* 16 พ.ย.69: เทียบยอดบิลก่อนตัดใบเสร็จ (due) — บิลที่ตัดแล้วยอดค้าง (out) = 0 ทำให้เงินโอนทั้งก้อนกลายเป็น "เกิน" */
   if(!(got>0)) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินแล้ว แต่บิลนี้ไม่อยู่ในแท็บโอน — ลงบิลในแท็บโอนก่อน หรือถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
   if(exc<=0.5) return {ok:false,lv:'bad',t:`บิลนี้ไม่ได้โอนเกิน (โอน ${fmt(got)} · บิล ${fmt(need)})`};
   if(Math.abs(amt-exc)>1) return {ok:false,lv:'bad',t:`ลูกค้าโอนเกินแค่ ${fmt(exc)} (โอน ${fmt(got)} − บิล ${fmt(need)})`};

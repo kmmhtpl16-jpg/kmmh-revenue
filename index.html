@@ -3260,7 +3260,7 @@ function rfRender(st){
     if(x.kind==="cn"){ if(!o) why.push("รอ ACC ยืนยันใบลดหนี้ (ซิงก์ประมาณ 16:30)"); else if(x.bill_no!==o.bill && x.bill_no!==o.bill2) why.push("ใบลดหนี้นี้ใน ACC ผูกบิล "+[o.bill,o.bill2].filter(Boolean).join(" / ")+" ไม่ใช่บิลนี้");
       const _ra=raOfCn[x.cn_no]; if(_ra && Math.abs((+x.amount||0)-(+_ra.amt||0))>0.5) why.push("CN นี้เข้ามัดจำ "+_ra.ra+" "+n0(+_ra.amt)+" — ลงคืนสดต้องเท่ากับยอดมัดจำ");
       const _cap=rfCnCap(st,o,x); if(_cap&&!_cap.known) why.push("CN นี้ใช้จ่ายบิล "+_cap.bill+" ด้วย — ดึงยอดบิลนั้นไม่ได้ ตรวจยอดคืนไม่ได้ (เปิดใหม่)"); if(_cap&&_cap.known&&(+x.amount||0)>_cap.left+0.01) why.push("CN นี้ใช้จ่ายบิล "+String(_cap.bill).slice(-4)+" ยอด "+n0(_cap.used)+" แล้ว → คืนได้แค่ "+n0(_cap.left)+" (ลงไว้ "+n0(+x.amount)+")"); }
-    else { const b=st.bills.find(function(z){ return z.no===x.bill_no; }); const got=rfGot(x.bill_no), need=b? Math.round((+b.out||0)*100)/100 : null;
+    else { const b=st.bills.find(function(z){ return z.no===x.bill_no; }); const got=rfGot(x.bill_no), need=b? Math.round((+(b.due!=null?b.due:b.out)||0)*100)/100 : null; /* 16 พ.ย.69: ยอดบิลก่อนตัดใบเสร็จ */
       if(!(b && Math.abs(got-need-(+x.amount))<=1)) why.push("ยอดเงินไม่ตรงส่วนที่โอนเกิน"+(b?" (ชีตโอน "+n0(got)+" · บิล "+n0(need)+")":"")); }
     if(x.pay==="transfer" && !takeWd(+x.amount)) why.push("ยังไม่เจอเงินโอนคืน "+n0(+x.amount)+" ในสเตทเมนต์");
     if(why.length){ bad=true; rowBad=true; }
@@ -3332,7 +3332,7 @@ async function rfSave(id){
     if(o){ if(bill!==o.bill && bill!==o.bill2){ alert("ใบลดหนี้ "+x.cn_no+" ใน ACC ผูกบิล "+[o.bill,o.bill2].filter(Boolean).join(" / ")); return; }
       if(amt>(+o.amt)+0.01){ alert("ยอดเงินเกินใบลดหนี้ "+x.cn_no+" ("+TH(+o.amt)+")"); return; }
       const cap=rfCnCap(st,o,x); if(cap&&!cap.known){ alert(x.cn_no+" ใช้จ่ายบิล "+cap.bill+" ด้วย แต่ดึงยอดบิลนั้นไม่ได้\nปิดแล้วเปิดใหม่ก่อนแก้"); return; } if(cap&&amt>cap.left+0.01){ alert(x.cn_no+" ใช้จ่ายบิล "+cap.bill+(cap.multi?" (รวมใบลดหนี้อื่นที่จ่ายบิลเดียวกัน)":"")+" ยอด "+TH(cap.used)+" แล้ว\nคืนได้แค่ "+TH(cap.left)); return; } } }
-  else { const b=st.bills.find(function(z){ return z.no===bill; }); const got=rfGot(bill), need=b?Math.round((+b.out||0)*100)/100:null, exc=need==null?null:Math.round((got-need)*100)/100;
+  else { const b=st.bills.find(function(z){ return z.no===bill; }); const got=rfGot(bill), need=b?Math.round((+(b.due!=null?b.due:b.out)||0)*100)/100:null, exc=need==null?null:Math.round((got-need)*100)/100;
     if(exc==null||exc<=0.5){ alert("บิล "+bill+" ไม่ได้โอนเกิน — คืนเพราะโอนเกินได้เฉพาะบิลที่ลูกค้าโอนเกิน"); return; }
     if(Math.abs(amt-exc)>1){ alert("ลูกค้าโอนเกินแค่ "+TH(exc)+"\nกรอก "+TH(amt)+" ไม่ได้"); return; } }
   if(!confirm("แก้รายการคืนเงินของวันที่ "+beDate(date)+"\n"+x.bill_no+(x.cn_no?" · "+x.cn_no:"")+" "+TH(+x.amount)+" "+(x.pay==="transfer"?"โอนคืน":"สด")+"\n→ "+bill+" "+TH(amt)+" "+(pay==="transfer"?"โอนคืน":"สด")+"\nใช่ไหม?")) return;
@@ -3376,7 +3376,7 @@ async function rfAdd(){
     if(!/^KM\d{4}-\d{4}$/.test(bill)){ alert("ใส่เลขบิลที่ลูกค้าโอนเกิน (เช่น KM6910-0770)"); return; }
     const b=st.bills.find(function(z){ return z.no===bill; });
     if(!b){ alert("ไม่พบบิล "+bill+" ในบิลของวันที่ "+beDate(date)); return; }
-    const got=rfGot(bill), need=Math.round((+b.out||0)*100)/100, exc=Math.round((got-need)*100)/100;
+    const got=rfGot(bill), need=Math.round((+(b.due!=null?b.due:b.out)||0)*100)/100, exc=Math.round((got-need)*100)/100;
     if(!(got>0)){ alert("บิล "+bill+" ไม่มีในชีตโอนของวันนี้ — คืนเพราะโอนเกินได้เฉพาะบิลที่ลูกค้าโอน"); return; }
     if(exc<=0.5){ alert("บิล "+bill+" ไม่ได้โอนเกิน\nชีตโอน "+TH(got)+" · ยอดบิล "+TH(need)); return; }
     if(!(amt>0)){ alert("ใส่ยอดเงิน"); return; }

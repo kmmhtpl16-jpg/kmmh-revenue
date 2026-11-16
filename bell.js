@@ -8,6 +8,7 @@
      2) เงินโอนเข้ารอจับคู่                      (ทุกคน)
      3) วันที่ยังตรวจไม่ครบ (ย้อนหลัง 30 วัน)     (ทุกคน)
      4) เงินที่ลงฟอร์มแต่ไม่เข้าบัญชี/K+ ของร้าน ยังไม่ติดธง+แนบสลิป (ทุกคน)
+     7) มัดจำที่ ACC ยกเลิกการเตือน แต่ยังไม่เจอเงินคืนตรงยอด (เจ้าของ/การเงิน · 16 พ.ย.69)
 
    ตัวกรอง: rev_bell_ignore = รายการเงินออกที่ไม่ต้องเตือน (โอนเข้าบัญชีตัวเอง/เงินเดือนที่ลงทางอื่น)
      kind="exact"   → เทียบ exp_date|amount|ref แบบเป๊ะ (ซ่อนรายการเดียว)
@@ -290,7 +291,7 @@
       S.from("rev_audit").select("date,status,fk:detail->>form_knv,fks:detail->>form_ksk,xfer:detail->xfer,cns:detail->cns,lti:detail->kplus_late_items,ov:detail->gap_override").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_daily").select("date,kplus_total,kplus_rows,bank_dep_total,bank_kplus_settle,bank_rows").gte("date",shiftISO(today,-(GAP_DAYS+1))).lte("date",today),
       S.from("rev_pending").select("date,amount,source,ref,status,matched_bill_no").gte("date",shiftISO(today,-(GAP_DAYS+31))),
-      S.from("rev_deposits").select("deposit_no,customer,status,amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61))),      /* คืนเงินสดที่ยังไม่มีที่มา — ดึงเฉพาะวันที่มีคืนเงินจริง (กัน egress บาน) */      S.from("rev_audit").select("date,status,machine_net,form_main,form_upk,form_refund,cn_total,ex:detail->ex,cns:detail->cns").gt("form_refund",0).gte("date",refFromISO(today)).lte("date",today), S.from("rev_pending").select("date,amount,status,matched_bill_no,cn_no").eq("status","matched").ilike("matched_bill_no","%คืนเงิน%").gte("date",refFromISO(today)).lte("date",today), /* v0.5.7: กล่องคืนเงิน (แคชเชียร์ลงต่อ CN) ก็เป็นที่มาของคืนเงินสด — ฟอร์มใหม่ไม่มีชีตใบลดหนี้ */ S.from("rev_cash_refund").select("date,amount,pay").gte("date",refFromISO(today)).lte("date",today)
+      S.from("rev_deposits").select("deposit_no,customer,status,amount,used_amount,received_date,matched_bill_no").gte("received_date",shiftISO(today,-(GAP_DAYS+61))),      /* คืนเงินสดที่ยังไม่มีที่มา — ดึงเฉพาะวันที่มีคืนเงินจริง (กัน egress บาน) */      S.from("rev_audit").select("date,status,machine_net,form_main,form_upk,form_refund,cn_total,ex:detail->ex,cns:detail->cns").gt("form_refund",0).gte("date",refFromISO(today)).lte("date",today), S.from("rev_pending").select("date,amount,status,matched_bill_no,cn_no").eq("status","matched").ilike("matched_bill_no","%คืนเงิน%").gte("date",refFromISO(today)).lte("date",today), /* v0.5.7: กล่องคืนเงิน (แคชเชียร์ลงต่อ CN) ก็เป็นที่มาของคืนเงินสด — ฟอร์มใหม่ไม่มีชีตใบลดหนี้ */ S.from("rev_cash_refund").select("date,amount,pay").gte("date",refFromISO(today)).lte("date",today).neq("pay","deposit") /* 16 พ.ย.69: เก็บเป็นมัดจำ ไม่ใช่เงินคืน */
     ]);
     var dailies=(q[0]&&q[0].data)||[], exps=(q[1]&&q[1].data)||[], pends=(q[2]&&q[2].data)||[], audits=(q[3]&&q[3].data)||[], igns=(q[4]&&q[4].data)||[];
     var gAud=(q[5]&&q[5].data)||[], gDay=(q[6]&&q[6].data)||[], gPend=(q[7]&&q[7].data)||[], gDep=(q[8]&&q[8].data)||[];    var gRef=(q[9]&&q[9].data)||[]; var gRefP=(q[10]&&q[10].data)||[]; var gRefBox=(q[11]&&q[11].data)||[];
@@ -425,8 +426,35 @@
       }
     }catch(e){ console.warn("bell cheque", e); } }
 
+    /* 7) มัดจำที่ ACC ติ๊ก "ยกเลิกการเตือน" แต่ยังไม่เจอเงินคืนตรงยอด (16 พ.ย.69 คุณหลิง) — การเงิน/เจ้าของ
+       ฐานจับคู่กับรายจ่ายหมวด "โอนเงินคืนลูกค้า" ให้เอง (±1) · เจอ = คืนแล้ว ไม่เตือน · ไม่เจอ = เตือน + ปุ่มยืนยันคืนแล้ว · ยังไม่รัน SQL = ข้ามเงียบ */
+    if(sees.exp){ try{
+      var dn=await S.rpc("rev_deposit_noshow_status");
+      var dMiss=(!dn.error && Array.isArray(dn.data))? dn.data.filter(function(x){ return x && (x.state==="missing"||x.state==="maybe") && /^RA\d{4}-\d{4}$/.test(String(x.ra||"")); }) : [];
+      if(dMiss.length){
+        out.push({ key:"depret", icon:"🏷️",
+          title:"ยกเลิกเตือนมัดจำแล้ว แต่ยังไม่เจอเงินคืน "+dMiss.length+" ใบ",
+          sub:"รวม "+TH(dMiss.reduce(function(s,x){ return s+num(x.remain); },0))+" บาท · ACC ติ๊กยกเลิกการเตือน = คืนเงินลูกค้าแล้ว — ลงรายจ่ายหมวด \"โอนเงินคืนลูกค้า\" ยอดเท่าคงเหลือ หรือกดยืนยันคืนแล้ว",
+          items:dMiss.slice(0,8).map(function(x){ return esc(x.ra)+" "+esc(x.name||"")+" · คงเหลือ "+TH(x.remain)+(x.state==="maybe"&&x.expense? " · พบรายจ่ายโอนคืนยอดใกล้เคียง "+beDate(x.expense.date)+" (ไม่มีเลข RA) รอยืนยัน" : "")+
+            ' <button class="bbtn" style="padding:2px 8px;font-size:12px" onclick="__bellDepOk(\''+x.ra+'\')">ยืนยันคืนแล้ว</button>'; }),
+          raw:true, more:Math.max(0,dMiss.length-8), btn:null, act:null });
+      }
+    }catch(e){ console.warn("bell depret", e); } }
+
     return out;
   }
+  /* ปุ่ม "ยืนยันคืนแล้ว" — วันที่คืนไม่บังคับ · ผู้ยืนยัน = บทบาทจาก session (ฐานประทับเอง) · สิทธิ์ = เจ้าของ/การเงิน (ฐานกันอีกชั้น) */
+  window.__bellDepOk=async function(ra){
+    if(!/^RA\d{4}-\d{4}$/.test(String(ra||""))) return;
+    var v=prompt("ยืนยันว่าคืนเงินมัดจำ "+ra+" ให้ลูกค้าแล้ว\nวันที่คืน (เว้นว่างได้) เช่น 28/3/69 หรือ 2026-03-28", "");
+    if(v===null) return;
+    v=String(v).trim(); var d=null, m;
+    if(v){ if((m=v.match(/^(20\d{2})-(\d{2})-(\d{2})$/))) d=v;
+      else if((m=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/))){ var y=+m[3]; y= y<100? y+2500-543 : (y>2400? y-543 : y); d=y+"-"+String(+m[2]).padStart(2,"0")+"-"+String(+m[1]).padStart(2,"0"); }
+      if(!d || isNaN(new Date(d+"T00:00:00Z")) || new Date(d+"T00:00:00Z").toISOString().slice(0,10)!==d){ alert("วันที่ไม่ถูกต้อง — ลองใหม่ (เช่น 28/3/69)"); return; } }
+    try{ var r=await SB().from("rev_deposit_return_ok").upsert([{ra_no:ra, returned_on:d, note:"ยืนยันจากกระดิ่ง"}],{onConflict:"ra_no"}); if(r.error) throw r.error; run(); }
+    catch(e){ alert("บันทึกไม่สำเร็จ: "+((e&&e.message)||e)); }
+  };
 
   function render(groups){
     var body=document.getElementById("bellBody"), dot=document.getElementById("bellDot"), btn=document.getElementById("bellBtn");

@@ -170,7 +170,7 @@ async function load(){
   let cnx={}; try{ const r=await sb.rpc("rev_cn_explain",{p_from:lo,p_to:hi}); if(r&&r.data) cnx=r.data; }catch(_e){}
   /* v0.7.9 (28 ต.ค.69): คืนเงินของวันที่มีแถวในกล่องคืนเงิน = ยอดในกล่องตอนนี้ (สูตรเดียวกับหน้ารายละเอียดวัน) · อ่านไม่ได้ = ใช้ค่าที่เก็บตอนยืนยันแบบเดิม */
   /* วันที่ใช้กล่องคืนเงินแล้ว (ตั้งแต่ 19 ต.ค.69 = REFUND_FROM ใน cutbill.js) ไม่มีแถว = คืนเงิน 0 */
-  const RF_FROM="2026-10-19"; let rfBox={}, rfBoxOk=false; try{ const r=await sb.from("rev_cash_refund").select("date,amount",{count:"exact"}).gte("date",lo).lte("date",hi); /* ได้ไม่ครบ (เกินเพดานแถวต่อครั้ง) = ไม่ใช้ ใช้ค่าที่เก็บแบบเดิม (Codex r2 #3) */ if(r&&!r.error&&(r.count==null||r.count<=(r.data||[]).length)){ rfBoxOk=true; (r.data||[]).forEach(x=>{ rfBox[x.date]=Math.round(((rfBox[x.date]||0)+(parseFloat(x.amount)||0))*100)/100; }); } }catch(_e){}
+  const RF_FROM="2026-10-19"; let rfBox={}, rfBoxOk=false; try{ const r=await sb.from("rev_cash_refund").select("date,amount",{count:"exact"}).gte("date",lo).lte("date",hi).neq("pay","deposit"); /* 16 พ.ย.69: เก็บเป็นมัดจำ ไม่ใช่เงินคืน */ /* ได้ไม่ครบ (เกินเพดานแถวต่อครั้ง) = ไม่ใช้ ใช้ค่าที่เก็บแบบเดิม (Codex r2 #3) */ if(r&&!r.error&&(r.count==null||r.count<=(r.data||[]).length)){ rfBoxOk=true; (r.data||[]).forEach(x=>{ rfBox[x.date]=Math.round(((rfBox[x.date]||0)+(parseFloat(x.amount)||0))*100)/100; }); } }catch(_e){}
   st.textContent="";
   document.getElementById("rangeLbl").textContent="("+beDate(lo)+(lo!==hi?" – "+beDate(hi):"")+")";
   const audit=a.data||[], daily=d.data||[];

@@ -26,9 +26,20 @@
     var RF={on:!!D.refundOn, by:{}, prob:{}, ovUsed:{}, gate:null, xfer:0, sum:0, rows:(D.refunds||[]), photo:!!D.refundPhoto};
     if(RF.on){
       var wdP=(D.refundWd||[]).slice(), cnT={};
-      RF.rows.forEach(function(x){ var bn=String(x.bill_no||"").trim(), a=r2(x.amount); var e=RF.by[bn]=RF.by[bn]||{cn:0,own:0,ov:0,cns:[],pay:{}};
-        if(x.kind==="overpay") e.ov=r2(e.ov+a); else { e.cn=r2(e.cn+a); if(x.cn_no && e.cns.indexOf(x.cn_no)<0) e.cns.push(x.cn_no); e.pay[x.pay==="transfer"?"transfer":"cash"]=1; }
-        RF.sum=r2(RF.sum+a);
+      /* v0.10.4 (16 พ.ย.69 คุณหลิง): แถว "เก็บเป็นมัดจำ" (pay deposit + RA) ไม่ใช่เงินออกจากลิ้นชัก ไม่ใช่โอนคืน → ไม่นับใน RF.sum / โอนคืน
+         แต่ยังอธิบายส่วนเกินของบิลเหมือนคืนเงิน: ใบลดหนี้ → e.cn/e.own (เงินที่ลูกค้าจ่ายเต็ม) · โอนเกิน → e.dov · เงินสดเกิน → e.dco (เงินสดในลิ้นชักมากกว่ายอดค้าง) */
+      RF.rows.concat(D.refundDeps||[]).forEach(function(x){ var bn=String(x.bill_no||"").trim(), a=r2(x.amount); var e=RF.by[bn]=RF.by[bn]||{cn:0,own:0,ov:0,dov:0,dco:0,ras:[],cns:[],pay:{}};
+        var dp=(x.pay==="deposit");
+        if(dp){ var rv=(D.raValid||{})[x.ra_no]; if(x.ra_no && e.ras.indexOf(x.ra_no)<0) e.ras.push(x.ra_no);
+          if(!rv) RF.prob[bn]="รอ ACC ยืนยันใบรับมัดจำ "+(x.ra_no||"");
+          else if(Math.abs(num(rv.total)-a)>1) RF.prob[bn]="เก็บเป็นมัดจำ "+TH(a)+" ไม่เท่ายอดใบรับมัดจำ "+x.ra_no+" ("+TH(rv.total)+")";
+          else { var bb=(D.bills||[]).filter(function(z){ return z.no===bn; })[0], nk=function(v){ return String(v||"").replace(/\s+/g," ").trim(); }; /* r2 Codex #2: ชื่อลูกค้า RA ต้องตรงบิล (ไม่พึ่งหน้าฟอร์ม) */
+            if(!bb) RF.prob[bn]="หาบิล "+bn+" ไม่เจอ — ตรวจใบรับมัดจำ "+x.ra_no+" กับลูกค้าไม่ได้";
+            else if(nk(bb.name)!==nk(rv.name)) RF.prob[bn]="ใบรับมัดจำ "+x.ra_no+" เป็นของ "+nk(rv.name)+" ไม่ใช่ลูกค้าบิลนี้"; } }
+        if(x.kind==="overpay"){ if(dp) e.dov=r2(e.dov+a); else e.ov=r2(e.ov+a); }
+        else if(x.kind==="cashover"){ e.dco=r2(e.dco+a); }
+        else { e.cn=r2(e.cn+a); if(x.cn_no && e.cns.indexOf(x.cn_no)<0) e.cns.push(x.cn_no); e.pay[dp?"deposit":x.pay==="transfer"?"transfer":"cash"]=1; }
+        if(!dp) RF.sum=r2(RF.sum+a);
         if(x.pay==="transfer"){ RF.xfer=r2(RF.xfer+a); if(!take(wdP,a)) RF.prob[bn]="ยังไม่เจอเงินโอนคืน "+TH(a)+" ในสเตทเมนต์"; }
         if(x.kind==="cn"){ var cv=(D.cnValid||{})[x.cn_no];
           if(!(cv && cv.bill && bn!==cv.bill && bn===cv.bill2)) e.own=r2(e.own+a); /* v0.9.12 ใบลดหนี้ของบิลนี้เอง (ไม่รู้ = นับแบบเดิม ด่าน RF.prob กันอยู่แล้ว) · ใบลดหนี้บิลอื่นมาหักบิลนี้ = เงินทอน ไม่ใช่เงินสดที่ลูกค้าจ่าย */
@@ -70,7 +81,10 @@
        ส่วนที่จ่ายเกินยอดค้าง = เงินสดที่คืนตามใบลดหนี้ (ช่อง "คืนสดจริง" ในตารางคุม CN) ไม่ใช่เงินเกิน · เคส 0386 กราเซีย / 0402 มีคุณ 12 ต.ค.69 */
     function cnBack(b){ var c=RF.on? num((RF.by[b.no]||{}).cn) : num((D.cnCash||{})[b.no]); var red=r2(num(b.tot)-num(b.out)); if(!(c>0.5)||!(red>0.5)) return 0; return r2(Math.min(c,red)); }
     function cnNos(b){ var L=RF.on? ((RF.by[b.no]||{}).cns||[]) : []; return L.length? " ("+L.join(", ")+")" : ""; }
-    function cnLbl(b){ var p=RF.on? ((RF.by[b.no]||{}).pay||{}) : {}; return p.transfer&&!p.cash? "โอนคืน" : p.transfer&&p.cash? "คืนสด/โอนคืน" : "คืนสด"; }
+    function cnLbl(b){ var p=RF.on? ((RF.by[b.no]||{}).pay||{}) : {}; if(p.deposit&&!p.cash&&!p.transfer) return "เก็บเป็นมัดจำ"; return (p.transfer&&!p.cash? "โอนคืน" : p.transfer&&p.cash? "คืนสด/โอนคืน" : "คืนสด")+(p.deposit?"/เก็บเป็นมัดจำ":""); }
+    /* v0.10.4: เงินสดเกินที่เก็บเป็นมัดจำ — ลูกค้าจ่ายเงินสดมากกว่ายอดบิล ส่วนเกินอยู่ในลิ้นชัก (นับในเงินสดฟอร์มแล้ว) */
+    function dcoOf(b){ return RF.on? num((RF.by[b.no]||{}).dco) : 0; }
+    function rasOf(b){ var L=RF.on? ((RF.by[b.no]||{}).ras||[]) : []; return L.length? " "+L.join(", ") : ""; }
     function takePre(bill,amt){ var L=pre[bill]||[]; var i=L.findIndex(function(x){ return Math.abs(num(x.amt)-amt)<=1; }); if(i<0) return null; return L.splice(i,1)[0]; }
     (D.bills||[]).forEach(function(b){
       b.out=r2(b.out); b.dep=r2(b.dep); b.retail=(b.cus===RETAIL_CUS);
@@ -101,6 +115,7 @@
       if(inAcct || inFc){ R.s.push({b:b,why:"ลงบัญชี "+TH(b.out)+" — ตัดเมื่อลูกค้าจ่ายจริง"+(b.dep>0?" · หักมัดจำแล้ว "+TH(b.dep):"")}); return; }
       if(!b.retail && (D.acct||[]).some(function(n){ return nameHit(n,b.name); })){ R.s.push({b:b,why:"ลงบัญชี — ตัดเมื่อลูกค้าจ่ายจริง"}); return; }
       var xs=(D.xfer||[]).filter(function(x){ return x.bill===b.no && !x.ra; });
+      if(xs.length && dcoOf(b)>0.5){ R.h.push({b:b, why:"เงินสดเกิน "+TH(dcoOf(b))+" เก็บเป็นมัดจำ"+rasOf(b)+" แต่บิลนี้มีเงินโอนด้วย — ต้องตรวจเอง"}); return; } /* r3 Codex r2 #4: รับผสม ไม่จับคู่อัตโนมัติ */
       if(xs.length){
         var got=0, src=[], raHit=null, wrong=[], wrongAmt=0;
         xs.forEach(function(x){
@@ -114,6 +129,9 @@
         if(wrong.length && Math.abs(r2(got+wrongAmt)-b.out)<=1){ R.h.push({b:b, why: wrong.join(" + ")+" — โปรดแก้รายการในไฟล์ Excel แล้วอัปเอกสารใหม่", fix:true}); return; }
         var ovR=RF.on? num((RF.by[b.no]||{}).ov) : 0; /* v0.7.0 ลูกค้าโอนเกิน ร้านคืนส่วนเกิน (ใบคืนเงิน) */
         if(ovR>0.5 && Math.abs(got-ovR-b.out)<=1){ RF.ovUsed[b.no]=1; R.t.push({b:b, method:"เงินโอน", src:src.join(" + ")+" · คืนเงินโอนเกิน "+TH(ovR)+" (ใบคืนเงิน)"}); return; }
+        /* v0.10.4: โอนเกิน เก็บเป็นมัดจำ (ไม่มีเงินออก) — ทั้งก้อน หรือคืนบางส่วน + เก็บมัดจำส่วนที่เหลือ */
+        var dovR=RF.on? num((RF.by[b.no]||{}).dov) : 0;
+        if(dovR>0.5 && Math.abs(got-ovR-dovR-b.out)<=1){ RF.ovUsed[b.no]=1; R.t.push({b:b, method:"เงินโอน", src:src.join(" + ")+(ovR>0.5?" · คืนเงินโอนเกิน "+TH(ovR):"")+" · ส่วนเกิน "+TH(dovR)+" เก็บเป็นมัดจำ"+rasOf(b)}); return; }
         if(Math.abs(got-b.out)<=1) R.t.push({b:b, method:"เงินโอน", src:src.join(" + ")+(b.dep>0?" · หักมัดจำแล้ว "+TH(b.dep):"")});
         else if(got>0 && got<b.out-1 && !(b.dep>0)) cashC.push({b:b, part:r2(b.out-got), mixed:src.join(" + ")}); /* v0.4.4: จ่ายผสม — ส่วนที่เหลือเป็นเงินสด */
         /* v0.9.6 (27 ต.ค.69): ป้ายหลักฐานบอกเลขใบลดหนี้ + ช่องทางคืน เช่น "K+ 3,100 − คืนสด 465 (CN6910-0032)" · ยอดอนุมัติ = ยอดค้าง ACC (b.out) เหมือนเดิม — เคสรำพัด KM6910-1043 */
@@ -128,14 +146,15 @@
       }
       /* v0.9.3 (24 ต.ค.69): บิลมีมัดจำ ส่วนที่เหลืออาจจ่ายเป็นเงินสดวันนี้ (เคส 0986 23/10 มัดจำสด 10,182 + สด 2,000) หรือยังไม่จ่าย (เคส 0842 21/10 จ่าย 2,130 วันที่ 23/10)
          → แยกไว้ก่อน นับส่วนที่เหลือเป็นเงินสดเฉพาะเมื่อรวมแล้วเงินสดในฟอร์มตรงพอดี (ตัดสินท้ายลูป) · มัดจำนับแค่ใน raSum (มัดจำสดวันนี้) ไม่นับซ้ำ */
+      if(b.dep>0 && dcoOf(b)>0.5){ R.h.push({b:b, why:"เงินสดเกิน "+TH(dcoOf(b))+" เก็บเป็นมัดจำ"+rasOf(b)+" แต่บิลนี้หักมัดจำด้วย — ต้องตรวจเอง"}); return; }
       if(b.dep>0){ var rcD=raCashOf(b.no);
         if(cnBack(b)>0){ depCn.push(b); R.h.push({b:b, why:(rcD? "มัดจำเงินสด "+TH(rcD.amt)+" รับวันนี้ ("+rcD.no+") นับในเงินสดแล้ว" : "หักมัดจำแล้ว "+TH(b.dep))+" · มีคืนเงินตามใบลดหนี้ "+TH(cnBack(b))+" ด้วย — ต้องตรวจเอง"}); return; } /* มัดจำ + ใบลดหนี้คืนเงิน ไม่จับคู่อัตโนมัติ — และระงับการจับคู่บิลมัดจำ/ย้อนหลังใบอื่นทั้งวัน (กันเงินของใบนี้ไปตัดใบอื่น) */
         depC.push({b:b, part:b.out, rc:rcD}); return; }
       var cb0=cnBack(b);
       /* v0.8.0: บิลเปิดย้อนหลัง = ลงวันที่วันนี้ แต่เลขบิลอยู่หลังบิลแรกของวันถัดไป (เปิดหลังตัดรอบ 15:30 แล้วย้อนวันที่) — แยกไว้ก่อน ตัดสินท้ายลูป */
       var sq=billSeq(b.no), nf=billSeq(D.nextFirst);
-      if(sq && nf && sq.p===nf.p && sq.n>nf.n){ lateC.push({b:b, part:r2(b.out+cb0), cnb:cb0}); return; }
-      cashC.push({b:b, part:r2(b.out+cb0), cnb:cb0});
+      if(sq && nf && sq.p===nf.p && sq.n>nf.n){ lateC.push({b:b, part:r2(b.out+cb0+dcoOf(b)), cnb:cb0, dco:dcoOf(b)}); return; }
+      cashC.push({b:b, part:r2(b.out+cb0+dcoOf(b)), cnb:cb0, dco:dcoOf(b)});
     });
     /* v0.5.0 (1): โอนก้อนเดียวจ่ายหลายบิล — บิลที่หาเงินไม่เจอของลูกค้า (รหัสเดียวกัน ไม่ใช่ลูกค้าทั่วไป) ช่องทางเดียวกัน
        ลองรวมยอดทีละชุด (ชุดใหญ่ก่อน อย่างน้อย 2 บิล) แล้วหาในเงิน K+/สเตทเมนต์ที่ยังไม่ถูกจับคู่ */
@@ -253,7 +272,7 @@
     }
     /* v0.7.0: บิลที่คืนเงินจนคงค้าง 0 ถูกนับเข้ายอดเงินสด — ถ้าแถวคืนเงินของบิลนั้นมีปัญหา ยอดเงินสดทั้งวันเชื่อไม่ได้ */
     var cxProb=null;
-    if(RF.on){ Object.keys(RF.by).forEach(function(bn){ if(RF.by[bn].ov>0.5 && !RF.ovUsed[bn]){ RF.prob[bn]="ใบคืนเงินโอนเกิน "+TH(RF.by[bn].ov)+" ไม่ตรงกับเงินที่โอนเข้าบิลนี้"; if(!cxProb) cxProb=bn.slice(-4)+": "+RF.prob[bn]; } }); }
+    if(RF.on){ Object.keys(RF.by).forEach(function(bn){ if((RF.by[bn].ov>0.5||RF.by[bn].dov>0.5) && !RF.ovUsed[bn]){ RF.prob[bn]=(RF.by[bn].ov>0.5?"ใบคืนเงินโอนเกิน "+TH(RF.by[bn].ov):"")+(RF.by[bn].dov>0.5?(RF.by[bn].ov>0.5?" + ":"")+"โอนเกินเก็บเป็นมัดจำ "+TH(RF.by[bn].dov):"")+" ไม่ตรงกับเงินที่โอนเข้าบิลนี้"; if(!cxProb) cxProb=bn.slice(-4)+": "+RF.prob[bn]; } }); }
     R.cashExtra.forEach(function(x){ if(!cxProb && RF.prob[x.b.no]) cxProb=x.b.no.slice(-4)+": "+RF.prob[x.b.no]; });
     /* v0.8.1 (22 ต.ค.69): ด่านเงินสดที่เป็นของ "ทั้งวัน" — เก็บข้อความไว้ที่ R.cashGate แสดงบรรทัดเดียวบนหัวรายการ
        แต่ละบิลขึ้นแค่ "รอด่านเงินสดของวัน" (เดิมแปะข้อความยาวซ้ำทุกบิล ดูเหมือนทุกบิลผิด) */
@@ -302,7 +321,7 @@
       if(R.cashGate && !R.cashPartial && !(shopPass && shopOk[b.no])) R.h.push({b:b, cash:true, gate:true, why:"รอด่านเงินสดของวัน (ดูบนสุด)"});
       else if(x.dep) R.c.push({b:b, method:"เงินสด", src:(x.rc? "มัดจำเงินสด "+TH(x.rc.amt)+" รับวันนี้ ("+x.rc.no+")" : "หักมัดจำแล้ว "+TH(b.dep))+" + เงินสดส่วนที่เหลือ "+TH(x.part)+" · เงินสดในฟอร์มตรง · ใบนับเงินสดตรงกับยอดที่ต้องมี"});
       else if(x.mixed) R.c.push({b:b, method:"เงินโอน + เงินสด", src:x.mixed+" + เงินสด "+TH(x.part)});
-      else R.c.push({b:b, method:"เงินสด", src:"ใบนับเงินสดตรงกับยอดที่ต้องมี"+(x.cnb>0?" · รับ "+TH(x.part)+" คืนตามใบลดหนี้ "+TH(x.cnb):"")
+      else R.c.push({b:b, method:"เงินสด", src:"ใบนับเงินสดตรงกับยอดที่ต้องมี"+(x.cnb>0?" · รับ "+TH(x.part)+(cnLbl(x.b)==="เก็บเป็นมัดจำ"?" ใบลดหนี้เก็บเป็นมัดจำ "+TH(x.cnb)+rasOf(x.b):" คืนตามใบลดหนี้ "+TH(x.cnb)):"")+(x.dco>0?" · รับเงินสดเกิน "+TH(x.dco)+" เก็บเป็นมัดจำ"+rasOf(x.b):"")
         +(R.cashPartial? (b.retail?" · ยอดตรงกับชีตเงินสดปลีก":" · ร้านค้าเงินสดลงตรงบิล")+" (ด่านเงินสดพักเฉพาะใบที่ชี้ตัวได้)" : (R.cashGate && shopPass)? " · ร้านค้าเงินสดลงตรงบิล (กองเงินสดปลีกยังพัก)" : "")});
     });
     if(shopPass && cashC.some(function(x){ return shopOk[x.b.no] && !shopBad[x.b.no]; })) R.cashGate+=" · ร้านค้าเงินสดที่ลงช่องร้านค้าตรงบิลพอดี ผ่านตามปกติ (พักเฉพาะกองเงินสดปลีก)";
@@ -471,7 +490,7 @@
       proof:(q[4]&&q[4].data)||null, proofPending:((q[7]&&q[7].data)||[]).length,
       appr:(q[5]&&q[5].data)||[],
       pre:pre, past:past, refundXfer:rfx.amt, refundXferRows:rfx.rows, cnRefundOpen:rfx.open,
-      refundOn:rfOn, refunds:RFD.rows||[], refundPhoto:RFD.photo||null, refundErr:RFD.err||null, cnValid:RFD.cnValid||{}, refundWd:RFD.wd||[],
+      refundOn:rfOn, refunds:RFD.rows||[], refundDeps:RFD.deps||[], raValid:RFD.raValid||{}, refundPhoto:RFD.photo||null, refundErr:RFD.err||null, cnValid:RFD.cnValid||{}, refundWd:RFD.wd||[],
       cnCash:(det.cns||[]).reduce(function(m,c){ var k=String(c.bill||"").trim(), v=num(c.cash); if(k&&v>0) m[k]=r2((m[k]||0)+v); return m; },{})
     };
   }
@@ -482,12 +501,17 @@
      · ข้ามแถวโอนที่มีเลข RA (มัดจำใน ACC หักจากบิลไปแล้ว) */
   /* v0.7.0 (20 ต.ค.69): ข้อมูลกล่องคืนเงินของวัน — แถวคืนเงิน · รูปล่าสุด · ใบลดหนี้ที่มีจริงใน ACC · ยอดเงินออกในสเตทเมนต์ (วันนั้น–3 วันถัดไป) ไว้ตรวจโอนคืน */
   async function refundData(s, date){
-    var o={rows:[], photo:null, err:null, cnValid:{}, wd:[]};
+    var o={rows:[], deps:[], raValid:{}, billName:{}, photo:null, err:null, cnValid:{}, wd:[]};
     try{
       var q=await Promise.all([ s.from("rev_cash_refund").select("*").eq("date",date).order("id"), s.from("rev_cash_refund_proof").select("image_path,uploaded_at,uploaded_role").eq("date",date).order("id",{ascending:false}).limit(1) ]);
       if(q[0].error) throw q[0].error; if(q[1].error) throw q[1].error;
-      o.rows=q[0].data||[]; o.photo=(q[1].data||[])[0]||null;
-      if(o.rows.some(function(x){ return x.kind==="cn"; })){ var c=await s.rpc("rev_refund_cn_check",{p_cns:o.rows.filter(function(x){ return x.kind==="cn"; }).map(function(x){ return x.cn_no; })}); if(c.error) throw c.error; (c.data||[]).forEach(function(z){ o.cnValid[z.cn]=z; }); }
+      /* v0.10.4: แยกแถว "เก็บเป็นมัดจำ" (pay deposit) ออกจาก rows — ทุกที่ที่ใช้ rows (ยอดรวมเทียบฟอร์ม · รูปใบคืนเงิน · กล่องคืนเงิน) ไม่นับเป็นเงินออก */
+      var all=q[0].data||[]; o.rows=all.filter(function(x){ return x.pay!=="deposit"; }); o.deps=all.filter(function(x){ return x.pay==="deposit"; }); o.photo=(q[1].data||[])[0]||null;
+      if(o.deps.length){ var ras=o.deps.map(function(x){ return x.ra_no; }).filter(Boolean), bns=o.deps.map(function(x){ return String(x.bill_no||"").trim(); }).filter(Boolean);
+        var ra=await s.rpc("rev_cashier_form_acc",{p_date:date,p_extra:ras.concat(bns)}); if(ra.error) throw ra.error;
+        ((ra.data&&ra.data.deps)||[]).forEach(function(d){ if(ras.indexOf(d[0])>=0) o.raValid[d[0]]={total:+d[4]||0, name:String(d[3]||""), date:String(d[1]||"").slice(0,10)}; });
+        o.billName={}; ((ra.data&&ra.data.bills)||[]).forEach(function(b){ if(bns.indexOf(b[0])>=0) o.billName[b[0]]=String(b[3]||""); }); } /* r4: ชื่อลูกค้าบิล ให้กล่องคืนเงินในหน้าตรวจรายได้ตรวจแบบเดียวกับ classify */
+      if(all.some(function(x){ return x.kind==="cn"; })){ var c=await s.rpc("rev_refund_cn_check",{p_cns:all.filter(function(x){ return x.kind==="cn"; }).map(function(x){ return x.cn_no; })}); if(c.error) throw c.error; (c.data||[]).forEach(function(z){ o.cnValid[z.cn]=z; }); }
       if(o.rows.some(function(x){ return x.pay==="transfer"; })){ var w=await s.from("rev_daily").select("bank_rows").gte("date",date).lte("date",shiftISO(date,3)); if(w.error) throw w.error;
         (w.data||[]).forEach(function(r){ (r.bank_rows||[]).forEach(function(x){ if(num(x.wd)>0) o.wd.push(num(x.wd)); }); }); }
     }catch(e){ console.warn("RevCut.refundData",e); o.err=(e&&e.message)||String(e); }

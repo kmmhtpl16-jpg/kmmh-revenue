@@ -134,9 +134,9 @@
       if(r.kind==="cn" && String(r.cn||"").trim()){ var cnNo=String(r.cn).trim(), cnRow=(acc.cns||[]).filter(function(x){ return x.cn===cnNo; })[0];
         var cum=((ctx.cnRefunds||d.refunds||[]).filter(function(q){ return String(q.cn||"").trim()===cnNo && (!ctx.cnRefunds || String(q.date).slice(0,10)<=date); }).reduce(function(s,q){ var v=cents(q.amt); return s+(isFinite(v)&&v>0?v:0); },0));
         if(!cnRow || cum>cents(cnRow.amt)){ cnUnverified=true;
-          line("hold","refund","คืนเงิน"+(r.pay==="cash"?"สด":"")+" "+baht(c)+" อ้าง "+cnNo+(no?" บิล "+no:"")+" — "+(!cnRow?"หน้านี้หาใบลดหนี้นี้ใน ACC ไม่เจอ":"คืนสะสม "+baht(cum)+" เกินยอดใบลดหนี้ "+baht(cents(cnRow.amt)))+" ให้คุณหลิงดู",{bill:no}); } }
+          line("hold","refund",(r.pay==="deposit"?"เก็บเป็นมัดจำ":"คืนเงิน"+(r.pay==="cash"?"สด":""))+" "+baht(c)+" อ้าง "+cnNo+(no?" บิล "+no:"")+" — "+(!cnRow?"หน้านี้หาใบลดหนี้นี้ใน ACC ไม่เจอ":"คืนสะสม "+baht(cum)+" เกินยอดใบลดหนี้ "+baht(cents(cnRow.amt)))+" ให้คุณหลิงดู",{bill:no}); } }
       if(r.kind==="cn"){ if(!String(r.cn||"").trim()){ line("bad","refund","คืนเงินแบบใบลดหนี้ "+(no||"")+" "+baht(c)+" ไม่มีเลขใบลดหนี้",{bill:no}); r._bad=true; } return; }
-      if(r.kind!=="overpay"){ line("bad","refund","คืนเงิน "+(no||"")+" "+baht(c)+" ชนิด \""+(r.kind||"")+"\" ตรวจไม่ได้",{bill:no}); r._bad=true; return; }
+      if(r.kind!=="overpay" && !(r.kind==="cashover" && r.pay==="deposit")){ line("bad","refund","คืนเงิน "+(no||"")+" "+baht(c)+" ชนิด \""+(r.kind||"")+"\" ตรวจไม่ได้",{bill:no}); r._bad=true; return; }
       (ovp[no]=ovp[no]||[]).push(r); });
     Object.keys(ovp).forEach(function(no){ var sum=ovp[no].reduce(function(s,r){return s+cents(r.amt);},0);
       if(sum>(recv[no]||0)){ line("bad","refund","คืนเงินรับเกิน "+(no||"(ไม่มีเลขบิล)")+" "+baht(sum)+" มากกว่าที่บิลนี้รับในฟอร์มวันนี้ "+baht(recv[no]||0),{bill:no}); ovp[no].forEach(function(r){ r._bad=true; }); } });
@@ -329,7 +329,7 @@
     rows("credit").forEach(function(r){ addPaid(normBill(r.bill),cents(r.amt),"ลงบัญชี"); });
     rows("upk").forEach(function(r){ addPaid(normBill(r.bill),cents(r.amt),"UPK"); });
     /* คืนเงินเพราะรับเกิน (kind overpay) → ยอดที่บิลได้จริง = ที่ลงรับ − ที่คืน */
-    (d.refunds||[]).forEach(function(r){ var b=normBill(r.bill), c=cents(r.amt); if(r.kind==="overpay" && !r._bad && b && isFinite(c)) addPaid(b,-c,"คืนเงินรับเกิน"); });
+    (d.refunds||[]).forEach(function(r){ var b=normBill(r.bill), c=cents(r.amt); if((r.kind==="overpay"||r.kind==="cashover") && !r._bad && b && isFinite(c)) addPaid(b,-c,r.pay==="deposit"?"รับเกินเก็บเป็นมัดจำ":"คืนเงินรับเกิน"); /* 16 พ.ย.69: เก็บเป็นมัดจำ (โอนเกิน/เงินสดเกิน) = ส่วนเกินของบิลเหมือนคืนเงิน แต่ไม่ใช่เงินออก */ });
     var expRetail=0, rcashC=0, satang=0;
     rows("rcash").forEach(function(r){ if(!r.ra) rcashC+=cents(r.amt); });
     Object.keys(acc.bills||{}).sort().forEach(function(no){
@@ -366,7 +366,7 @@
     /* ===== 5) บิลเก่า / ลงบัญชี / UPK: ยอดต้องไม่เกินยอดบิลหลังหักมัดจำ+ใบลดหนี้ (ยอดค้างจริงตรวจที่รอบตัดบิลตามเดิม) ===== */
     var sumOld={};
     ["oldc","oldx"].forEach(function(k){ rows(k).forEach(function(r){ var no=normBill(r.bill); if(isKM(no)) sumOld[no]=(sumOld[no]||0)+cents(r.amt); }); });
-    (d.refunds||[]).forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt); if(r.kind==="overpay" && !r._bad && sumOld[no]!=null && isFinite(c)) sumOld[no]-=c; });
+    (d.refunds||[]).forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt); if((r.kind==="overpay"||r.kind==="cashover") && !r._bad && sumOld[no]!=null && isFinite(c)) sumOld[no]-=c; });
    /* คืนเงินรับเกินของบิลเก่า หักก่อนเทียบยอดบิล */
     Object.keys(sumOld).forEach(function(no){ var b=billOf(no); if(!b) return;
       var cap=cents(b.total)-usesNow(no).reduce(function(s,u){return s+cents(u.amt);},0)-cnNet(no);

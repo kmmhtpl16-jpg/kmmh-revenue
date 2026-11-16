@@ -348,7 +348,7 @@ function setChip(id,cls,txt){const el=document.getElementById(id);if(!el)return;
 async function fetchAcc(date,extra){
   const r=await sb.rpc("rev_cashier_form_acc",{p_date:date,p_extra:extra||[]});
   if(r.error) throw r.error; const d=r.data||{};
-  return {date,synced_at:d.synced_at||null,bills:d.bills||[],deps:d.deps||[],uses:d.uses||[],cns:d.cns||[],cns_self:d.cns_self||[]};
+  return {date,synced_at:d.synced_at||null,bills:d.bills||[],deps:d.deps||[],uses:d.uses||[],cns:d.cns||[],cns_self:d.cns_self||[],_asked:(extra||[]).slice()};
 }
 function setAcc(d){ DATA=d; indexAcc(); }
 /* ส่งเลขอ้างอิงทั้งหมดในฟอร์มทุกครั้ง (รวม RA ของเงินสดปลีก) — ถ้าส่งเฉพาะที่ยังไม่มี ผลรอบใหม่จะแทนที่ map ทำให้บิลเก่าที่เคยโหลดหลุด */
@@ -356,7 +356,11 @@ function extraBills(s){ s=s||S; const out=[]; const add=v=>{ v=normBill(v); if(v
   ['scash','xfer','credit','oldc','oldx','upk','refund'].forEach(k=>(s[k]||[]).forEach(r=>add(r.bill)));
   /* บิลที่ใบลดหนี้ในแถวคืนเงินถูกใช้จ่ายอยู่ (inv_no2) — ใช้คิดว่าคืนได้อีกเท่าไร */
   (s.refund||[]).forEach(r=>{ const o=r.cn&&EXO.opts&&EXO.opts.find(z=>z.cn===r.cn); if(o&&o.bill2) add(o.bill2); });
+  (s.refund||[]).forEach(r=>{ if(r.dp) add(r.ra); }); /* 16 พ.ย.69: ใบรับมัดจำของแถว "เก็บเป็นมัดจำ" — ตรวจชื่อลูกค้า/ยอดกับ ACC */
   (s.rcash||[]).forEach(r=>add(r.ra)); return out; }
+/* RA ที่ดึงจาก ACC รอบล่าสุดแล้ว (ไม่เจอ = ยังไม่ซิงก์จริง ไม่ใช่ยังไม่ได้ถาม) — คีย์ วันที่|RA */
+const RA_TRIED=new Set();
+function raMark(asked){ (asked||[]).forEach(v=>{ if(isRA(v)) RA_TRIED.add(DATA.date+'|'+v); }); } /* r2 Codex #6: เฉพาะ RA ที่ส่งไปถามในคำขอนั้นจริง */
 let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 /* 2 พ.ย.69 (คุณหลิงเลือก): แคชเชียร์ขอแก้ฟอร์มที่ส่งแล้วได้เอง 3 ครั้งต่อฟอร์ม 1 วัน จนกว่าจะกด "บันทึกส่งข้อมูลทั้งหมด" (มีแถว rev_audit) · ฐานข้อมูลตรวจซ้ำใน rev_cashier_form_guard */
 let REOPEN={used:null,max:3,audit:false,err:''}, _reopening=false;
@@ -385,7 +389,7 @@ async function loadDay(date){
       const xl=a.error?{err:a.error.message||'อ่านไม่ได้'}:(a.data&&a.data.status==='ตรวจแล้ว'&&a.data.detail&&a.data.detail.form_cash!=null)?a.data:null;
       const acc=await Promise.race([fetchAcc(date,extraBills(s)),new Promise((_,rej)=>setTimeout(()=>rej(new Error('ข้อมูล ACC ตอบช้าเกิน 25 วินาที')),25000))]);
       if(tok!==_loadTok) return;
-      ROW={status:'draft',updated_role:f.data&&f.data.updated_role,updated_at:f.data&&f.data.updated_at}; S=s; XLDAY=xl; setAcc(acc); _loadOk=true;
+      ROW={status:'draft',updated_role:f.data&&f.data.updated_role,updated_at:f.data&&f.data.updated_at}; S=s; XLDAY=xl; setAcc(acc); raMark(acc._asked); _loadOk=true;
       document.getElementById('dTxt').textContent=beDate(date); renderAll(); return;
     }
     const [f,o,rf,pf]=await Promise.all([
@@ -412,7 +416,7 @@ async function loadDay(date){
     const acc=await Promise.race([fetchAcc(date,extraBills(s)),new Promise((_,rej)=>setTimeout(()=>rej(new Error('ข้อมูล ACC ตอบช้าเกิน 25 วินาที')),25000))]);
     if(tok!==_loadTok) return;
     /* ตั้งค่าทั้งชุดหลังโหลดครบและยังเป็นวันล่าสุดที่เลือก — ผลของวันเก่าที่กลับมาช้าจะไม่ทับวันใหม่ */
-    ROW=row; S=s; setAcc(acc); cpInitDraft(); _loadOk=true;
+    ROW=row; S=s; setAcc(acc); raMark(acc._asked); cpInitDraft(); _loadOk=true;
   }catch(err){ if(tok===_loadTok) setChip('syncChip','bad','โหลดไม่ได้: '+(err.message||err)+' — ยังบันทึก/ส่งไม่ได้ ลองเปิดใหม่'); return; }
   document.getElementById('dTxt').textContent=beDate(date);
   renderAll();
@@ -748,10 +752,13 @@ const EXST=new WeakMap();
 const CHAN_TXT={cash:'เงินสด',kplus:'โอน K+',ksk:'โอนกสิกร'};
 const r2x=n=>Math.round(n*100)/100;
 function exFromOther(x){ const chan=['cash','kplus','ksk'].includes(x.channel)?x.channel:'cash'; const r={id:x.id,desc:x.item||'',amt:+x.amount,chan,ch:chan==='cash'?'cash':'xfer'}; r._sv={desc:r.desc,amt:r.amt,chan}; return r; }
-function exFromRefund(x){ const r={id:x.id,bill:x.bill_no||'',cn:x.cn_no||'',amt:+x.amount,ch:x.pay==='transfer'?'xfer':'cash',kind:x.kind,manual:!!x.cn_manual}; if(!x.cn_no) r.op=true; /* 7 พ.ย.69 คุณหลิง: แถวไม่มี CN = ติ๊ก "คืนเพราะโอนเกิน" */ r._sv={bill:r.bill,cn:r.cn,amt:r.amt,ch:r.ch,op:!!r.op}; return r; }
+function exFromRefund(x){ const dp=x.pay==='deposit'; const r={id:x.id,bill:x.bill_no||'',cn:x.cn_no||'',amt:+x.amount,ch:x.pay==='transfer'?'xfer':'cash',kind:x.kind,manual:!!x.cn_manual};
+  if(x.kind==='overpay') r.op=true; /* 7 พ.ย.69 คุณหลิง: ติ๊ก "คืนเพราะโอนเกิน" (แถวเดิมทุกแถวที่ไม่มี CN = overpay) · 16 พ.ย.69 เงินสดเกิน = kind cashover ไม่ติ๊ก */
+  if(dp){ r.dp=true; r.ra=x.ra_no||''; } /* 16 พ.ย.69 คุณหลิง: ติ๊ก "เก็บเป็นมัดจำ" + เลข RA */
+  r._sv={bill:r.bill,cn:r.cn,amt:r.amt,ch:r.ch,op:!!r.op,dp,ra:dp?r.ra:''}; return r; }
 /* แถวที่นับเข้ายอด: โหมดทดลอง = ที่กรอก · โหมดจริง = ค่าที่บันทึกในฐานแล้ว */
 function exRows(k){ return TRIAL?S[k]:S[k].filter(r=>r._sv).map(r=>k==='other'?{...r,desc:r._sv.desc,amt:r._sv.amt,chan:r._sv.chan,ch:r._sv.chan==='cash'?'cash':'xfer'}:{...r,...r._sv}); }
-function exSame(k,r){ const v=r._sv; if(!v) return false; return k==='other'?(String(r.desc||'').trim()===v.desc&&num(r.amt)===v.amt&&(r.chan||'cash')===v.chan):(r.bill===v.bill&&(r.cn||'')===v.cn&&num(r.amt)===v.amt&&(r.ch==='xfer'?'xfer':'cash')===v.ch&&!!r.op===!!v.op); }
+function exSame(k,r){ const v=r._sv; if(!v) return false; return k==='other'?(String(r.desc||'').trim()===v.desc&&num(r.amt)===v.amt&&(r.chan||'cash')===v.chan):(r.bill===v.bill&&(r.cn||'')===v.cn&&num(r.amt)===v.amt&&!!r.op===!!v.op&&!!r.dp===!!v.dp&&(r.dp?(r.ra||'')===(v.ra||''):(r.ch==='xfer'?'xfer':'cash')===v.ch)); } /* เก็บเป็นมัดจำ: "คืนเป็น" ล็อกเป็นมัดจำ ไม่เทียบสด/โอน */
 async function exAux(date){
   const o={opts:null,bills:null,reqs:[],nRfPhoto:0,rfPhoto:null,dayLock:false,appr:{},err:''};
   /* แคชเชียร์ดูวันเก่า: ฐานไม่ให้อ่านตัวช่วยคืนเงิน (คืน []) → ไม่ถามเลย ไม่งั้นทุก CN จะดูเหมือน "ยังไม่มีใน ACC" */
@@ -789,25 +796,39 @@ function exCheck(k,r,i){
     if(!desc) return {ok:false,lv:'bad',t:'ใส่รายละเอียด'};
     if(!(amt>0)) return {ok:false,lv:'bad',t:'ใส่ยอด'};
     return {ok:true,rec:{item:desc.slice(0,80),amount:amt,channel:['cash','kplus','ksk'].includes(r.chan)?r.chan:'cash'}}; }
-  const op=!!r.op, bill=r.bill||'', cn=op?'':(r.cn||''), pay=r.ch==='xfer'?'transfer':'cash';
-  if(!bill&&!cn&&!(amt>0)) return {ok:false,lv:'',t:''};
+  const op=!!r.op, dp=!!r.dp, bill=r.bill||'', cn=op?'':(r.cn||''), ra=dp?String(r.ra||''):'';
+  if(!bill&&!cn&&!(amt>0)&&!ra) return {ok:false,lv:'',t:''};
+  const base=exCheckRefund(r,i,amt,op,dp,bill,cn);
+  if(!dp||!base.ok) return base;
+  return exCheckDep(r,i,amt,bill,ra,base);
+}
+/* แถวคืนเงิน (เดิม) — คืนสด/โอนคืน ตาม CN หรือโอนเกิน · เก็บเป็นมัดจำใช้กติกาเดียวกันก่อน แล้วค่อยตรวจ RA (exCheckDep) */
+function exCheckRefund(r,i,amt,op,dp,bill,cn){
+  const pay=r.ch==='xfer'?'transfer':'cash';
   if(!/^KM\d{4}-\d{4}$/.test(bill)) return {ok:false,lv:'bad',t:'เลขบิลไม่ถูกต้อง (เช่น KM6910-0874 หรือพิมพ์ 0874)'};
   if(cn&&!/^CN\d{4}-\d{4}$/.test(cn)) return {ok:false,lv:'bad',t:'เลขใบลดหนี้ผิด (เช่น CN6910-0026)'};
   if(!(amt>0)) return {ok:false,lv:'bad',t:'ใส่ยอด'};
-  if(!op&&!cn) return {ok:false,lv:'bad',t:'ใส่เลขใบลดหนี้ (CN) หรือติ๊ก "คืนเพราะโอนเกิน"'};
+  if(!op&&!cn&&!dp) return {ok:false,lv:'bad',t:'ใส่เลขใบลดหนี้ (CN) หรือติ๊ก "คืนเพราะโอนเกิน" (ถ้าลูกค้าฝากเงินเกินไว้เป็นมัดจำ ติ๊ก "เก็บเป็นมัดจำ")'};
+  if(!op&&!cn&&dp){ /* 16 พ.ย.69: เงินสดเกิน (ไม่มี CN ไม่ได้โอนเกิน) → เก็บเป็นมัดจำ · ต้องเป็นบิลของวันนี้ · บิลละแถว */
+    const dupC=S.refund.findIndex((x,j)=>j!==i&&x.dp&&!x.op&&!x.cn&&x.bill===bill); if(dupC>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงเงินสดเกินเก็บเป็นมัดจำแล้วที่แถว ${dupC+1}`};
+    if(!EXO.bills) return {ok:false,unk:true,lv:'warn',t:'ตรวจยอดบิลกับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
+    if(!EXO.bills.find(z=>z.no===bill)) return {ok:false,lv:'bad',t:'เงินสดเกินเก็บเป็นมัดจำ ใช้ได้เฉพาะบิลของวันนี้ — ถ้าคืนของ ใส่เลข CN · ถ้าลูกค้าโอนเกิน ติ๊ก "คืนเพราะโอนเกิน"'};
+    if((S.xfer||[]).some(x=>normBill(x.bill)===bill)) return {ok:false,lv:'bad',t:'บิลนี้มีเงินโอนด้วย — ถ้าส่วนเกินมาจากเงินโอน ติ๊ก "คืนเพราะโอนเกิน" · ถ้ามาจากเงินสดจริง แจ้งการเงินลงให้'}; /* r3: รับผสม การ์ดตัดบิลจับคู่ไม่ได้ */
+    return {ok:true,rec:{bill_no:bill,kind:'cashover',cn_no:null,amount:amt,pay:'cash',cn_manual:false}};
+  }
   if(cn){
     const dup=S.refund.findIndex((x,j)=>j!==i&&x.cn===cn); if(dup>=0) return {ok:false,lv:'bad',t:`ใบลดหนี้นี้ลงแล้วที่แถว ${dup+1}`};
     if(!EXO.opts) return {ok:false,unk:true,lv:'warn',t:'ตรวจใบลดหนี้กับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
     const o=EXO.opts.find(z=>z.cn===cn);
-    if(!o) return {ok:true,warn:'ใบลดหนี้นี้ยังไม่มีใน ACC — บิลจะพักไว้จนรอบซิงก์ถัดไปเจอ',rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:true}};
+    if(!o) return {ok:true,warn:'ใบลดหนี้นี้ยังไม่มีใน ACC — บิลจะพักไว้จนรอบซิงก์ถัดไปเจอ',rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:true,ra_no:null}};
     if(bill!==o.bill&&bill!==o.bill2) return {ok:false,lv:'bad',t:`ใบลดหนี้นี้ใน ACC ผูกบิล ${[o.bill,o.bill2].filter(Boolean).join(' / ')} ไม่ใช่บิลนี้`};
     if(amt>(+o.amt||0)+0.01) return {ok:false,lv:'bad',t:`ยอดเกินใบลดหนี้ (${fmt(+o.amt)})`};
     const cap=cnCap(o,r);
     if(cap&&!cap.known) return {ok:false,unk:true,need2:cap.bill,lv:'warn',t:`CN นี้ใช้จ่ายบิล ${cap.bill} ด้วย — กำลังดึงยอดบิลนั้นจาก ACC (ถ้าค้าง เปิดหน้าใหม่)`};
     if(cap&&amt>cap.left+0.01) return {ok:false,lv:'bad',t:`CN นี้ใช้จ่ายบิล ${cap.bill.slice(-4)}${cap.multi?' (รวมใบลดหนี้อื่นที่จ่ายบิลเดียวกัน)':''} ยอด ${fmt(cap.used)} แล้ว → คืนได้แค่ ${fmt(cap.left)}`};
-    return {ok:true,rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:false}};
+    return {ok:true,rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:false,ra_no:null}};
   }
-  const dupB=S.refund.findIndex((x,j)=>j!==i&&x.op&&x.bill===bill); if(dupB>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงคืนเงินโอนเกินแล้วที่แถว ${dupB+1}`};
+  const dupB=S.refund.findIndex((x,j)=>j!==i&&x.op&&x.bill===bill); /* โอนเกินบิลละแถว (ฐานกันซ้ำ) — คืนบางส่วน+เก็บมัดจำบางส่วน ยังไม่รองรับ */ if(dupB>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงคืนเงินโอนเกินแล้วที่แถว ${dupB+1}`};
   if(!EXO.bills) return {ok:false,unk:true,lv:'warn',t:'ตรวจยอดบิลกับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
   const b=EXO.bills.find(z=>z.no===bill);
   if(!b) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินได้เฉพาะบิลของวันนี้ — ถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
@@ -815,11 +836,30 @@ function exCheck(k,r,i){
   if(!(got>0)) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินแล้ว แต่บิลนี้ไม่อยู่ในแท็บโอน — ลงบิลในแท็บโอนก่อน หรือถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
   if(exc<=0.5) return {ok:false,lv:'bad',t:`บิลนี้ไม่ได้โอนเกิน (โอน ${fmt(got)} · บิล ${fmt(need)})`};
   if(Math.abs(amt-exc)>1) return {ok:false,lv:'bad',t:`ลูกค้าโอนเกินแค่ ${fmt(exc)} (โอน ${fmt(got)} − บิล ${fmt(need)})`};
-  return {ok:true,rec:{bill_no:bill,kind:'overpay',cn_no:null,amount:amt,pay,cn_manual:false}};
+  return {ok:true,rec:{bill_no:bill,kind:'overpay',cn_no:null,amount:amt,pay,cn_manual:false,ra_no:null}};
+}
+/* 16 พ.ย.69 คุณหลิง: ติ๊ก "เก็บเป็นมัดจำ" = ลูกค้ายังไม่รับเงินคืน ฝากไว้ที่ร้าน ACC ออกใบรับมัดจำ (RA) ให้แล้ว
+   ไม่หักเงินสดในลิ้นชัก ไม่นับเป็นโอนคืน · ตรวจกับ ACC: RA มีจริง ไม่ยกเลิก · ชื่อลูกค้าตรงกับบิล · ยอดแถว = ยอด RA (±1) · RA ยังไม่ซิงก์ = บันทึกได้แต่พักไว้ */
+const nmKey=n=>String(n||'').replace(/\s+/g,' ').trim();
+function exRA(v){ v=normBill(v).replace(/\s/g,''); const m=v.match(/^(\d{1,4})$/); return m&&DATA.date?'RA'+billYM(DATA.date)+'-'+m[1].padStart(4,'0'):v; }
+function exCheckDep(r,i,amt,bill,ra,base){
+  if(!/^RA\d{4}-\d{4}$/.test(ra)) return {ok:false,lv:'bad',t:'ใส่เลขใบรับมัดจำ (RA) ที่ออกใน ACC เช่น RA6911-0003 หรือพิมพ์ 0003'};
+  const dupR=S.refund.findIndex((x,j)=>j!==i&&x.dp&&x.ra===ra); if(dupR>=0) return {ok:false,lv:'bad',t:`ใบรับมัดจำ ${ra} ลงแล้วที่แถว ${dupR+1}`};
+  const rec={...base.rec,pay:'deposit',ra_no:ra};
+  const d=DEP[ra];
+  if(!d){ if(!RA_TRIED.has(DATA.date+'|'+ra)) return {ok:false,unk:true,needRA:ra,lv:'warn',t:'กำลังดึงใบรับมัดจำจาก ACC…'};
+    return {ok:true,warn:`ใบรับมัดจำ ${ra} ยังไม่มีใน ACC (ยังไม่ซิงก์/ยกเลิก) — บันทึกได้ แต่บิลจะพักไว้จนรอบซิงก์ถัดไปเจอ`,rec}; }
+  const B=BILL[bill];
+  if(B&&nmKey(B.name)!==nmKey(d.name)) return {ok:false,lv:'bad',t:`${ra} เป็นของ "${d.name}" ไม่ใช่ลูกค้าบิลนี้ (${B.name})`};
+  if(Math.abs(amt-d.total)>1) return {ok:false,lv:'bad',t:`ยอดไม่เท่าใบรับมัดจำ ${ra} (${fmt(d.total)})`};
+  /* RA เดียวกันลงในแท็บรับเงินด้วย = ปกติคือใช้มัดจำจ่ายบิล — ไม่บล็อก แค่เตือนให้ตรวจ (คุณหลิง 16 พ.ย.69 11:33) */
+  const inRecv=(S.rcash||[]).some(x=>x.ra===ra)||['scash','xfer','oldc','oldx'].some(k=>(S[k]||[]).some(x=>normBill(x.bill)===ra));
+  const w=[base.warn,B?'':'ยังไม่เห็นชื่อลูกค้าของบิลนี้ใน ACC — ตรวจชื่อไม่ได้',inRecv?`${ra} อยู่ในแท็บรับเงินด้วย (ใช้มัดจำจ่ายบิล?) — ตรวจว่าไม่ได้ลงซ้ำ`:''].filter(Boolean).join(' · ');
+  return w?{ok:true,warn:w,rec}:{ok:true,rec};
 }
 const EX_NOUPD='แก้รายการที่บันทึกแล้วไม่ได้ (ไม่มีสิทธิ์แก้ หรือรายการถูกลบไปแล้ว) — ลบ 🗑 แล้วลงใหม่ หรือเปิดหน้าใหม่';
 /* ค่าที่อยู่ในฐานจริง = ค่าที่ส่งไปบันทึก (rec) — ระหว่างบันทึกพิมพ์แก้ต่อ ค่าบนจอจะต่างจาก _sv แล้วบันทึกรอบถัดไปเอง (Codex r1 #1) */
-function exSnap(k,r,rec){ r._sv=k==='other'?{desc:rec.item,amt:+rec.amount,chan:rec.channel}:{bill:rec.bill_no,cn:rec.cn_no||'',amt:+rec.amount,ch:rec.pay==='transfer'?'xfer':'cash',op:!rec.cn_no}; }
+function exSnap(k,r,rec){ r._sv=k==='other'?{desc:rec.item,amt:+rec.amount,chan:rec.channel}:{bill:rec.bill_no,cn:rec.cn_no||'',amt:+rec.amount,ch:rec.pay==='transfer'?'xfer':'cash',op:rec.kind==='overpay',dp:rec.pay==='deposit',ra:rec.ra_no||''}; }
 function exRevert(k,r){ if(!r._sv) return; Object.assign(r,r._sv); if(k==='other') r.ch=r.chan==='cash'?'cash':'xfer'; }
 /* บันทึกแถวเดียวลงฐาน (เพิ่มใหม่ / แก้) · ระหว่างบันทึกพิมพ์แก้ต่อ = บันทึกซ้ำหลังรอบนี้จบ · เปลี่ยนวัน/โหลดใหม่ระหว่างนั้น = ทิ้งผล */
 async function exSync(k,r){
@@ -828,10 +868,10 @@ async function exSync(k,r){
   const i=S[k].indexOf(r); if(i<0) return;
   let c=exCheck(k,r,i); st.lv=''; st.t='';
   /* ยอดบิลที่ CN ใช้จ่ายยังไม่มี → ดึง ACC (พร้อมบิลนั้น) แล้วตรวจใหม่ · ดึงไม่ได้ = ไม่บันทึก */
-  if(!c.ok&&c.need2&&!BILL[c.need2]){ const date=DATA.date, tok=_loadTok; st.busy=true; renderAll();
-    try{ const ex=extraBills(); if(ex.indexOf(c.need2)<0) ex.push(c.need2); const acc=await fetchAcc(date,ex); if(tok===_loadTok&&date===DATA.date) setAcc(acc); }catch(_e){}
+  if(!c.ok&&((c.need2&&!BILL[c.need2])||c.needRA)){ const date=DATA.date, tok=_loadTok; st.busy=true; renderAll();
+    try{ const ex=extraBills(); if(c.need2&&ex.indexOf(c.need2)<0) ex.push(c.need2); const acc=await fetchAcc(date,ex); if(tok===_loadTok&&date===DATA.date){ setAcc(acc); raMark(acc._asked); } }catch(_e){}
     st.busy=false; if(tok!==_loadTok||date!==DATA.date) return;
-    c=exCheck(k,r,S[k].indexOf(r)); if(!c.ok&&c.need2){ st.lv='bad'; st.t='ดึงยอดบิลที่ใบลดหนี้ใช้จ่ายจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง'; } }
+    c=exCheck(k,r,S[k].indexOf(r)); if(!c.ok&&(c.need2||c.needRA)){ st.lv='bad'; st.t=c.needRA?'ดึงใบรับมัดจำจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง':'ดึงยอดบิลที่ใบลดหนี้ใช้จ่ายจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง'; } }
   if(!c.ok){ if(st.again){ st.again=false; return exSync(k,r); } renderAll(); return; }
   if(r._sv&&exSame(k,r)){ renderAll(); return; }
   if(!exCan(k)){ exRevert(k,r); st.lv='bad'; st.t='วันที่นี้แก้ไม่ได้แล้ว — คืนค่าเดิม'; renderAll(); return; }
@@ -841,7 +881,7 @@ async function exSync(k,r){
   try{
     if(r.id){ const q=await sb.from(T).update(rec).eq('id',r.id).eq('date',date).select('id'); if(q.error) throw q.error; if(!q.data||!q.data.length) throw new Error(EX_NOUPD); }
     else{ const q=await sb.from(T).insert([{...rec,date,created_role:ROLE}]).select('id').single();
-      if(q.error){ if(String(q.error.code)==='23505') throw new Error(rec.cn_no?rec.cn_no+' บันทึกไปแล้ว':'บิลนี้บันทึกคืนเงินโอนเกินไปแล้ว'); throw q.error; } newId=q.data&&q.data.id; }
+      if(q.error){ if(String(q.error.code)==='23505') throw new Error(rec.ra_no&&/ra_uq/.test(String(q.error.message||''))?rec.ra_no+' ลงเก็บเป็นมัดจำไปแล้ว':rec.cn_no?rec.cn_no+' บันทึกไปแล้ว':rec.kind==='cashover'?'บิลนี้บันทึกเงินสดเกินไปแล้ว':'บิลนี้บันทึกคืนเงินโอนเกินไปแล้ว'); throw q.error; } newId=q.data&&q.data.id; }
   }catch(e){ err=e; }
   st.busy=false;
   if(tok!==_loadTok||date!==DATA.date) return;
@@ -857,7 +897,7 @@ async function exDel(k,i){
   const r=S[k][i]; if(!r||!exCan(k)) return renderAll();
   const st=EXST.get(r)||{}; if(st.busy) return;
   if(!r.id){ S[k].splice(i,1); exDropBad(k,i); return renderAll(); }
-  const v=r._sv||r, lab=k==='other'?`รายรับอื่นๆ "${v.desc}" ${fmt(num(v.amt))}`:`คืนเงิน ${v.bill}${v.cn?' · '+v.cn:''} ${fmt(num(v.amt))}`;
+  const v=r._sv||r, lab=k==='other'?`รายรับอื่นๆ "${v.desc}" ${fmt(num(v.amt))}`:`${v.dp?'เก็บเป็นมัดจำ':'คืนเงิน'} ${v.bill}${v.cn?' · '+v.cn:''}${v.dp&&v.ra?' → '+v.ra:''} ${fmt(num(v.amt))}`;
   if(!confirm(`ลบ${lab} ของวันที่ ${beDate(DATA.date)} ?\n(ลบในระบบ — หน้าตรวจรายได้/การ์ดตัดบิลจะไม่เห็นรายการนี้แล้ว)`)) return;
   const date=DATA.date, tok=_loadTok; EXST.set(r,{...st,busy:true}); renderAll();
   let err=null;
@@ -890,24 +930,29 @@ function exDelCell(k,i,r){ const can=exCan(k)&&!(EXST.get(r)||{}).busy, has=r&&(
 function paneEx(R){
   if(TRIAL) return paneExTrial(R);
   const ro=rowsWithBlank(S.other,{desc:'',amt:'',ch:'',chan:''}), rr=rowsWithBlank(S.refund,{bill:'',cn:'',amt:'',ch:''});
-  const txt=(k,i,f,v,ph,cls)=>`<input class="${cls||''}" id="${k}_${f==='bill'?'b':f}_${i}" data-k="${k}" data-i="${i}" data-f="${f}" data-own="ex" value="${esc(v||'')}" placeholder="${ph||''}" maxlength="${f==='desc'?80:20}" autocomplete="off">`;
+  /* 16 พ.ย.69 (เหตุ 14 พ.ย.): แก้ไม่ได้ (ส่งฟอร์มแล้ว/อนุมัติตัดแล้ว/วันเก่า) → ช่องพิมพ์ไม่ได้เลย (disabled) ไม่ใช่พิมพ์ได้แต่ไม่บันทึก */
+  const dis=k=>exCan(k)?'':' disabled';
+  const txt=(k,i,f,v,ph,cls)=>`<input class="${cls||''}" id="${k}_${f==='bill'?'b':f}_${i}" data-k="${k}" data-i="${i}" data-f="${f}" data-own="ex" value="${esc(v||'')}" placeholder="${ph||''}" maxlength="${f==='desc'?80:20}" autocomplete="off"${dis(k)}>`;
   /* ยอดที่บันทึกแล้วแสดงคอมม่าหลักพัน (1,250) — พิมพ์ได้ทั้งมี/ไม่มีคอมม่า */
-  const ownAmt=(k,i,v)=>amtInput(k,i,'amt',typeof v==='number'&&isFinite(v)?v.toLocaleString('en-US',{maximumFractionDigits:2}):v).replace('<input ','<input data-own="ex" ');
-  const chanSel=(i,v)=>`<select id="other_chan_${i}" data-k="other" data-i="${i}" data-f="chan" data-own="ex">${['cash','kplus','ksk'].map(c=>`<option value="${c}" ${(v||'cash')===c?'selected':''}>${CHAN_TXT[c]}</option>`).join('')}</select>`;
-  const paySel=(i,v)=>chSel('refund',i,v).replace('<select ','<select data-own="ex" ').replace('>โอน<','>โอนคืน<');
-  const lockMsg=!exCan('refund')&&_loadOk?(ROLE==='cashier'&&ROW.status==='submitted'?'ส่งฟอร์มแล้ว — แก้/เพิ่มคืนเงินต่อที่หน้าตรวจรายได้ (กล่องคืนเงิน)':ROLE==='cashier'&&EXO.dayLock?'เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้คืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้เฉพาะวันนี้และเมื่อวาน)'):'';
+  const ownAmt=(k,i,v)=>amtInput(k,i,'amt',typeof v==='number'&&isFinite(v)?v.toLocaleString('en-US',{maximumFractionDigits:2}):v).replace('<input ',`<input data-own="ex"${dis(k)} `);
+  const chanSel=(i,v)=>`<select id="other_chan_${i}" data-k="other" data-i="${i}" data-f="chan" data-own="ex"${dis('other')}>${['cash','kplus','ksk'].map(c=>`<option value="${c}" ${(v||'cash')===c?'selected':''}>${CHAN_TXT[c]}</option>`).join('')}</select>`;
+  const paySel=(i,x)=>x.dp?`<select id="refund_ch_${i}" disabled title="เก็บเป็นมัดจำ — ไม่มีเงินออก"><option>มัดจำ</option></select>`:chSel('refund',i,x.ch).replace('<select ',`<select data-own="ex"${dis('refund')} `).replace('>โอน<','>โอนคืน<');
+  const lockTxt=k=>!exCan(k)&&_loadOk?(ROLE==='cashier'&&ROW.status==='submitted'?'ส่งฟอร์มแล้ว — ช่องรายรับอื่นๆ/คืนเงินพิมพ์ไม่ได้แล้ว ถ้าต้องเพิ่ม/แก้ กด "ขอแก้ฟอร์ม" ก่อน หรือแจ้งการเงิน (ลงที่หน้าตรวจรายได้ กล่องคืนเงิน)':k==='refund'&&ROLE==='cashier'&&EXO.dayLock?'เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้คืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้เฉพาะวันนี้และเมื่อวาน)'):'';
+  const lockBox=t=>t?`<div role="alert" style="margin:6px 0 8px;padding:10px 12px;border:2px solid var(--bad);border-radius:10px;background:#fef2f2;color:var(--bad);font-weight:600">🔒 ${esc(t)}</div>`:'';
+  const lockMsg=lockTxt('refund');
   const ph=EXO.rfPhoto?`<button type="button" class="btn" data-rfview="1" style="padding:2px 10px;font-size:.8rem">✅ ดูรูปใบคืนเงิน</button>`:`<span class="st ${S.refund.some(r=>r._sv)?'warn':''}">ยังไม่มีรูปใบคืนเงิน</span>`;
   const phUp=exCan('refund')?`<label class="btn" style="padding:2px 10px;font-size:.8rem">📷 ${EXO.rfPhoto?'เปลี่ยนรูป':'แนบรูปใบรายการจ่ายเงิน'}<input type="file" accept="image/*" capture="environment" id="rfPhIn" data-own="ex" data-k="refund" hidden></label>`:'';
   return `<div class="pane"><h2>รายรับอื่นๆ</h2><p class="hint">เงินที่ไม่มีบิล (ขายเศษเหล็ก ค่าขนส่ง ฯลฯ) · พิมพ์ลงทีละแถวได้เลย ครบแถวแล้วบันทึกเข้าระบบเอง (ที่เดียวกับกล่องในหน้าตรวจรายได้) · Enter/ลูกศร เลื่อนช่องเหมือน Excel</p>
+  ${lockBox(lockTxt('other'))}
   <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>รายละเอียด</th><th style="text-align:right">บาท</th><th>รับเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
   ${ro.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('other',i,'desc',x.desc,'เช่น ขายเศษเหล็ก')}</td><td style="width:8em">${ownAmt('other',i,x.amt)}</td><td style="width:8em">${chanSel(i,x.chan)}</td>${exStCell('other',i,R)}${exDelCell('other',i,x)}</tr>`).join('')}
   </tbody><tfoot><tr><td></td><td>${boxBad('other')?'รวม':`รวม (สด ${fmt(R.ex.oc)} · โอน ${fmt(R.ex.ox)})`}</td><td style="text-align:right">${totTxt('other',R.ex.oc+R.ex.ox)}</td><td colspan="3"></td></tr></tfoot></table></div>
-  <h2 style="margin-top:8px">คืนเงิน</h2><p class="hint">เลขบิล (พิมพ์แค่ 4 ตัวท้ายได้ เช่น 1194) + เลขใบลดหนี้ (ถ้ามี) + ยอดที่คืนจริง + คืนเป็นสด/โอนคืน · คืนเพราะลูกค้าโอนเกิน (ไม่มีใบลดหนี้) = ติ๊กช่อง "คืนเพราะโอนเกิน" (ต้องมีบิลนี้ในแท็บโอน)</p>
-  ${lockMsg?`<div class="small" style="color:var(--bad)">🔒 ${esc(lockMsg)}</div>`:''}
+  <h2 style="margin-top:8px">คืนเงิน</h2><p class="hint">เลขบิล (พิมพ์แค่ 4 ตัวท้ายได้ เช่น 1194) + เลขใบลดหนี้ (ถ้ามี) + ยอดที่คืนจริง + คืนเป็นสด/โอนคืน · คืนเพราะลูกค้าโอนเกิน (ไม่มีใบลดหนี้) = ติ๊กช่อง "คืนเพราะโอนเกิน" (ต้องมีบิลนี้ในแท็บโอน)<br>ลูกค้ายังไม่รับเงินคืน ฝากไว้ที่ร้าน = ติ๊ก <b>"เก็บเป็นมัดจำ"</b> + ใส่เลข RA ที่ออกใน ACC (ไม่หักเงินสดในลิ้นชัก) · ใช้ได้กับ คืนของ (ใส่ CN) / โอนเกิน (ติ๊กโอนเกิน) / เงินสดเกิน (ไม่ต้องใส่ CN)</p>
+  ${lockBox(lockMsg)}
   ${EXO.err?`<div class="small" style="color:var(--warn)">ตรวจกับ ACC ไม่ได้ (${esc(EXO.err)}) — ยังลงรายรับอื่นๆ ได้ · คืนเงินลองเปิดหน้าใหม่</div>`:''}
-  <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th><th>ใบลดหนี้</th><th style="text-align:center">คืนเพราะ<br>โอนเกิน</th><th style="text-align:right">ยอดเงิน</th><th>คืนเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
-  ${rr.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('refund',i,'bill',x.bill,'1194 หรือ KM6910-1194','bill')}</td><td>${x.op?txt('refund',i,'cn','','ไม่ต้องใส่','bill').replace('<input ','<input disabled '):txt('refund',i,'cn',x.cn,'CN6910-0000','bill')}</td><td style="text-align:center"><input type="checkbox" data-rfop="${i}" title="คืนเงินเนื่องจากลูกค้าโอนเกิน (ไม่มีใบลดหนี้)" ${x.op?'checked':''} ${exCan('refund')?'':'disabled'} style="width:20px;height:20px"></td><td style="width:8em">${ownAmt('refund',i,x.amt)}</td><td style="width:7em">${paySel(i,x.ch)}</td>${exStCell('refund',i,R)}${exDelCell('refund',i,x)}</tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td colspan="3">${boxBad('refund')?'รวม':`รวม (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td colspan="3"></td></tr></tfoot></table></div>
+  <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th><th>ใบลดหนี้</th><th style="text-align:center">คืนเพราะ<br>โอนเกิน</th><th style="text-align:center">เก็บเป็น<br>มัดจำ (RA)</th><th style="text-align:right">ยอดเงิน</th><th>คืนเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
+  ${rr.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('refund',i,'bill',x.bill,'1194 หรือ KM6910-1194','bill')}</td><td>${x.op?txt('refund',i,'cn','','ไม่ต้องใส่','bill').replace('<input ','<input disabled '):txt('refund',i,'cn',x.cn,'CN6910-0000','bill')}</td><td style="text-align:center"><input type="checkbox" data-rfop="${i}" title="คืนเงินเนื่องจากลูกค้าโอนเกิน (ไม่มีใบลดหนี้)" ${x.op?'checked':''} ${exCan('refund')?'':'disabled'} style="width:20px;height:20px"></td><td style="text-align:center;white-space:nowrap"><input type="checkbox" data-rfdp="${i}" title="ลูกค้ายังไม่รับเงินคืน ฝากไว้เป็นมัดจำ (ACC ออกใบรับมัดจำ RA)" ${x.dp?'checked':''} ${exCan('refund')?'':'disabled'} style="width:20px;height:20px;vertical-align:middle">${x.dp?txt('refund',i,'ra',x.ra,'RA เช่น 0003','bill').replace('<input ','<input style="width:8.5em;margin-left:4px" '):''}</td><td style="width:8em">${ownAmt('refund',i,x.amt)}</td><td style="width:7em">${paySel(i,x)}</td>${exStCell('refund',i,R)}${exDelCell('refund',i,x)}</tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td colspan="4">${boxBad('refund')?'รวม':`รวมคืนเงิน (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})${R.ex.rd?` · เก็บเป็นมัดจำ ${fmt(R.ex.rd)} (ไม่นับเงินออก)`:''}`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td colspan="3"></td></tr></tfoot></table></div>
   <div class="small" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">รูปใบรายการจ่ายเงิน (คืนเงิน): ${ph} ${phUp}</div></div>`;
 }
 /* ---------- ใบนับเงินสด ในฟอร์มที่เดียว (คุณหลิงสั่ง 28 ต.ค.69 16:47) + ตารางนับเงินสด (คุณหลิงอนุมัติแบบ 29 ต.ค.69 09:03) ----------
@@ -1166,7 +1211,9 @@ function compute(){
     if(wantCash!==isCash){mark('warn','ช่องทางไม่ตรง');R.issues.push({lv:'warn',t:`${ra} ใน ACC รับเป็น "${d.method}" แต่ลงในกล่อง${isCash?'เงินสด':'โอน'}`,tab:list[0].tab});return}
     mark('ok','มัดจำ ✓');
   });
-  if(ACC_OK)Object.values(DEP).forEach(d=>{if(d.date===today&&!raSeen[d.no]){R.issues.push({lv:'bad',t:`ใบรับมัดจำ ${d.no} (${shortName(d.name)} ${fmt(d.total)} ${d.method}) ยังไม่ได้ลงรับเงิน`,d:'ใส่ยอดพร้อมเลข RA ในกล่องเงินสดหรือโอน'})}});
+  const raDep={}; exRows('refund').forEach(x=>{ if(x.dp&&x.ra) raDep[x.ra]=x; }); /* 16 พ.ย.69: RA ที่ออกเพราะเก็บเงินคืนเป็นมัดจำ — เงินมาจากบิลแล้ว ไม่ใช่เงินรับใหม่ */
+  if(ACC_OK)Object.values(DEP).forEach(d=>{if(d.date===today&&raDep[d.no]&&!raSeen[d.no]){R.issues.push({lv:'ok',t:`ใบรับมัดจำ ${d.no} (${shortName(d.name)} ${fmt(d.total)}) = เก็บเงินคืนของบิล ${raDep[d.no].bill} เป็นมัดจำ`,tab:'ex'});return}
+    if(d.date===today&&!raSeen[d.no]){R.issues.push({lv:'bad',t:`ใบรับมัดจำ ${d.no} (${shortName(d.name)} ${fmt(d.total)} ${d.method}) ยังไม่ได้ลงรับเงิน`,d:'ใส่ยอดพร้อมเลข RA ในกล่องเงินสดหรือโอน'})}});
   // today's bills
   const tb=!ACC_OK?[]:Object.values(BILL).filter(b=>b.date===today).sort((a,b)=>a.no<b.no?-1:1);
   let expRetailCash=0;const retailCashParts=[];const satang=[];
@@ -1174,15 +1221,18 @@ function compute(){
      เคส 28/10: บิล 1194 ยอด 10 ใช้ CN6910-0043 12 ทอนสด 2 → เครดิต 10 = ครบบิล (เดิมขึ้น "ลงรับรวม 12 เกินยอดบิล 10") */
   const rfCn={}; exRows('refund').forEach(x=>{ if(x.cn) rfCn[x.cn]=r2x((rfCn[x.cn]||0)+num(x.amt)); });
   const cnAmt=x=>Math.max(0,r2x(x.amt-(rfCn[x.cn]||0)));
+  /* 16 พ.ย.69: ส่วนเกินของบิลที่เก็บเป็นมัดจำ (โอนเกิน/เงินสดเกิน · ไม่มี CN) → ลงรับเต็มที่ลูกค้าจ่าย ส่วนเกิน = RA */
+  const dpx={},dpRA={}; exRows('refund').forEach(x=>{ if(x.dp&&!x.cn){ dpx[x.bill]=r2x((dpx[x.bill]||0)+num(x.amt)); (dpRA[x.bill]=dpRA[x.bill]||[]).push(x.ra); } });
   tb.forEach(b=>{
     const ent=(R.paid[b.no]||[]);const entSum=ent.reduce((s,x)=>s+x.amt,0);
     const dep=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);
     const cn=(CNUSE[b.no]||[]).reduce((s,x)=>s+cnAmt(x),0), cnRf=(CNUSE[b.no]||[]).reduce((s,x)=>s+x.amt-cnAmt(x),0);
-    const covered=entSum+dep+cn;const rem=Math.round((b.total-covered)*100)/100;
+    const dx=dpx[b.no]||0;const covered=entSum+dep+cn-dx;const rem=Math.round((b.total-covered)*100)/100;
     const extra=[];if(dep)extra.push(`หักมัดจำ ${(USE[b.no]||[]).map(x=>x.ra).join(',')} ${fmt(dep)}`);
     /* 14 พ.ย.69: ข้อความใบลดหนี้รูปแบบเดียว (หักบิลตัวเอง / ใช้จากบิลอื่น) ให้แคชเชียร์เห็นว่าโปรแกรมหักอะไร */
     const cnTxt=(CNUSE[b.no]||[]).length?(CNUSE[b.no].map(x=>{const c=cnAmt(x),r=r2x(x.amt-c);return c>0.009?`หักใบลดหนี้ ${x.cn} ${fmt(c)}${r>0.009?` (ใบลดหนี้ ${fmt(x.amt)} − คืนเงิน ${fmt(r)})`:''}`:`ใบลดหนี้ ${x.cn} ${fmt(x.amt)} คืนเงินแล้ว ไม่หักบิล`}).join(' · ')+' (จาก ACC)'):'';
     if(cnTxt)extra.push(cnTxt);
+    if(dx)extra.push(`ส่วนเกิน ${fmt(dx)} เก็บเป็นมัดจำ ${(dpRA[b.no]||[]).join(',')}`);
     if(cnTxt)['scash','xfer','credit','upk'].forEach(k=>S[k].forEach((r,i)=>{const o=R.rowInfo[k+':'+i];if(r.bill===b.no&&o&&o.who&&!o.cnln){o.cnln=1;o.who+=`<div class="cnln">${esc(cnTxt)}</div>`;o.full=(o.full||'')+' · '+cnTxt}}));
     const retail=b.code===RETAIL;const upk=/UPK/i.test(b.name);
     if(retail&&!upk){
@@ -1211,10 +1261,10 @@ function compute(){
   /* ยอดรวมทั้งวัน: บิลขายวันนี้ใน ACC = ที่ฟอร์มลงรับไว้กับบิลวันนี้ (ทุกกล่อง) + เงินสดปลีก + มัดจำที่หักในบิล + ใบลดหนี้ที่ใช้เป็นเครดิต */
   if(ACC_OK){
     const box={};let dep=0,cn=0;
-    tb.forEach(b=>{(R.paid[b.no]||[]).forEach(x=>{box[x.src]=(box[x.src]||0)+x.amt});dep+=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);cn+=(CNUSE[b.no]||[]).reduce((s,x)=>s+cnAmt(x),0)});
-    const tot=tb.reduce((s,b)=>s+b.total,0);const covered=Object.values(box).reduce((s,v)=>s+v,0)+rcEntered+dep+cn;
+    let dpxT=0;tb.forEach(b=>{dpxT+=dpx[b.no]||0;(R.paid[b.no]||[]).forEach(x=>{box[x.src]=(box[x.src]||0)+x.amt});dep+=(USE[b.no]||[]).reduce((s,x)=>s+x.amt,0);cn+=(CNUSE[b.no]||[]).reduce((s,x)=>s+cnAmt(x),0)});
+    const tot=tb.reduce((s,b)=>s+b.total,0);const covered=Object.values(box).reduce((s,v)=>s+v,0)+rcEntered+dep+cn-dpxT;
     const depAcc={cash:0,xfer:0},depForm={cash:0,xfer:0};
-    Object.values(DEP).forEach(d=>{if(d.date===today)depAcc[/สด/.test(d.method)?'cash':'xfer']+=d.total});
+    Object.values(DEP).forEach(d=>{if(d.date===today&&!(raDep[d.no]&&!raSeen[d.no]))depAcc[/สด/.test(d.method)?'cash':'xfer']+=d.total});
     Object.entries(raSeen).forEach(([ra,list])=>{const d=DEP[ra];if(d&&d.date===today)list.forEach(x=>depForm[x.ch==='xfer'?'xfer':'cash']+=x.amt)});
     R.accTot={n:tb.length,tot,box,dep,cn,rc:rcEntered,covered,diff:Math.round((covered-tot)*100)/100,depAcc,depForm};
   }
@@ -1234,7 +1284,7 @@ function compute(){
   R.sum=z;
   R.old={c:S.oldc.reduce((s,r)=>s+num(r.amt),0),x:S.oldx.reduce((s,r)=>s+num(r.amt),0),cs:{r:0,s:0},xs:{r:0,s:0}};S.oldc.forEach(r=>R.old.cs[side(r.bill)]+=num(r.amt));S.oldx.forEach(r=>R.old.xs[side(r.bill)]+=num(r.amt));
   R.upk=S.upk.reduce((s,r)=>s+num(r.amt),0);
-  R.ex={oc:0,ox:0,rc:0,rx:0};exRows('other').forEach(x=>{R.ex[x.ch==='xfer'?'ox':'oc']+=num(x.amt)});exRows('refund').forEach(x=>{R.ex[x.ch==='xfer'?'rx':'rc']+=num(x.amt)});
+  R.ex={oc:0,ox:0,rc:0,rx:0};exRows('other').forEach(x=>{R.ex[x.ch==='xfer'?'ox':'oc']+=num(x.amt)});R.ex.rd=0;exRows('refund').forEach(x=>{if(x.dp){R.ex.rd+=num(x.amt);return}R.ex[x.ch==='xfer'?'rx':'rc']+=num(x.amt)}); /* 16 พ.ย.69: เก็บเป็นมัดจำ ไม่หักเงินสดนำส่ง ไม่นับโอนคืน */
   /* โหมดจริง: สถานะแถวรายรับอื่นๆ/คืนเงิน — ยังไม่บันทึก/บันทึกไม่ผ่าน = ต้องแก้ก่อนส่งฟอร์ม (block) · แถวในฐานที่ตรวจแล้วไม่ผ่าน (เช่นคืนเกินส่วนที่เหลือของ CN) = เรื่องที่การเงินตรวจต่อ */
   if(!TRIAL) ['other','refund'].forEach(k=>{ const lab=k==='other'?'รายรับอื่นๆ':'คืนเงิน';
     S[k].forEach((r,i)=>{ const st=EXST.get(r)||{}, c=exCheck(k,r,i); let info;
@@ -1242,7 +1292,7 @@ function compute(){
       else if(!r._sv||!exSame(k,r)){ if(!c.ok&&!c.lv&&!r._sv) return;
         info=st.lv==='bad'&&st.t?{lv:'bad',st:st.t}:c.ok?{lv:'warn',st:'ยังไม่บันทึก'}:{lv:c.lv||'bad',st:c.t||'ยังไม่ครบ'};
         R.issues.push({lv:'bad',block:true,t:`${lab} แถว ${i+1} ยังไม่ได้บันทึก: ${info.st}`,d:r._sv?'ในระบบยังเป็นค่าเดิม — แก้ให้ครบ หรือกด 🗑 ถ้าจะลบ':'แก้ให้ครบแล้วโปรแกรมบันทึกให้เอง หรือกด 🗑 ลบแถวนี้',tab:'ex'}); }
-      else if(!c.ok&&!c.unk){ info={lv:c.lv||'bad',st:c.t}; R.issues.push({lv:c.lv==='warn'?'warn':'bad',t:`${lab} แถว ${i+1} (${k==='other'?r.desc:r.bill+(r.cn?' · '+r.cn:'')}): ${c.t}`,d:'อยู่ในระบบแล้ว — การเงิน/เจ้าของตรวจ แก้ยอดได้ในแถวนี้',tab:'ex'}); }
+      else if(!c.ok&&!c.unk){ info={lv:c.lv||'bad',st:c.t}; R.issues.push({lv:c.lv==='warn'?'warn':'bad',t:`${lab} แถว ${i+1} (${k==='other'?r.desc:r.bill+(r.cn?' · '+r.cn:'')+(r.dp&&r.ra?' → '+r.ra:'')}): ${c.t}`,d:'อยู่ในระบบแล้ว — การเงิน/เจ้าของตรวจ แก้ยอดได้ในแถวนี้',tab:'ex'}); }
       else{ info=st.lv==='bad'&&st.t?{lv:'warn',st:st.t}:c.warn&&c.ok?{lv:'warn',st:c.warn}:{lv:'ok',st:'บันทึกแล้ว ✓'}; if(c.ok&&c.warn) R.issues.push({lv:'warn',t:`${lab} แถว ${i+1}: ${c.warn}`,tab:'ex'}); }
       R.rowInfo[k+':'+i]=info; bump('ex',info.lv); }); });
   if(TRIAL) S.other.forEach((x,i)=>{if(num(x.amt)&&!String(x.desc||'').trim()){R.issues.push({lv:'bad',t:`รายรับอื่นๆ แถว ${i+1}: ใส่รายละเอียดด้วย`,tab:'ex'});bump('ex','bad')}});
@@ -1278,6 +1328,7 @@ function sumTable(R,compact){
   return `<div class="tblwrap"><table class="sum"><thead><tr><th>รายการ</th><th>ลูกค้าปลีก</th><th>สมาชิก/ร้านค้า</th><th>รวมรับ</th></tr></thead><tbody>
   ${row('เงินสด (รวมมัดจำ)',z.cash,'cash')}${row('โอน K+NV',z.kp,'kp')}${row('โอนเข้าบัญชี กสิกร',z.ks,'ks')}${row('ลงบัญชี รวมสั่งทำ',z.cr,'cr')}
   <tr><td>รายรับอื่นๆ เงินสด / โอน</td><td colspan="2">${fmt(R.ex.oc)} / ${fmt(R.ex.ox)}</td><td><b>${fmt(R.ex.oc+R.ex.ox)}</b></td></tr><tr><td>บิลเก่า เงินสด / โอน</td><td colspan="2">${fmt(R.old.c)} / ${fmt(R.old.x)}</td><td><b>${fmt(R.old.c+R.old.x)}</b></td></tr><tr><td>คืนเงิน สด / โอน</td><td colspan="2">${fmt(R.ex.rc)} / ${fmt(R.ex.rx)}</td><td><b>${fmt(R.ex.rc+R.ex.rx)}</b></td></tr>
+  ${R.ex.rd?`<tr><td>เก็บเป็นมัดจำ <span class="small">(ไม่นับเงินออก)</span></td><td colspan="2" class="small">${esc(exRows('refund').filter(x=>x.dp).map(x=>x.ra).join(', '))}</td><td><b>${fmt(R.ex.rd)}</b></td></tr>`:''}
   <tr><td>UPK</td><td colspan="2"></td><td><b>${fmt(R.upk)}</b>${xlTag(R.upk,XL.upk)}</td></tr>
   <tr class="tot"><td>ยอดรวมเงินสดนำส่ง</td><td colspan="2"></td><td>${amtProblems()?'<span class="st bad">ยังสรุปไม่ได้</span>':fmt(R.cashSend)+xlTag(R.cashSend,XL.send)}</td></tr>
   </tbody></table></div>`;
@@ -1398,6 +1449,15 @@ function bind(){
     while(S.refund.length<=i) S.refund.push({bill:'',cn:'',amt:'',ch:''});
     const r=S.refund[i]; if(cb.checked){ r.op=true; if(r.cn) r._cnPrev=r.cn; r.cn=''; } else { delete r.op; if(!r.cn&&r._cnPrev) r.cn=r._cnPrev; delete r._cnPrev; }
     renderAll(); exSync('refund',r); });
+  /* 16 พ.ย.69 คุณหลิง: ติ๊ก "เก็บเป็นมัดจำ" → มีช่องเลข RA (บังคับ) · คืนเป็น ล็อกเป็นมัดจำ · เอาติ๊กออก = กลับเป็นคืนสด/โอนคืนตามเดิม */
+  document.querySelectorAll('#panes [data-rfdp]').forEach(cb=>cb.onchange=()=>{ const i=+cb.dataset.rfdp;
+    if(TRIAL||!exCan('refund')){ renderAll(); return; }
+    while(S.refund.length<=i) S.refund.push({bill:'',cn:'',amt:'',ch:''});
+    const r=S.refund[i]; if(cb.checked){ r.dp=true; if(!r.ra&&r._raPrev) r.ra=r._raPrev; }
+    else{ /* r2 Codex #7: กลับเป็นคืนเงินจริง = เงินออก → ให้เลือกช่องทางเองทุกครั้ง (ไม่เดาจากค่าเก่า) */
+      if((r.amt!==''&&r.amt!=null)||r.id){ const c=confirm('เอาติ๊ก "เก็บเป็นมัดจำ" ออก = คืนเงินให้ลูกค้าจริง\n\nกด ตกลง = คืนเป็นเงินสด (หักจากลิ้นชัก)\nกด ยกเลิก = โอนคืน'); r.ch=c?'cash':'xfer'; }
+      delete r.dp; if(r.ra) r._raPrev=r.ra; delete r.ra; }
+    renderAll(); exSync('refund',r); if(cb.checked&&!r.ra) setTimeout(()=>{ const el=document.getElementById('refund_ra_'+i); if(el) el.focus(); },0); });
   document.querySelectorAll('#panes [data-chq]').forEach(cb=>cb.onchange=()=>{ const i=+cb.dataset.chq, r=S.oldx[i];
     /* ติ๊กได้เฉพาะแถวที่มีเลขบิลหรือยอดแล้ว · เอาติ๊กออก = ล้างรูปที่ผูกไว้ด้วย (ไฟล์เดิมยังอยู่ในที่เก็บ) */
     if(!canEdit()||!r||(!r.bill&&r.amt==='')){ if(canEdit()&&cb.checked) setChip('saveChip','warn','ใส่เลขบิลและยอดก่อน แล้วค่อยติ๊กเช็ค'); renderAll(); return; }
@@ -1491,6 +1551,7 @@ function commit(el){
   if(k==='oldx'&&f==='bill'&&S[k][i]&&S[k][i].chqImg&&S[k][i].bill!==v){ delete S[k][i].chqImg; setChip('saveChip','warn','เปลี่ยนเลขบิลแล้ว — แนบรูปเช็คใหม่'); }
   if(f==='ra'||f==='cn')v=normBill(v);
   if(k==='refund'&&f==='bill')v=exBill(v);
+  if(k==='refund'&&f==='ra')v=exRA(v);
   S[k][i][f]=v;
   if(k==='other'&&f==='chan') S[k][i].ch=v==='cash'?'cash':'xfer';
   const row=S[k][i];
@@ -1629,7 +1690,7 @@ function pageHTML(id){
     const tb=(t,a,cl,src)=>`<span class="lab2 ${cl}">${t}</span><table><tr><th style="width:12mm">ลำดับ</th><th style="width:32mm">เลขบิล</th><th>สมาชิก/ร้านค้า</th><th style="width:26mm">ยอดเงิน</th></tr>${padRows(a,12).map((r,i)=>{const n=r&&r.bills?r.bills.length:1;return `<tr><td class="c">${i+1}</td><td>${r?(n>1?n+' บิล':esc(r.bill))+(r.chq?'<span class="nm">(เช็ค)</span>':''):''}</td><td${n>1?' class="wr"':''}>${r?esc(nm(r.bill))+(n>1?`<span class="nm">${blist(r.bills)}</span>`:''):''}</td><td class="r">${r?fmt(num(r.amt)):''}</td></tr>`}).join('')}<tr class="t"><td colspan="3" class="r">ยอดรวม</td><td class="r">${fmt((src||a).reduce((s,r)=>s+num(r&&r.amt),0))}</td></tr></table>`;
     return `<div class="sheet">${sheetHead('บิลเก่า',true)}${tb('เงินสด',grp(S.oldc),'',S.oldc)}<div style="height:6mm"></div>${tb('โอนเข้าบัญชี',grp(S.oldx),'xblue',S.oldx)}</div>`}
   if(id==='p7'){
-    const o=padRows(exRows("other"),12),r=padRows(exRows("refund"),12);
+    const o=padRows(exRows("other"),12),r=padRows(exRows("refund").filter(x=>!x.dp),12),dpr=exRows("refund").filter(x=>x.dp);
     return `<div class="sheet">${sheetHead('รายรับอื่นๆ / คืนเงิน')}
     <span class="lab2">รายรับอื่นๆ</span><table><tr><th style="width:12mm">ลำดับ</th><th>รายละเอียด</th><th style="width:28mm">เงินสด</th><th style="width:28mm">เงินโอน</th></tr>
     ${o.map((x,i)=>`<tr><td class="c">${i+1}</td><td>${x?esc(x.desc):''}</td><td class="r">${x&&x.ch!=='xfer'&&num(x.amt)?fmt(num(x.amt)):''}</td><td class="r">${x&&x.ch==='xfer'&&num(x.amt)?fmt(num(x.amt)):''}</td></tr>`).join('')}
@@ -1637,7 +1698,8 @@ function pageHTML(id){
     <div style="height:6mm"></div>
     <span class="lab2">คืนเงิน (ไม่ออกบิล)</span><table><tr><th style="width:12mm">ลำดับ</th><th style="width:30mm">เลขบิล</th><th style="width:30mm">ใบลดหนี้</th><th style="width:24mm">เงินสด</th><th style="width:24mm">เงินโอน</th><th>ผู้รับเงิน (ลายเซ็น)</th></tr>
     ${r.map((x,i)=>`<tr style="height:9mm"><td class="c">${i+1}</td><td>${x?esc(x.bill):''}</td><td>${x?esc(x.cn||''):''}</td><td class="r">${x&&x.ch!=='xfer'&&num(x.amt)?fmt(num(x.amt)):''}</td><td class="r">${x&&x.ch==='xfer'&&num(x.amt)?fmt(num(x.amt)):''}</td><td></td></tr>`).join('')}
-    <tr class="t"><td colspan="3" class="r">ยอดรวม</td><td class="r">${fmt(R.ex.rc)}</td><td class="r">${fmt(R.ex.rx)}</td><td></td></tr></table></div>`}
+    <tr class="t"><td colspan="3" class="r">ยอดรวม</td><td class="r">${fmt(R.ex.rc)}</td><td class="r">${fmt(R.ex.rx)}</td><td></td></tr></table>
+    ${dpr.length?`<div style="margin-top:3mm;font-size:9pt">เก็บเป็นมัดจำ (ไม่มีเงินออก): ${dpr.map(x=>esc(x.bill+(x.cn?' '+x.cn:'')+' → '+x.ra+' '+fmt(num(x.amt)))).join(' · ')} · รวม ${fmt(R.ex.rd)}</div>`:''}</div>`}
   if(id==='p6'){const a=S.rcash;const half=Math.max(30,Math.ceil(a.length/2));const c1=padRows(a.slice(0,half),half),c2=padRows(a.slice(half),half);
     const tb=(arr,off)=>`<table><tr><th style="width:12mm">ลำดับ</th><th>ยอดเงิน</th><th style="width:30mm">มัดจำ</th></tr>${arr.map((r,i)=>`<tr><td class="c">${off+i+1}</td><td class="r">${r?fmt(num(r.amt)):''}</td><td>${r&&r.ra?esc(r.ra):''}</td></tr>`).join('')}</table>`;
     return `<div class="sheet">${sheetHead('เงินสดลูกค้าปลีก (ง-ส คุณ1)')}<div class="two"><div>${tb(c1,0)}</div><div>${tb(c2,half)}</div></div>
@@ -1667,7 +1729,7 @@ function buildXlsx(ids){
   const e={date:DATA.date,rcash:ent.rcash};
   ['scash','xfer','credit','oldc','oldx','upk'].forEach(k=>e[k]=(ent[k]||[]).filter(ok));
   e.other=exRows("other").map(x=>({desc:x.desc,amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
-  e.refund=exRows("refund").map(x=>({bill:x.bill,cn:x.cn||'',amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'}));
+  e.refund=exRows("refund").filter(x=>!x.dp).map(x=>({bill:x.bill,cn:x.cn||'',amt:x.amt,ch:x.ch==='xfer'?'xfer':'cash'})); /* เก็บเป็นมัดจำ ไม่ใช่คืนเงิน (ชีตเดียวกับที่หน้าตรวจรายได้ดึงยอด) */
   const full=CF.buildWorkbook(X,e,{bills:BILL,deps:DEP});
   /* ชีตบิลเก่า: แถวโอนที่จ่ายด้วยเช็ค ใส่คำว่า "เช็ค" ในคอลัมน์ D (ไม่แตะตัวสร้างกลางที่หน้าตรวจรายได้ใช้ดึงยอด) */
   /* จับคู่รายแถวด้วยเลขลำดับในคอลัมน์ A ของช่วง "โอนเข้าบัญชี" (= ลำดับใน e.oldx) ไม่ใช่เลขบิล — บิลเดียวแบ่งหลายแถวได้ (Codex v074 #8) */

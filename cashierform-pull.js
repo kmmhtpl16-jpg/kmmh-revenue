@@ -36,7 +36,7 @@
     /* รายรับอื่นๆ / คืนเงิน อยู่ในตารางเดิม (ไม่อยู่ใน entries) → โหลดมาใส่ชีตสรุปด้วย ไม่งั้นยอดสองหมวดนี้ + เงินสดนำส่งผิด */
     var q=await Promise.all([
       sb.from("rev_cash_other").select("amount,channel").eq("date",date),
-      sb.from("rev_cash_refund").select("amount,pay").eq("date",date)]);
+      sb.from("rev_cash_refund").select("amount,pay").eq("date",date).neq("pay","deposit")]); /* 16 พ.ย.69: เก็บเป็นมัดจำ ไม่ใช่เงินคืน — ไม่เข้ายอดคืนเงินของฟอร์ม */
     if(q[0].error) throw q[0].error; if(q[1].error) throw q[1].error;
     var a=await sb.rpc("rev_cashier_form_acc",{p_date:date,p_extra:bills(c.e)}); if(a.error) throw a.error;
     var d=a.data||{}, done=d.synced_at && new Date(d.synced_at).getTime()>=new Date(date+"T16:30:00+07:00").getTime();

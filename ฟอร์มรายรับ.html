@@ -124,6 +124,11 @@ table.entry input.num{min-width:7em}
 table.entry td .btn{white-space:nowrap}
 .st{font-size:.8rem;white-space:nowrap}
 .st.ok{color:var(--ok)} .st.warn{color:var(--warn)} .st.bad{color:var(--bad)} .st.info{color:var(--info)}
+/* 16 พ.ย.69 คุณหลิง: ช่องสถานะแท็บอื่นๆ/คืนเงิน = สัญลักษณ์ความกว้างคงที่ · แตะ = หน้าต่างข้อความเต็ม */
+td.sti{width:2.6em;min-width:2.6em;max-width:2.6em;text-align:center;padding-left:2px;padding-right:2px}
+button.sticon{width:2em;height:2em;border:1px solid currentColor;border-radius:50%;background:transparent;color:inherit;font-size:.95rem;line-height:1;cursor:pointer;padding:0}
+button.sticon:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#stTxt{white-space:pre-wrap;word-break:break-word;font-size:.95rem}
 tfoot td{font-weight:700;border-top:2px solid var(--line);padding:6px}
 .sumrow{display:flex;justify-content:space-between;gap:8px;font-weight:700;padding:6px 8px;background:var(--soft);border-radius:8px}
 /* panel */
@@ -263,6 +268,13 @@ table.cpt tr.cpsum td{background:#d5fbef;font-weight:700}
     <input id="depIn" placeholder="RA6910-0000" maxlength="20" autocomplete="off" spellcheck="false">
     <div class="dprev" id="depPrev"></div>
     <div class="dacts"><button class="btn" id="depCancel">ยกเลิก</button><button class="btn pri" id="depOk" disabled>บันทึก</button></div>
+  </div>
+</div>
+<div class="dlg" id="stDlg" hidden>
+  <div class="dbox2" role="dialog" aria-modal="true" aria-labelledby="stHead">
+    <h3 id="stHead">สถานะ</h3>
+    <div id="stTxt"></div>
+    <div class="dacts"><button class="btn pri" id="stClose">ปิด</button></div>
   </div>
 </div>
 <div class="dlg" id="chqDlg" hidden>
@@ -924,7 +936,26 @@ async function rfPhotoUp(file){
   catch(err){ setChip('saveChip','bad','แนบรูปไม่สำเร็จ: '+(err.message||err)); }
   finally{ _rfPhBusy=false; renderAll(); }
 }
-function exStCell(k,i,R){ const info=R.rowInfo[k+':'+i]; return `<td class="st ${info?info.lv:''}">${info?esc(info.st):''}</td>`; }
+/* 16 พ.ย.69 คุณหลิง: "สถานะยาวและเปลืองพื้นที่" → สัญลักษณ์ ✓ บันทึกแล้ว · ⚠ เตือน/ยังไม่บันทึก · ✕ บันทึกไม่ได้/ไม่ครบ · ⏳ กำลังบันทึก · ℹ ข้อมูล
+   แตะ = หน้าต่างข้อความเต็ม (คำเดิมทุกคำ) · เมาส์ชี้ = ข้อความเต็มใน title · ข้อความ/กติกาตรวจเดิมทั้งหมด (แก้เฉพาะการแสดงผล) */
+const ST_ICON={ok:'✓',warn:'⚠',bad:'✕',info:'ℹ'};
+function exStCell(k,i,R){ const info=R.rowInfo[k+':'+i]; if(!info||!info.st) return `<td class="st sti"></td>`;
+  const row=(S[k]||[])[i], busy=!!(row&&(EXST.get(row)||{}).busy); /* r3 Codex r2: ⏳ จากสถานะกำลังบันทึกจริงของแถว ไม่ดูข้อความ */
+  const ic=busy?'⏳':(ST_ICON[info.lv]||'•'), lab=`${k==='other'?'รายรับอื่นๆ':'คืนเงิน'} แถว ${i+1}`;
+  return `<td class="st sti ${info.lv||''}"><button type="button" class="sticon" data-stkey="${k}:${i}" data-stmsg="${esc(info.st)}" data-sthead="${esc(lab)}" title="${esc(info.st)}" aria-label="${esc(lab+': '+info.st)}">${ic}</button></td>`; }
+/* r2 (Codex r1): หน้าต่างกักโฟกัส (ข้างหลัง inert) · ปิดแล้วคืนโฟกัสไปปุ่มของแถวเดิม (หาใหม่ตามตัวระบุแถว เพราะ renderAll สร้างปุ่มใหม่) · ไม่เจอ = แท็บที่เปิดอยู่ */
+let _stKey=null, _stInert=[];
+function stOpen(key,head,txt){ _stKey=key; document.getElementById('stHead').textContent=head||'สถานะ'; document.getElementById('stTxt').textContent=txt||'';
+  const d=document.getElementById('stDlg'); _stInert=[...document.body.children].filter(el=>el!==d&&!el.inert); _stInert.forEach(el=>{ el.inert=true; });
+  d.hidden=false; setTimeout(()=>document.getElementById('stClose').focus(),30); }
+function stClose(){ const d=document.getElementById('stDlg'); if(d.hidden) return; d.hidden=true; _stInert.forEach(el=>{ el.inert=false; }); _stInert=[];
+  const k=_stKey; _stKey=null; const b=k&&[...document.querySelectorAll('#panes [data-stkey]')].find(x=>x.dataset.stkey===k);
+  if(b) b.focus(); else { const t=document.querySelector('#tabs [aria-selected="true"], #tabs .on')||document.getElementById('panes'); if(t&&t.focus){ if(!t.hasAttribute('tabindex')&&t.id==='panes') t.setAttribute('tabindex','-1'); t.focus(); } } }
+document.getElementById('stClose').onclick=stClose;
+document.getElementById('stDlg').addEventListener('click',e=>{ if(e.target.id==='stDlg') stClose(); });
+document.addEventListener('keydown',e=>{ if(document.getElementById('stDlg').hidden) return;
+  if(e.key==='Escape'){ e.preventDefault(); stClose(); return; }
+  if(e.key==='Tab'){ e.preventDefault(); document.getElementById('stClose').focus(); } },true);
 function exDelCell(k,i,r){ const can=exCan(k)&&!(EXST.get(r)||{}).busy, has=r&&(r.id||Object.entries(r).some(([kk,v])=>!['ch','chan'].includes(kk)&&v!==''&&v!=null));
   return `<td style="width:2.2em;text-align:center">${has&&can?`<button type="button" class="btn" data-exdel="${k}:${i}" title="ลบรายการนี้" aria-label="ลบแถว ${i+1}" style="padding:1px 7px">🗑</button>`:''}</td>`; }
 function paneEx(R){
@@ -1472,6 +1503,7 @@ function bind(){
   document.querySelectorAll('#panes [data-go2]').forEach(b=>b.onclick=()=>{cur=b.dataset.go2;renderAll()});
   const ci=document.getElementById('cnt_amt_0');if(ci){const f=()=>{if(!canEdit()){renderAll();return}const p=parseAmt(ci.value);if(!p.ok){amtErr(ci,p.why);return}const had=!!BADAMT.cnt_amt_0;delete BADAMT['cnt_amt_0'];ci.classList.remove('badamt');const v=p.v;if(v===S.count){ if(had) renderAll(); return; }ci.defaultValue=ci.value;S.count=v;renderAll();scheduleSave()};ci.onchange=f;ci.onblur=()=>{if(ci.isConnected)f()};ci.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();f()}}}
   try{ pkBind(); }catch(_e){} /* ตัวช่วยบิลเก่าพัง ไม่กระทบช่องกรอกอื่น */
+  document.querySelectorAll('#panes [data-stmsg]').forEach(b=>b.onclick=()=>stOpen(b.dataset.stkey,b.dataset.sthead,b.dataset.stmsg));
   document.querySelectorAll('#panes [data-exdel]').forEach(b=>b.onclick=()=>{ const [k,i]=b.dataset.exdel.split(':'); exDel(k,+i); });
   document.querySelectorAll('#panes [data-rfview]').forEach(b=>b.onclick=()=>{ if(EXO.rfPhoto) openPath(EXO.rfPhoto); });
   const rp=document.getElementById('rfPhIn'); if(rp) rp.onchange=()=>{ const f=rp.files&&rp.files[0]; rp.value=''; if(f) rfPhotoUp(f); };

@@ -426,6 +426,19 @@
       }
     }catch(e){ console.warn("bell cheque", e); } }
 
+    /* 8) แคชเชียร์แก้ยอดใบนับเงินสดเอง (16 พ.ย.69 คุณหลิง: ไม่ต้องอนุมัติ แต่แจ้งเจ้าของ) — 3 วันล่าสุด · การเงิน/เจ้าของ · ยังไม่รัน SQL = ข้ามเงียบ */
+    if(sees.exp){ try{
+      var pl=await S.from("rev_cash_proof_log").select("date,old_amount,new_amount,at,by_role").eq("action","update").eq("amount_changed",true).eq("by_role","cashier").gte("at",new Date(Date.now()-3*864e5).toISOString()).order("at",{ascending:false}).limit(200); /* r2: กรองยอดเปลี่ยนที่ฐานก่อนจำกัดจำนวน */
+      var pe=(!pl.error && Array.isArray(pl.data))? pl.data.filter(function(x){ return Math.abs(num(x.old_amount)-num(x.new_amount))>0.009; }) : [];
+      if(pe.length){
+        out.push({ key:"proofedit", icon:"💵",
+          title:"แคชเชียร์แก้ยอดเงินสด "+pe.length+" ครั้ง (3 วันล่าสุด)",
+          sub:"แก้เองได้ตามกติกาใหม่ (แนบรูปใบนับใหม่ทุกครั้ง) — ไม่ต้องอนุมัติ แค่แจ้งให้ทราบ",
+          items:pe.slice(0,5).map(function(x){ return "แก้ยอดเงินสด "+beDate(x.date)+" จาก "+TH(x.old_amount)+" → "+TH(x.new_amount); }),
+          more:Math.max(0,pe.length-5), btn:null, act:null });
+      }
+    }catch(e){ console.warn("bell proofedit", e); } }
+
     /* 7) มัดจำที่ ACC ติ๊ก "ยกเลิกการเตือน" แต่ยังไม่เจอเงินคืนตรงยอด (16 พ.ย.69 คุณหลิง) — การเงิน/เจ้าของ
        ฐานจับคู่กับรายจ่ายหมวด "โอนเงินคืนลูกค้า" ให้เอง (±1) · เจอ = คืนแล้ว ไม่เตือน · ไม่เจอ = เตือน + ปุ่มยืนยันคืนแล้ว · ยังไม่รัน SQL = ข้ามเงียบ */
     if(sees.exp){ try{

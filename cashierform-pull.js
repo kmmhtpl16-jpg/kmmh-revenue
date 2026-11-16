@@ -73,7 +73,7 @@
       var buf=XLSX.write(r.wb,{type:"array",bookType:"xlsx"});
       var file=new File([buf],fileName(date),{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
       var inp=el("f_form"); if(!inp||inp.disabled){ msg("ช่องอัปฟอร์มถูกปิดอยู่ — ดึงไม่ได้","#b91c1c"); return; }
-      var dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files; window.__cfPullDate=date; window.__cfPullRev=rv0; /* v0.8.0: หน้าตรวจเช็กวันอีกครั้งตอนอ่านไฟล์เสร็จ (Codex r2 #1) + รอบแก้ตอนเริ่มดึง (r8) */
+      var dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files; window.__cfPullDate=date; window.__cfPullRev=rv0; window.__cfPullFormRev={date:date, rev:r.row.updated_at||null}; /* 16 พ.ย.69: รอบของฟอร์มที่ดึง (updated_at ทั้งร่าง/ส่งแล้ว) → ผลตรวจบันทึก form_rev · ฐานปฏิเสธถ้าฟอร์มถูกแก้/ส่งใหม่หลังดึง */ /* v0.8.0: หน้าตรวจเช็กวันอีกครั้งตอนอ่านไฟล์เสร็จ (Codex r2 #1) + รอบแก้ตอนเริ่มดึง (r8) */
       inp.dispatchEvent(new Event("change",{bubbles:true}));
       msg(draft? "✓ ดึงร่างฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (แคชเชียร์ยังไม่กดส่ง) — ตรวจยอดก่อนกดยืนยัน · ถ้ายังไม่ครบ ให้แก้ฟอร์มแล้วกด ✕ ดึงใหม่"
                : "✓ ดึงฟอร์มในโปรแกรมของวันที่ "+beDate(date)+" แล้ว (ส่งโดย "+esc(r.row.submitted_role||"-")+")", draft?"#b45309":"#15803d");

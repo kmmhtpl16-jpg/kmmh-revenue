@@ -1813,6 +1813,8 @@ window.revFocus=function(id){
   }
   await reconRecheck(); /* v0.7.5 ตรวจยอดขายซ้ำด้วยช่องที่กรอกแล้ว ก่อนเก็บ recon_ok */
   const _detail=collectDetail();
+  /* 16 พ.ย.69: ผลตรวจผูกกับรอบส่งของฟอร์มที่ดึงมา (ฐานปฏิเสธถ้าแคชเชียร์ส่งใหม่หลังดึง) */
+  if(DATA._formSrc==="pull" && window.__cfPullFormRev && window.__cfPullFormRev.date===s.date && window.__cfPullFormRev.rev) _detail.form_rev=window.__cfPullFormRev.rev;
   _detail.gap_k=_g.k; _detail.gap_b=_g.b; _detail.gap_left=_gleft;
   try{ if(_g.k>1){ const _c2=await kplusCoverage(s.date); if(_c2) _detail.kplus_cov=_c2; } }catch(e){}
   if(_gnote) _detail.gap_override={by:(ROLE||"-"), reason:_gnote, at:new Date().toISOString()};
@@ -2995,7 +2997,7 @@ async function cpFormInfo(date){
   }catch(e){ return null; }
 }
 async function cpFormCash(date){ const i=await cpFormInfo(date); return i?i.cash:null; }
-function cpCanEdit(date){ if(ROLE!=="cashier") return true; const t=bkkToday(); return date===t || date===bkkShift(t,-1); }
+function cpCanEdit(date){ if(ROLE!=="cashier") return true; const t=bkkToday(), s=window._dayForm; if(s&&s.date===date&&s.lock) return false; /* r3: ตัดบิลแล้ว = ล็อก */ return !!date && date<=t && date>=bkkShift(t,-2); } /* 16 พ.ย.69: แคชเชียร์ 3 วัน (วันที่ฟอร์ม ถึง 2 วันถัดไป) — ฐานล็อกเมื่อตัดบิลอีกชั้น */
 async function loadCashProof(){
   const date=cpDate(), fn=document.getElementById("fn_cashp"), box=document.getElementById("d_cashp"), ob=document.getElementById("cashp_other"); if(!fn||!box||!date||!sb) return;
   box.classList.remove("on","bad"); fn.innerHTML=""; { const a0=document.getElementById("cashp_amt"); if(a0) a0.placeholder="ยอดรวมในใบนับ"; }
@@ -3059,10 +3061,16 @@ async function uflRender(date,p,reqs,oth,rst){
   const st=document.getElementById("ufl_st"), go=document.getElementById("ufl_go"); if(!st) return;
   const _t=(window._uflTok=(window._uflTok||0)+1);
   if(go) go.href="ฟอร์มรายรับ.html?d="+encodeURIComponent(date);
-  let f=null, fe=false, au=null, ae=false; try{ const q=await Promise.all([ sb.from("rev_cashier_form").select("status,submitted_at,updated_at").eq("date",date).maybeSingle(), sb.from("rev_audit").select("date,status").eq("date",date).maybeSingle() ]);
-    if(q[0].error) fe=true; f=q[0].data; if(q[1].error) ae=true; au=q[1].data; }catch(e){ fe=true; ae=true; }
+  let f=null, fe=false, au=null, ae=false; try{ const q=await Promise.all([ sb.from("rev_cashier_form").select("status,submitted_at,updated_at").eq("date",date).maybeSingle(), sb.from("rev_audit").select("date,status").eq("date",date).maybeSingle(), sb.from("rev_form_stale").select("date").eq("date",date).maybeSingle() ]);
+    if(q[0].error) fe=true; f=q[0].data; if(q[1].error) ae=true; au=q[1].data; if(!q[2].error&&q[2].data&&au) au={...au, status:"ฟอร์มถูกแก้"}; /* 16 พ.ย.69: ป้ายฟอร์มถูกแก้หลังตรวจ (ตารางแยก) */ }catch(e){ fe=true; ae=true; }
   if(_t!==window._uflTok || cpDate()!==date) return;
   window._dayForm={date:date, status:fe?null:(f?f.status:"none"), audit:ae?null:(au?au.status:"none"), lock:!!(rst&&rst.dayLock)};
+  /* 16 พ.ย.69: แคชเชียร์ขอแก้ฟอร์มหลังบันทึกตรวจรายได้แล้ว → ฐานตั้งสถานะ "ฟอร์มถูกแก้" · ส่งใหม่แล้ว = ดึงฟอร์มใหม่ให้เอง (เก็บเหตุผลใบลดหนี้เดิม แบบปุ่มแก้) แล้วรอกดบันทึกส่งข้อมูลทั้งหมด */
+  /* r5 (Codex r4 #3): ดึงใหม่ต่อรอบส่ง · จำรอบเฉพาะเมื่อดึงสำเร็จ (ฟอร์มรอบนี้เข้าหน้าแล้ว) · ระหว่างดึงไม่ซ้อน · ล้มเหลว = รอบหน้าลองใหม่เอง */
+  if(window._dayForm.status==="submitted" && window._dayForm.audit==="ฟอร์มถูกแก้" && f){ CF_AUTO.stale=CF_AUTO.stale||{}; CF_AUTO.staleBusy=CF_AUTO.staleBusy||{}; const rv=f.updated_at||f.submitted_at||"-";
+    if(DATA.form && DATA.form.date===date && DATA._formSrc==="pull" && window.__cfPullFormRev && window.__cfPullFormRev.date===date && window.__cfPullFormRev.rev===f.updated_at) CF_AUTO.stale[date]=rv;
+    if(CF_AUTO.stale[date]!==rv && !CF_AUTO.staleBusy[date]){ CF_AUTO.staleBusy[date]=true; CF_AUTO.edit[date]=false;
+      Promise.resolve().then(function(){ return cfEdit(); }).catch(function(e){ console.warn("cfStale",e); }).finally(function(){ CF_AUTO.staleBusy[date]=false; }); return; } }
   try{ cfAuto(date); cfGuideRender(); }catch(e){ console.warn("cfGuide",e); }
   const pend=(reqs||[]).filter(function(r){ return r.status==="pending"; }).length;
   const fTxt=fe?"<span style=\"color:#b45309\">อ่านสถานะไม่ได้</span>":!f?"<span style=\"color:#b45309\">ยังไม่มี</span>":f.status==="submitted"?"<b style=\"color:#15803d\">ส่งแล้ว ✓</b>":"<span style=\"color:#b45309\">ร่าง (ยังไม่ส่ง)</span>";
@@ -3471,7 +3479,7 @@ async function cutAutoRun(date,R){
   const _old=P.oldRows||[];
   if(!P.ok||!(P.rows.length+_old.length)) return st;
   if(cpDate()!==date || !R.D || R.D.date!==date || P.rows.some(function(x){ return x.bill_date!==date; }) || (_old.length && (!R.fo || R.fo.date!==date || _old.some(function(x){ return !(x.bill_date<date) || String(x.receipt_group||"").indexOf(RevCut.obTag(date)+"-F")!==0; })))) return st; /* ผลคำนวณต้องเป็นของวันที่เปิดอยู่ · บิลเก่าต้องเป็นของฟอร์มวันนี้ */
-  const r=await sb.from("rev_cut_approvals").upsert(P.rows.concat(_old),{onConflict:"bill_no",ignoreDuplicates:true}).select("bill_no,amount");
+  const r=await sb.from("rev_cut_approvals").upsert(P.rows.concat(_old).map(function(x){ return Object.assign({},x,{audit_rev:R.D.auditRev||null}); }),{onConflict:"bill_no",ignoreDuplicates:true}).select("bill_no,amount"); /* 16 พ.ย.69: ผูกรอบผลตรวจ */
   if(r.error){ st.err=r.error.message; return st; }
   const got=(r.data||[]); st.n=got.length; st.sum=got.reduce(function(s,x){return s+(+x.amount||0);},0);
   return st;
@@ -3491,7 +3499,8 @@ let _cutRecheckBusy=false;
 async function cutRecheckStillOk(date){
   if(ROLE!=="owner"||!(await cutAutoOn())) return false;
   const q=await sb.from("rev_audit").select("status").eq("date",date).maybeSingle();
-  return !q.error && !!q.data && q.data.status==="ตรวจแล้ว";
+  const st=await sb.from("rev_form_stale").select("date").eq("date",date).maybeSingle(); /* 16 พ.ย.69: ป้ายฟอร์มถูกแก้หลังตรวจ = ห้ามเขียนอนุมัติ (ฐานกันอีกชั้น) */
+  return !q.error && !!q.data && q.data.status==="ตรวจแล้ว" && !st.error && !st.data;
 }
 async function cutRecheckDay(date, stamp, lockOk){
   const res={date:date, add:[], fix:[], back:[], reback:[], warn:[], skip:null};
@@ -3511,7 +3520,7 @@ async function cutRecheckDay(date, stamp, lockOk){
   const _tg=RevCut.obTag? RevCut.obTag(date)+"-F" : null;
   const _oldOk=!!(_tg && R.fo && R.fo.date===date);
   const rows=P.rows.filter(function(x){ return x.bill_date===date; }).concat(_oldOk?(P.oldRows||[]).filter(function(x){ return x.bill_date<date && String(x.receipt_group||"").indexOf(_tg)===0; }):[]) /* v0.8.1 บิลเก่าในฟอร์มวันนี้ (อนุมัติเพิ่มอย่างเดียว — ใบบิลเก่าที่อนุมัติแล้วไม่ถอย/แก้ยอดเอง) */
-    .map(function(x){ return Object.assign({},x,{approved_role:CUT_RECHECK_ROLE, evidence:why+" · "+(x.evidence||"")}); });
+    .map(function(x){ return Object.assign({},x,{approved_role:CUT_RECHECK_ROLE, evidence:why+" · "+(x.evidence||""), audit_rev:R.D.auditRev||null}); });
   if(rows.length){ if(!(await ok())){ res.skip="หยุดก่อนเขียน: สวิตช์ตัดเองปิด/วันนี้ไม่อยู่ในสถานะตรวจแล้ว/อีกแท็บรับงานไป"; return res; }
     const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true}).select("bill_no,amount");
     if(r.error) throw r.error; (r.data||[]).forEach(function(x){ res.add.push(x.bill_no+" "+TH(+x.amount)); }); }
@@ -3537,7 +3546,7 @@ async function cutRecheckDay(date, stamp, lockOk){
       if(c.grp&&c.retail){ res.warn.push(say+" — ลูกค้าปลีกโอนก้อนเดียวหลายบิล รอคุณหลิง"); continue; }
       if(["เงินสด","เงินโอน","เงินโอน + เงินสด"].indexOf(c.method)<0||!(r2x(c.out)>0.01)){ res.warn.push(say+" — ไม่อยู่ในกฎ รอคุณหลิง"); continue; }
       if(!(await ok())){ res.skip="หยุดก่อนเขียน"; return res; }
-      const u=await sb.from("rev_cut_approvals").update({amount:r2x(c.out), method:c.method, evidence:why+" · แก้ยอดอนุมัติ "+TH(+a.amount)+" → "+TH(c.out)+" · "+(c.src||""), approved_role:CUT_RECHECK_ROLE, approved_at:new Date().toISOString()})
+      const u=await sb.from("rev_cut_approvals").update({amount:r2x(c.out), method:c.method, evidence:why+" · แก้ยอดอนุมัติ "+TH(+a.amount)+" → "+TH(c.out)+" · "+(c.src||""), approved_role:CUT_RECHECK_ROLE, audit_rev:R.D.auditRev||null, approved_at:new Date().toISOString()})
         .eq("bill_no",a.bill_no).eq("status","approved").in("approved_role",CUT_AUTO_ROLES).eq("amount",a.amount).eq("method",a.method).select("bill_no");
       if(u.error) throw u.error; if(u.data&&u.data.length) res.fix.push(a.bill_no+" "+TH(+a.amount)+"→"+TH(c.out));
     }
@@ -3553,7 +3562,7 @@ async function cutRecheckDay(date, stamp, lockOk){
     for(const x of (P2.ok?P2.rows:[])){
       const a=bset[x.bill_no]; if(!a||x.bill_date!==date) continue;
       if(!(await ok())){ res.skip="หยุดก่อนเขียน"; return res; }
-      const u=await sb.from("rev_cut_approvals").update({amount:x.amount, method:x.method, customer:x.customer, evidence:why+" · กลับมาพร้อมตัด · "+(x.evidence||""), status:"approved", approved_role:CUT_RECHECK_ROLE, approved_at:new Date().toISOString(), cut_note:null})
+      const u=await sb.from("rev_cut_approvals").update({amount:x.amount, method:x.method, customer:x.customer, evidence:why+" · กลับมาพร้อมตัด · "+(x.evidence||""), status:"approved", approved_role:CUT_RECHECK_ROLE, audit_rev:R.D.auditRev||null, approved_at:new Date().toISOString(), cut_note:null})
         .eq("bill_no",x.bill_no).eq("status","cancelled").in("approved_role",CUT_AUTO_ROLES).eq("cut_note",a.cut_note).eq("amount",a.amount).eq("method",a.method).select("bill_no");
       if(u.error) throw u.error; if(u.data&&u.data.length) res.reback.push(x.bill_no);
     }
@@ -3644,6 +3653,7 @@ async function renderCut(_again){
     if(_rk){ const _ch=[].concat((_rk.add||[]).map(function(s){ return "อนุมัติ "+s; }),(_rk.fix||[]).map(function(s){ return "แก้ยอด "+s; }),(_rk.back||[]).map(function(s){ return "ถอย "+s; }),(_rk.reback||[]).map(function(s){ return "อนุมัติคืน "+s; }));
       if(_ch.length||(_rk.warn||[]).length||_rk.err) h+='<div class="muted" style="margin-top:2px">🔄 คำนวณใหม่อัตโนมัติ: '+(_ch.length?esc(_ch.join(" · ")):'ไม่มีใบเปลี่ยน')+((_rk.warn||[]).length?' · <span style="color:#c2410c">'+esc(_rk.warn.join(" · "))+'</span>':'')+(_rk.err?' · <span style="color:#b91c1c">พัง: '+esc(_rk.err)+'</span>':'')+'</div>'; }
   }
+  if((D.proofEdits||[]).length){ const pe=D.proofEdits, last=pe[pe.length-1]; h+='<div style="font-size:12px;color:#b45309">✏️ ยอดใบนับเงินสดเคยถูกแก้ '+pe.length+' ครั้ง · ล่าสุด '+TH(+last.old_amount)+' → '+TH(+last.new_amount)+' ('+esc(({cashier:"แคชเชียร์",finance:"การเงิน",owner:"เจ้าของ"})[last.by_role]||last.by_role||"")+' '+esc(String(new Date(last.at).toLocaleString("th-TH",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"})))+')'+(last.by_role==="cashier"?' — แคชเชียร์แก้เอง แนบรูปใหม่ (ไม่ต้องอนุมัติ)':'')+' · ดูรายละเอียด/รูปเดิม-ใหม่ในประวัติใบนับของฟอร์ม</div>'; } /* 16 พ.ย.69 */
   h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืน'+(R.refund&&R.refund.on?'':'ตามใบลดหนี้')+' '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
   /* v0.5.6 (22 ต.ค.69): มัดจำรับเงินสดวันนี้ + ด่านเงินสดของวัน — แสดงบรรทัดเดียว (เดิมแปะซ้ำทุกบิลในรายการพักไว้) */
   if(R.raSum>0) h+='<div class="muted">💵 มัดจำรับเงินสดวันนี้ '+(R.raCash||[]).map(function(x){ return esc(x.no)+' '+TH(x.amt)+(x.bill?' (บิล '+esc(x.bill.replace(/^KM\d{4}-/,""))+')':''); }).join(' · ')+' — นับรวมในบิลเงินสดแล้ว</div>';
@@ -3704,21 +3714,21 @@ async function cutApprove(){
   if(!ready.length && !_ob.length && !_fo.length) return;
   const _obAmt=_ob.reduce(function(s,x){return s+(+x.amt||0);},0)+_fo.reduce(function(s,x){return s+(+x.amount||0);},0);
   if(!confirm("อนุมัติตัด "+(ready.length+_ob.length+_fo.length)+" บิล ยอด "+TH(cutSum(ready)+_obAmt)+" บาท ของวันที่ "+beDate(date)+(_ob.length+_fo.length?"\n(รวมบิลเก่า "+(_ob.length+_fo.length)+" บิล "+TH(_obAmt)+" บาท)":"")+" ?")) return;
-  const rows=ready.map(function(x){ return {bill_date:date,bill_no:x.b.no,customer:x.b.name,amount:+x.b.out,method:x.method,evidence:x.src||null,status:"approved",approved_role:ROLE}; });
+  const rows=ready.map(function(x){ return {bill_date:date,bill_no:x.b.no,customer:x.b.name,amount:+x.b.out,method:x.method,evidence:x.src||null,status:"approved",approved_role:ROLE,audit_rev:CUT.D.auditRev||null}; });
   /* v0.6.0: บิลเก่าที่มีเงินเข้า/แคชเชียร์แจ้งในวันนี้ อนุมัติไปพร้อมกัน (รูปแบบแถวเดียวกับ cutApproveOld) */
   const _tag="OB"+String(+date.slice(0,4)+543).slice(2)+date.slice(5,7)+date.slice(8,10);
-  _ob.forEach(function(x){ rows.push({bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,receipt_group:_tag+"-"+String(x.grp||"").slice(0,9)}); });
-  _fo.forEach(function(x){ if(!rows.some(function(z){ return z.bill_no===x.bill_no; })) rows.push(Object.assign({},x,{approved_role:ROLE})); });
+  _ob.forEach(function(x){ rows.push({bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,audit_rev:CUT.D.auditRev||null,receipt_group:_tag+"-"+String(x.grp||"").slice(0,9)}); });
+  _fo.forEach(function(x){ if(!rows.some(function(z){ return z.bill_no===x.bill_no; })) rows.push(Object.assign({},x,{approved_role:ROLE,audit_rev:CUT.D.auditRev||null})); });
   const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
   if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
   /* v0.5.6: บิลของวันที่เคยยกเลิกอนุมัติไว้ (ยกเลิกแล้วเก็บแถวเป็น cancelled กันกฎอัตโนมัติอนุมัติซ้ำ) — เจ้าของกดเอง = เปิดกลับ */
   { const _cx=(CUT.D.appr||[]).filter(function(a){ return a.status==="cancelled"; }).map(function(a){ return a.bill_no; });
     for(const rw of rows){ if(_cx.indexOf(rw.bill_no)<0 || rw.bill_date!==date) continue;
-      const u=await sb.from("rev_cut_approvals").update({customer:rw.customer,amount:rw.amount,method:rw.method,evidence:rw.evidence,status:"approved",approved_role:ROLE,approved_at:new Date().toISOString(),cut_note:null}).eq("bill_no",rw.bill_no).eq("status","cancelled");
+      const u=await sb.from("rev_cut_approvals").update({customer:rw.customer,amount:rw.amount,method:rw.method,evidence:rw.evidence,status:"approved",approved_role:ROLE,audit_rev:CUT.D.auditRev||null,approved_at:new Date().toISOString(),cut_note:null}).eq("bill_no",rw.bill_no).eq("status","cancelled");
       if(u.error){ alert("อนุมัติบิล "+rw.bill_no+" ไม่สำเร็จ: "+u.error.message); } } }
   /* v0.6.1: บิลเก่าที่เคยยกเลิกอนุมัติไว้ (status=cancelled) — upsert ข้ามแถวเดิม จึงเปิดกลับเป็น approved พร้อมข้อมูลรอบนี้ */
   for(const x of _ob){ if(!x.apc) continue; const rw=rows.filter(function(z){ return z.bill_no===x.b.no; })[0]; if(!rw) continue;
-    const u=await sb.from("rev_cut_approvals").update({bill_date:rw.bill_date,customer:rw.customer,amount:rw.amount,method:rw.method,evidence:rw.evidence,receipt_group:rw.receipt_group,status:"approved",approved_role:ROLE,approved_at:new Date().toISOString(),cut_note:null}).eq("bill_no",x.b.no).eq("status","cancelled");
+    const u=await sb.from("rev_cut_approvals").update({bill_date:rw.bill_date,customer:rw.customer,amount:rw.amount,method:rw.method,evidence:rw.evidence,receipt_group:rw.receipt_group,status:"approved",approved_role:ROLE,audit_rev:CUT.D.auditRev||null,approved_at:new Date().toISOString(),cut_note:null}).eq("bill_no",x.b.no).eq("status","cancelled");
     if(u.error){ alert("อนุมัติบิล "+x.b.no+" ไม่สำเร็จ: "+u.error.message); } }
   renderCut();
 }
@@ -3727,7 +3737,7 @@ async function cutApproveOld(){
   if(!ready.length) return;
   if(!confirm("อนุมัติตัดบิลเก่า "+ready.length+" บิล ยอด "+TH(ready.reduce(function(s,x){return s+(+x.amt||0);},0))+" บาท (รายรับวันที่ "+beDate(date)+") ?")) return;
   const tag="OB"+String(+date.slice(0,4)+543).slice(2)+date.slice(5,7)+date.slice(8,10);
-  const rows=ready.map(function(x){ return {bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,receipt_group:tag+"-"+x.grp.slice(0,9)}; });
+  const rows=ready.map(function(x){ return {bill_date:x.b.date,bill_no:x.b.no,customer:x.b.name,amount:+x.amt,method:x.method,evidence:(x.src||"")+" · รายรับวันที่ "+beDate(date),status:"approved",approved_role:ROLE,audit_rev:CUT.D.auditRev||null,receipt_group:tag+"-"+x.grp.slice(0,9)}; });
   const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
   if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
   renderCut();

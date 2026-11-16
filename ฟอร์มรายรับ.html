@@ -348,7 +348,9 @@ const ROLE_LABEL={cashier:"แคชเชียร์",finance:"การเง
 const bkkToday=()=>new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
 const bkkShift=(iso,n)=>{const p=iso.split("-");const d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
 /* แคชเชียร์แก้ได้เฉพาะวันนี้/เมื่อวาน (เหมือนกล่องอื่นในหน้าตรวจรายได้) · ส่งฟอร์มแล้วแคชเชียร์แก้ไม่ได้ เจ้าของแก้ได้ */
-function canEditDay(){ if(!ROLE) return false; if(TRIAL) return !!DATA.date&&DATA.date<=bkkToday(); if(ROLE==="owner") return true; if(ROW.status==="submitted") return false; const t0=bkkToday(); return DATA.date===t0||DATA.date===bkkShift(t0,-1); }
+/* 16 พ.ย.69 คุณหลิง: แคชเชียร์แก้ได้ 3 วัน = วันที่ฟอร์ม D ถึงสิ้นวัน D+2 (เวลาไทย) และยังไม่ตัดบิลของวันนั้น (ฐานกันอีกชั้น) — เดิม วันนี้/เมื่อวาน */
+const inCashWin=d=>{ const t0=bkkToday(); return !!d&&d<=t0&&d>=bkkShift(t0,-2); };
+function canEditDay(){ if(!ROLE) return false; if(TRIAL) return !!DATA.date&&DATA.date<=bkkToday(); if(ROLE==="owner") return true; if(ROW.status==="submitted") return false; if(ROLE==='cashier') return inCashWin(DATA.date)&&!EXO.dayLock; const t0=bkkToday(); return DATA.date===t0||DATA.date===bkkShift(t0,-1); } /* r10 (Codex r9 #2): ช่วง 3 วันเฉพาะแคชเชียร์ · การเงินใช้ช่วงเดิม (วันนี้/เมื่อวาน) */ /* r2: ตัดบิลแล้ว = ล็อกทุกช่อง */
 /* ระหว่างโหลดวันใหม่ / กำลังส่งฟอร์ม ล็อกช่องกรอกไว้ ไม่งั้นสิ่งที่พิมพ์ช่วงนั้นจะถูกทับหรือไม่ได้เข้าไปกับฟอร์มที่ส่ง */
 function canEdit(){ return _loadOk&&!_submitting&&!_copying&&canEditDay(); }
 async function ensureSession(){
@@ -375,7 +377,7 @@ const RA_TRIED=new Set();
 function raMark(asked){ (asked||[]).forEach(v=>{ if(isRA(v)) RA_TRIED.add(DATA.date+'|'+v); }); } /* r2 Codex #6: เฉพาะ RA ที่ส่งไปถามในคำขอนั้นจริง */
 let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 /* 2 พ.ย.69 (คุณหลิงเลือก): แคชเชียร์ขอแก้ฟอร์มที่ส่งแล้วได้เอง 3 ครั้งต่อฟอร์ม 1 วัน จนกว่าจะกด "บันทึกส่งข้อมูลทั้งหมด" (มีแถว rev_audit) · ฐานข้อมูลตรวจซ้ำใน rev_cashier_form_guard */
-let REOPEN={used:null,max:3,audit:false,err:''}, _reopening=false;
+let REOPEN={used:null,max:null,audit:false,lock:null,until:null,err:''}, _reopening=false;
 /* ช่องยอดที่พิมพ์ผิดและยังไม่ได้บันทึก {id ช่อง: {raw, why}} — ค้างไว้จนแก้ บล็อกส่ง/ปริ้น/Excel/คัดลอก (Codex v074 #1) */
 let BADAMT={};
 let _chqBusy=false; const CHQ_TOK=new WeakMap(); let _chqSeq=0;
@@ -420,9 +422,9 @@ async function loadDay(date){
     /* ตัวช่วยตรวจแถวคืนเงิน + คำขอแก้ยอดเงินสด + รูปใบคืนเงิน — อ่านไม่ได้ไม่ทำให้หน้าโหลดพัง (ขึ้นในแท็บแทน) */
     const ex0=await exAux(date); if(tok!==_loadTok) return; EXO=ex0;
     /* สิทธิ์ขอแก้ที่เหลือ (อ่านไม่ได้ = ไม่โชว์ปุ่ม ไม่ทำให้หน้าโหลดพัง) */
-    let ro={used:null,max:3,audit:false,err:''};
+    let ro={used:null,max:null,audit:false,lock:null,until:null,err:''};
     if(ROLE==='cashier'&&row.status==='submitted'){ try{ const ri=await sb.rpc('rev_cashier_form_reopen_info',{p_date:date});
-      if(ri.error||!ri.data) ro.err=(ri.error&&ri.error.message)||'อ่านไม่ได้'; else ro={used:+ri.data.used||0,max:+ri.data.max||3,audit:!!ri.data.audit,err:''}; }catch(e){ ro.err=e.message||String(e); } }
+      if(ri.error||!ri.data) ro.err=(ri.error&&ri.error.message)||'อ่านไม่ได้'; else ro={used:+ri.data.used||0,max:null,audit:!!ri.data.audit,lock:ri.data.lock||null,until:ri.data.until||bkkShift(date,2),err:''}; }catch(e){ ro.err=e.message||String(e); } }
     if(tok!==_loadTok) return; REOPEN=ro;
     /* ACC ค้าง → ตัดที่ 25 วิ แล้วขึ้นว่าโหลดไม่ได้ (ไม่ให้หน้าล็อกเงียบๆ ไม่มีกำหนด) */
     const acc=await Promise.race([fetchAcc(date,extraBills(s)),new Promise((_,rej)=>setTimeout(()=>rej(new Error('ข้อมูล ACC ตอบช้าเกิน 25 วินาที')),25000))]);
@@ -780,6 +782,8 @@ async function exAux(date){
     if(q[0].error||q[1].error) o.err=(q[0].error||q[1].error).message||'อ่านไม่ได้';
     else if(aux){ o.opts=Array.isArray(q[0].data)?q[0].data:[]; o.bills=Array.isArray(q[1].data)?q[1].data:[]; }
     o.reqs=(q[2]&&!q[2].error&&q[2].data)||[];
+    /* 16 พ.ย.69: ประวัติแก้ใบนับ (rev_cash_proof_log · เจ้าของ/การเงินอ่านได้) — ยังไม่ขึ้นตาราง/อ่านไม่ได้ = ไม่แสดง */
+    if(ROLE==='owner'||ROLE==='finance'){ try{ const pl=await sb.from('rev_cash_proof_log').select('old_amount,new_amount,old_image_path,new_image_path,by_role,at,amount_changed').eq('date',date).eq('action','update').eq('counts_only',false).order('id'); if(!pl.error) o.plog=pl.data||[]; }catch(_e){} }
     const ph=(q[3]&&!q[3].error&&q[3].data)||[]; o.nRfPhoto=ph.length; o.rfPhoto=ph.length?ph[ph.length-1].image_path:null;
     ((q[4]&&!q[4].error&&q[4].data)||[]).forEach(z=>{ if(z&&z.status!=='cancelled'){ o.appr[z.bill_no]=z.status; if(z.bill_date===date) o.dayLock=true; } });
   }catch(e){ o.err=e.message||String(e); }
@@ -788,8 +792,8 @@ async function exAux(date){
 function exCan(k){ if(TRIAL) return canEdit(); if(!_loadOk||_submitting||_copying||!ROLE) return false;
   if(ROLE==='owner'||ROLE==='finance') return true;
   if(ROLE!=='cashier'||ROW.status==='submitted') return false;
-  const t0=bkkToday(); if(!(DATA.date===t0||DATA.date===bkkShift(t0,-1))) return false;
-  return !(k==='refund'&&EXO.dayLock); }
+  if(!inCashWin(DATA.date)) return false;
+  return !EXO.dayLock; } /* r2 (Codex r1 #5): ตัดบิลของวันแล้ว = ล็อกทั้งคืนเงินและรายรับอื่นๆ (ฐานกันอีกชั้น) */
 const canEl=el=>el&&el.dataset&&el.dataset.own==='ex'?exCan(el.dataset.k):el&&el.dataset&&el.dataset.own==='cp'?cpEd():canEdit();
 /* เลขบิลแบบย่อ 1194 → KM6910-1194 (ปีเดือนของวันที่ฟอร์ม) */
 function exBill(v){ v=normBill(v).replace(/\s/g,''); const m=v.match(/^(\d{1,4})$/); return m&&DATA.date?'KM'+String(+DATA.date.slice(0,4)+543).slice(2)+DATA.date.slice(5,7)+'-'+m[1].padStart(4,'0'):v; }
@@ -968,7 +972,7 @@ function paneEx(R){
   const ownAmt=(k,i,v)=>amtInput(k,i,'amt',typeof v==='number'&&isFinite(v)?v.toLocaleString('en-US',{maximumFractionDigits:2}):v).replace('<input ',`<input data-own="ex"${dis(k)} `);
   const chanSel=(i,v)=>`<select id="other_chan_${i}" data-k="other" data-i="${i}" data-f="chan" data-own="ex"${dis('other')}>${['cash','kplus','ksk'].map(c=>`<option value="${c}" ${(v||'cash')===c?'selected':''}>${CHAN_TXT[c]}</option>`).join('')}</select>`;
   const paySel=(i,x)=>x.dp?`<select id="refund_ch_${i}" disabled title="เก็บเป็นมัดจำ — ไม่มีเงินออก"><option>มัดจำ</option></select>`:chSel('refund',i,x.ch).replace('<select ',`<select data-own="ex"${dis('refund')} `).replace('>โอน<','>โอนคืน<');
-  const lockTxt=k=>!exCan(k)&&_loadOk?(ROLE==='cashier'&&ROW.status==='submitted'?'ส่งฟอร์มแล้ว — ช่องรายรับอื่นๆ/คืนเงินพิมพ์ไม่ได้แล้ว ถ้าต้องเพิ่ม/แก้ กด "ขอแก้ฟอร์ม" ก่อน หรือแจ้งการเงิน (ลงที่หน้าตรวจรายได้ กล่องคืนเงิน)':k==='refund'&&ROLE==='cashier'&&EXO.dayLock?'เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้คืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้เฉพาะวันนี้และเมื่อวาน)'):'';
+  const lockTxt=k=>!exCan(k)&&_loadOk?(ROLE==='cashier'&&ROW.status==='submitted'?'ส่งฟอร์มแล้ว — ช่องรายรับอื่นๆ/คืนเงินพิมพ์ไม่ได้แล้ว ถ้าต้องเพิ่ม/แก้ กด "ขอแก้ฟอร์ม" ก่อน หรือแจ้งการเงิน (ลงที่หน้าตรวจรายได้ กล่องคืนเงิน)':k==='refund'&&ROLE==='cashier'&&EXO.dayLock?'เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้คืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้ภายใน 3 วัน: วันที่ฟอร์ม ถึง 2 วันถัดไป)'):'';
   const lockBox=t=>t?`<div role="alert" style="margin:6px 0 8px;padding:10px 12px;border:2px solid var(--bad);border-radius:10px;background:#fef2f2;color:var(--bad);font-weight:600">🔒 ${esc(t)}</div>`:'';
   const lockMsg=lockTxt('refund');
   const ph=EXO.rfPhoto?`<button type="button" class="btn" data-rfview="1" style="padding:2px 10px;font-size:.8rem">✅ ดูรูปใบคืนเงิน</button>`:`<span class="st ${S.refund.some(r=>r._sv)?'warn':''}">ยังไม่มีรูปใบคืนเงิน</span>`;
@@ -1009,9 +1013,9 @@ function cpDraft(){ let tot=0, any=false, bad=''; const counts={};
 const cpHas=()=>S.count!==''&&S.count!=null;
 /* แก้ตารางนับแล้ว ยังไม่ได้บันทึก/ส่งคำขอ */
 function cpDirty(){ if(TRIAL) return false; const d=cpDraft(); if(!cpHas()) return d.any; return d.any&&(d.bad!==''||!S.counts||!cpSame(d.counts,S.counts)||Math.abs(d.total-num(S.count))>0.009); }
-function cpCan(){ if(TRIAL||!_loadOk||!ROLE||_cpBusy) return false; if(ROLE==='owner'||ROLE==='finance') return true; const t0=bkkToday(); return ROLE==='cashier'&&(DATA.date===t0||DATA.date===bkkShift(t0,-1)); }
+function cpCan(){ if(TRIAL||!_loadOk||!ROLE||_cpBusy) return false; if(ROLE==='owner'||ROLE==='finance') return true; return ROLE==='cashier'&&inCashWin(DATA.date)&&ROW.status!=='submitted'&&!EXO.dayLock; } /* 16 พ.ย.69: แคชเชียร์แก้ใบนับเองได้ (ฟอร์มต้องเป็นร่าง = ขอแก้ฟอร์มก่อน · ยังไม่ตัดบิล · 3 วัน) */
 const cpPend=()=>(EXO.reqs||[]).filter(r=>r.status==='pending');
-const cpEd=()=>cpCan()&&!(cpHas()&&ROLE!=='owner'&&cpPend().length);
+const cpEd=()=>cpCan()&&!(cpHas()&&ROLE==='finance'&&cpPend().length); /* 16 พ.ย.69: แคชเชียร์แก้ใบนับเอง (ไม่รอคำขอ) · การเงินใช้ขั้นส่งคำขอเดิม */
 const RL_TXT={cashier:'แคชเชียร์',finance:'การเงิน',owner:'เจ้าของ'};
 function cpWhen(t){ try{ return t?new Date(t).toLocaleString('th-TH',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''; }catch(e){ return ''; } }
 const cpShowSt=()=>Math.round(R.cashSend*100)%100!==0||CP_ST!==''||(S.counts&&+S.counts.st>0);
@@ -1041,18 +1045,21 @@ function cpHTML(){
   const lnk=(p,t)=>p?`<a href="#" data-cpview="${esc(p)}">${t}</a>`:'';
   let h=pend.map(r=>`<div class="small" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 8px">⏳ <b>คำขอแก้ไขยอดเงินสด รออนุมัติ</b><br>ยอดเดิม ${fmt(+r.prev_amount||0)} → ยอดใหม่ <b>${fmt(+r.amount||0)}</b> · เหตุผล: ${esc(r.reason||'')}<br>${esc(RL_TXT[r.requested_role]||r.requested_role||'')} ${cpWhen(r.requested_at)} · ${lnk(r.prev_image_path,'รูปเดิม')}${r.prev_image_path?' · ':''}${lnk(r.image_path,r.image_path===r.prev_image_path?'รูป (เดิม)':'รูปใหม่')}
     ${ROLE==='owner'?`<div style="display:flex;gap:6px;margin-top:4px"><button type="button" class="btn pri" data-cpok="${+r.id}">✅ อนุมัติ</button><button type="button" class="btn" data-cpno="${+r.id}">❌ ไม่อนุมัติ</button></div>`:''}</div>`).join('');
-  const blocked=has&&ROLE!=='owner'&&pend.length;
+  const blocked=has&&ROLE==='finance'&&pend.length; /* 16 พ.ย.69: เฉพาะการเงิน (ขั้นเดิม) · แคชเชียร์ไม่ต้องรอ */
   if(cpCan()&&!blocked){
     const fileBtn=(lab,pri)=>`<label class="btn${pri?' pri':''}" style="padding:4px 10px">${lab}<input type="file" accept="image/*" capture="environment" id="cp_file" data-own="cp" hidden></label>`;
     if(!has) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn('📷 ถ่าย/เลือกรูปใบนับ',true)}</div><span class="small">กรอกจำนวนในตารางนับให้ครบก่อน แล้วถ่าย/เลือกรูปใบนับ (บังคับแนบรูป)</span>`;
     /* ยอดรวมจากตารางเท่ายอดที่บันทึกไว้เป๊ะ = แค่เติม/จัดจำนวนแยกชนิด → บันทึกได้เลย ไม่ต้องขออนุมัติ (คุณหลิงเลือก 29 ต.ค.69) */
     else if(dirty&&!d.bad&&Math.abs(d.total-num(S.count))<0.009) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="btn pri" id="cp_fill">💾 บันทึกจำนวนแยกชนิด (ยอดเท่าเดิม)</button><button type="button" class="btn" id="cp_undo">ยกเลิกที่แก้</button></div>
       <span class="small">รวมได้ ${fmt(d.total)} เท่ากับยอดที่บันทึกไว้ — บันทึกได้เลย ไม่ต้องขออนุมัติ (ถ้ายอดไม่เท่า ต้องส่งคำขอแก้ยอด)</span>`;
-    else if(dirty) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนใบนับ + รูปใหม่':'📷 ส่งคำขอแก้ยอด + รูปใหม่',true)}<button type="button" class="btn" id="cp_keep">${ROLE==='owner'?'📝 แทนยอด (ใช้รูปเดิม)':'📝 ส่งคำขอแก้ยอด (ใช้รูปเดิม)'}</button><button type="button" class="btn" id="cp_undo">ยกเลิกที่แก้</button></div>
-      <span class="small" style="color:var(--warn)">แก้จำนวนหลังบันทึกแล้ว = แก้ยอดเงินสด ${ROLE==='owner'?'(เจ้าของแทนได้ ต้องใส่เหตุผล)':'ต้องส่งคำขอให้เจ้าของอนุมัติ'}</span>`;
-    else h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนรูปใบนับ (ใส่เหตุผล)':'📷 ส่งคำขอเปลี่ยนรูปใบนับ',false)}</div><span class="small">บันทึกแล้ว — แก้จำนวนในตาราง/เปลี่ยนรูป ต้องส่งคำขอให้เจ้าของอนุมัติ</span>`;
+    else if(dirty) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนใบนับ + รูปใหม่':ROLE==='finance'?'📷 ส่งคำขอแก้ยอด + รูปใหม่':'📷 แก้ยอด + ถ่ายรูปใบนับใหม่',true)}${ROLE!=='cashier'?`<button type="button" class="btn" id="cp_keep">${ROLE==='owner'?'📝 แทนยอด (ใช้รูปเดิม)':'📝 ส่งคำขอแก้ยอด (ใช้รูปเดิม)'}</button>`:''}<button type="button" class="btn" id="cp_undo">ยกเลิกที่แก้</button></div>
+      <span class="small" style="color:var(--warn)">แก้จำนวนหลังบันทึกแล้ว = แก้ยอดเงินสด ${ROLE==='owner'?'(เจ้าของแทนได้ ต้องใส่เหตุผล)':ROLE==='finance'?'ต้องส่งคำขอให้เจ้าของอนุมัติ':'— แก้เองได้ ต้องแนบรูปใบนับใหม่ · ระบบเก็บประวัติและแจ้งเจ้าของ'}</span>`;
+    else h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${fileBtn(ROLE==='owner'?'📷 แทนรูปใบนับ (ใส่เหตุผล)':ROLE==='finance'?'📷 ส่งคำขอเปลี่ยนรูปใบนับ':'📷 เปลี่ยนรูปใบนับ',false)}</div><span class="small">${ROLE==='owner'?'บันทึกแล้ว — แก้จำนวนในตาราง/เปลี่ยนรูป ใส่เหตุผลทุกครั้ง':ROLE==='finance'?'บันทึกแล้ว — แก้จำนวนในตาราง/เปลี่ยนรูป ต้องส่งคำขอให้เจ้าของอนุมัติ':'บันทึกแล้ว — แก้จำนวนในตารางแล้วถ่ายรูปใบนับใหม่ได้เอง (ระบบเก็บประวัติและแจ้งเจ้าของ)'}</span>`;
   }else if(blocked) h+='<span class="small">มีคำขอแก้ไขรออนุมัติอยู่ — รอเจ้าของก่อน</span>';
-  else if(!has&&_loadOk) h+='<span class="small" style="color:var(--bad)">วันที่นี้แคชเชียร์แนบใบนับไม่ได้แล้ว (ได้เฉพาะวันนี้/เมื่อวาน) — แจ้งการเงินหรือเจ้าของ</span>';
+  else if(ROLE==='cashier'&&_loadOk&&ROW.status==='submitted'&&inCashWin(DATA.date)&&!EXO.dayLock) h+='<span class="small">ส่งฟอร์มแล้ว — ถ้ายอดเงินสดผิด กด "✏️ ขอแก้ฟอร์ม" ด้านบนก่อน แล้วแก้จำนวน + ถ่ายรูปใบนับใหม่</span>';
+  else if(_loadOk&&ROLE==='cashier') h+='<span class="small" style="color:var(--bad)">วันที่นี้แคชเชียร์แก้ใบนับไม่ได้แล้ว (ตัดบิลแล้ว หรือเกิน 3 วัน) — แจ้งการเงินหรือเจ้าของ</span>';
+  const plog=EXO.plog||[];
+  if(plog.length) h+=`<details class="small"><summary style="cursor:pointer">✏️ ประวัติแก้ใบนับ ${plog.length} ครั้ง (แก้เองไม่ต้องอนุมัติ)</summary>${plog.map(r=>`<div>${r.amount_changed?fmt(+r.old_amount||0)+' → <b>'+fmt(+r.new_amount||0)+'</b>':'เปลี่ยนรูป (ยอดเท่าเดิม '+fmt(+r.new_amount||0)+')'} · ${esc(RL_TXT[r.by_role]||r.by_role||'')} ${cpWhen(r.at)} · ${lnk(r.old_image_path,'รูปเดิม')}${r.old_image_path&&r.new_image_path?' · ':''}${lnk(r.new_image_path,'รูปใหม่')}</div>`).join('')}</details>`;
   if(done.length) h+=`<details class="small"><summary style="cursor:pointer">📜 ประวัติแก้ไขยอดเงินสด ${done.length} ครั้ง</summary>${done.map(r=>`<div>${r.status==='approved'?'✅':'❌'} ${fmt(+r.prev_amount||0)} → ${fmt(+r.amount||0)} · ${esc(r.reason||'')} · ${esc(RL_TXT[r.requested_role]||'')} ${cpWhen(r.requested_at)}</div>`).join('')}</details>`;
   return h;
 }
@@ -1076,10 +1083,13 @@ async function cpUpload(file){
   try{ const q=await Promise.all([sb.from('rev_cash_proof').select('*').eq('date',date).maybeSingle(),sb.from('rev_cash_proof_req').select('id').eq('date',date).eq('status','pending')]); if(q[0].error) throw q[0].error; cur=q[0].data; pend=(q[1]&&q[1].data)||[]; }
   catch(_e){ setChip('saveChip','bad','เช็กใบนับเดิมไม่ได้ ลองใหม่อีกครั้ง'); return; }
   if(!file&&!cur){ setChip('saveChip','bad','ยังไม่มีใบนับของวันนี้ — ต้องแนบรูปใบนับ'); return; }
+  if(!file&&ROLE==='cashier'){ setChip('saveChip','bad','แก้ยอดเงินสดต้องถ่าย/เลือกรูปใบนับใหม่'); return; } /* 16 พ.ย.69: ฐานกันอีกชั้น */
   if(!file&&cur&&cpSame(counts,cur.counts)&&Math.abs(+cur.amount-amt)<0.009){ setChip('saveChip','warn','ตารางนับไม่ได้เปลี่ยน — ไม่มีอะไรต้องส่ง'); return; }
   let reason='';
-  if(cur){
-    if(ROLE!=='owner'&&pend.length){ setChip('saveChip','bad','มีคำขอแก้ไขยอดเงินสดรออนุมัติอยู่แล้ว — รออนุมัติก่อน'); return; }
+  if(cur&&ROLE==='cashier'){
+    if(!confirm(`แก้ใบนับเงินสดวันที่ ${beDate(date)}\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)} (รูปใหม่)\n\nบันทึกได้เลย ไม่ต้องรออนุมัติ — ระบบเก็บประวัติและแจ้งเจ้าของ`)) return;
+  }else if(cur){
+    if(ROLE==='finance'&&pend.length){ setChip('saveChip','bad','มีคำขอแก้ไขยอดเงินสดรออนุมัติอยู่แล้ว — รออนุมัติก่อน'); return; }
     reason=String(prompt(`${ROLE==='owner'?'แทนใบนับเดิม':'ส่งคำขอแก้ไขยอดเงินสด'} วันที่ ${beDate(date)}\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)}${file?'':' (ใช้รูปเดิม)'}\n\nเหตุผลที่แก้ (จำเป็น):`)||'').trim();
     if(!reason){ setChip('saveChip','warn','ต้องใส่เหตุผลที่ขอแก้ไข — ยังไม่ได้ส่ง'); return; }
   }else if(!confirm(`บันทึกใบนับเงินสดของวันที่ ${beDate(date)}\nรวมนับได้ ${fmt(amt)} บาท ใช่ไหม?`)) return;
@@ -1088,17 +1098,18 @@ async function cpUpload(file){
     let path=cur?cur.image_path:null;
     if(file){ const blob=await shrinkJpeg(file); path=`cashproof/${date}/${Date.now()}.jpg`;
       const up=await sb.storage.from('revenue-slips').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(up.error) throw up.error; }
-    if(cur&&ROLE!=='owner'){
+    if(cur&&ROLE==='finance'){ /* 16 พ.ย.69: การเงินยังส่งคำขอให้เจ้าของอนุมัติตามเดิม · แคชเชียร์แก้เอง (ทางล่าง) */
       const rq=await sb.from('rev_cash_proof_req').insert([{date,amount:amt,counts,image_path:path,reason,prev_amount:+cur.amount,prev_image_path:cur.image_path,status:'pending',requested_role:ROLE}]); if(rq.error) throw rq.error;
       try{ await sb.functions.invoke('rev-alert',{body:{text:`📝 <b>คำขอแก้ไขยอดเงินสด ${beDate(date)}</b>\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)}${file?'':' (ใช้รูปเดิม)'}\nเหตุผล: ${esc(reason)}\n👉 เปิดฟอร์มรายรับ (หรือหน้าตรวจรายได้) วันที่ ${beDate(date)} เพื่ออนุมัติ`}}); }catch(_e){}
       setChip('saveChip','ok','ส่งคำขอแก้ไขยอดเงินสดแล้ว — รอเจ้าของอนุมัติ');
     }else{
-      if(cur){ const lg=await sb.from('rev_cash_proof_req').insert([{date,amount:amt,counts,image_path:path,reason,prev_amount:+cur.amount,prev_image_path:cur.image_path,status:'approved',requested_role:ROLE,decided_role:ROLE,decided_at:new Date().toISOString()}]); if(lg.error) throw lg.error; }
+      if(cur&&ROLE==='owner'){ const lg=await sb.from('rev_cash_proof_req').insert([{date,amount:amt,counts,image_path:path,reason,prev_amount:+cur.amount,prev_image_path:cur.image_path,status:'approved',requested_role:ROLE,decided_role:ROLE,decided_at:new Date().toISOString()}]); if(lg.error) throw lg.error; }
       const row={date,amount:amt,counts,image_path:path,uploaded_role:ROLE,uploaded_at:new Date().toISOString()};
       /* รูปแรก = เพิ่มใหม่เท่านั้น — อีกเครื่องแนบไปก่อนแล้ว (ชนกัน) จะไม่ทับ ต้องส่งคำขอแก้ไขตามกติกา (Codex r1 #7) · เจ้าของแทนของเดิม = upsert พร้อมเหตุผลตามเดิม */
       const r=cur?await sb.from('rev_cash_proof').upsert([row],{onConflict:'date'}):await sb.from('rev_cash_proof').insert([row]);
       if(r.error){ if(String(r.error.code)==='23505') throw new Error('มีใบนับของวันนี้แล้ว (อีกเครื่องเพิ่งแนบ) — ดูยอดใหม่ แล้วถ้าจะแก้ให้ส่งคำขอแก้ไข'); throw r.error; }
-      setChip('saveChip','ok','บันทึกใบนับเงินสดแล้ว');
+      if(cur&&ROLE==='cashier'&&Math.abs(+cur.amount-amt)>0.009){ try{ await sb.functions.invoke('rev-alert',{body:{text:`💵 <b>แก้ยอดเงินสด ${beDate(date)}</b>\nจาก ${fmt(+cur.amount)} → ${fmt(amt)} (แนบรูปใหม่แล้ว · ไม่ต้องอนุมัติ)\nดูรูปเดิม/ใหม่ได้ที่ฟอร์มรายรับหรือหน้าตรวจรายได้`}}); }catch(_e){} }
+      setChip('saveChip','ok',cur&&ROLE==='cashier'?'แก้ใบนับเงินสดแล้ว (ระบบแจ้งเจ้าของ)':'บันทึกใบนับเงินสดแล้ว');
     }
     await cpReload(date,tok);
   }catch(err){ setChip('saveChip','bad','บันทึกใบนับไม่สำเร็จ: '+(err.message||err)); }
@@ -1449,14 +1460,14 @@ function renderAll(keepFocus){
     bt.hidden=bc.hidden=!TRIAL; bt.disabled=!canEdit(); bc.disabled=!(canEdit()&&okDay&&!_copying);
     bc.title=!okDay?'คัดลอกไปฟอร์มจริงได้เฉพาะวันนี้และเมื่อวาน':'คัดลอกรายการในฟอร์มนี้ไปเป็นฉบับร่างของฟอร์มจริง (ต้องเปิดฟอร์มปกติตรวจแล้วกดส่งเอง)'; }
   bs.disabled=TRIAL||_chqBusy||!(done&&!fmtBad&&canEdit()&&ROW.status!=='submitted'); bs.title=ROW.status==='submitted'?'ส่งแล้ว':!done?'ส่งได้หลังข้อมูล ACC เข้ารอบ 16:30':fmtBad?'แก้เลขบิล/ยอดที่ผิดรูปแบบ หรือแนบรูปเช็คก่อน':'';
-  { const br=document.getElementById('bReopen'), t0=bkkToday(), okDay=DATA.date===t0||DATA.date===bkkShift(t0,-1), left=REOPEN.used==null?0:Math.max(0,REOPEN.max-REOPEN.used);
-    br.hidden=TRIAL||ROLE!=='cashier'||ROW.status!=='submitted'||!_loadOk||!okDay||REOPEN.used==null||!!REOPEN.err;
-    br.disabled=_reopening||_submitting||REOPEN.audit||left<=0;
-    br.textContent='✏️ ขอแก้ฟอร์ม (เหลือ '+left+'/'+REOPEN.max+' ครั้ง)';
-    br.title=REOPEN.audit?'กด "บันทึกส่งข้อมูลทั้งหมด" ในหน้าตรวจรายได้แล้ว — แก้ไม่ได้ ให้เจ้าของแก้':left<=0?'ขอแก้ครบ '+REOPEN.max+' ครั้งแล้ว — ให้เจ้าของแก้':'ฟอร์มกลับเป็นร่างให้แก้ แก้เสร็จกดส่งฟอร์มใหม่'; }
+  { const br=document.getElementById('bReopen'), okDay=inCashWin(DATA.date), lk=REOPEN.lock||(okDay?null:'old'); /* 16 พ.ย.69: ไม่จำกัดครั้ง · ล็อกเมื่อตัดบิล/เกิน 3 วัน */
+    br.hidden=TRIAL||ROLE!=='cashier'||ROW.status!=='submitted'||!_loadOk||REOPEN.used==null||!!REOPEN.err;
+    br.disabled=_reopening||_submitting||!!lk;
+    br.textContent=lk==='cut'?'🔒 ตัดบิลแล้ว — แก้ไม่ได้':lk==='old'?'🔒 เกิน 3 วัน — แก้ไม่ได้':'✏️ ขอแก้ฟอร์ม (แก้ได้ถึง '+dmy(REOPEN.until||bkkShift(DATA.date,2))+')';
+    br.title=lk?'ให้การเงินหรือเจ้าของแก้':'ฟอร์มกลับเป็นร่างให้แก้ แก้เสร็จกดส่งฟอร์มใหม่ (ขอแก้ได้ไม่จำกัดครั้ง จนกว่าตัดบิล หรือครบ 3 วัน)'; }
   const tn=document.getElementById('topNote'); const notes=[];
   if(TRIAL){ if(!canEditDay()&&_loadOk) notes.push('โหมดทดลองใช้ได้กับวันนี้หรือวันที่ผ่านมาแล้วเท่านั้น'); }
-  else if(!ed&&ROLE!=='owner') notes.push(ROW.status==='submitted'?'ส่งฟอร์มของวันนี้แล้ว — ใส่รายละเอียดต่อ/แก้คืนเงิน ที่หน้าตรวจรายได้ (ลิงก์ด้านล่าง)':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้เฉพาะวันนี้และเมื่อวาน)');
+  else if(!ed&&ROLE!=='owner') notes.push(ROW.status==='submitted'?'ส่งฟอร์มของวันนี้แล้ว — ใส่รายละเอียดต่อ/แก้คืนเงิน ที่หน้าตรวจรายได้ (ลิงก์ด้านล่าง)':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้ภายใน 3 วัน: วันที่ฟอร์ม ถึง 2 วันถัดไป)');
   if(done&&miss.length) notes.push('ยังไม่พบใน ACC: '+miss.join(', ')+' — ตรวจเลขบิล หรือรอรอบซิงก์ถัดไป');
   tn.hidden=!notes.length&&!_copyNote; tn.textContent=notes.join(' · ');
   if(!TRIAL&&ROW.status==='submitted'&&DATA.date&&ROLE==='cashier'){ tn.hidden=false; tn.insertAdjacentHTML('beforeend',(notes.length?' · ':'')+'<a href="index.html?d='+encodeURIComponent(DATA.date)+'" style="font-weight:700">👉 ไปหน้าตรวจรายได้ วันที่ '+beDate(DATA.date)+'</a>'); } if(_copyNote) tn.insertAdjacentHTML('beforeend',(notes.length?' · ':'')+_copyNote);
@@ -1829,8 +1840,8 @@ document.getElementById('bSubmit').onclick=async()=>{
 /* แคชเชียร์ขอแก้ฟอร์มที่ส่งแล้ว → กลับเป็นร่าง (ฐานข้อมูลนับครั้ง + เก็บฟอร์มก่อนแก้ในประวัติ rev_cashier_form_log) */
 document.getElementById('bReopen').onclick=()=>{
   const b=document.getElementById('bReopen'); if(TRIAL||b.hidden||b.disabled||document.getElementById('roOk')) return;
-  const left=REOPEN.max-REOPEN.used, date0=DATA.date, tok0=_loadTok;
-  b.insertAdjacentHTML('afterend','<span id="roOk" class="small" style="display:flex;gap:6px;align-items:center">ฟอร์มจะกลับเป็นร่างให้แก้ · ใช้สิทธิ์ 1 ครั้ง (เหลือ '+(left-1)+') · แก้เสร็จต้องกดส่งฟอร์มใหม่ <button class="btn pri" id="roYes">ขอแก้</button><button class="btn" id="roNo">ยกเลิก</button></span>');
+  const date0=DATA.date, tok0=_loadTok;
+  b.insertAdjacentHTML('afterend','<span id="roOk" class="small" style="display:flex;gap:6px;align-items:center">ฟอร์มจะกลับเป็นร่างให้แก้ · แก้เสร็จต้องกดส่งฟอร์มใหม่ (ระบบเก็บฟอร์มก่อนแก้ไว้ในประวัติ) <button class="btn pri" id="roYes">ขอแก้</button><button class="btn" id="roNo">ยกเลิก</button></span>');
   document.getElementById('roNo').onclick=()=>document.getElementById('roOk').remove();
   document.getElementById('roYes').onclick=async()=>{ document.getElementById('roOk').remove();
     if(_reopening||DATA.date!==date0||_loadTok!==tok0||ROW.status!=='submitted') return;

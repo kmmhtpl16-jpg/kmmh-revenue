@@ -406,7 +406,7 @@
     var PQ=pastQs(s, date); /* v0.9.9 ชุดข้อมูลเงินโอนก่อนวันเปิดบิล — ใช้ร่วมกับ pastFor */
     var q=await Promise.all([
       s.rpc("rev_cut_bills",{p_date:date}),
-      s.from("rev_audit").select("status,detail,form_refund").eq("date",date).maybeSingle(),
+      s.from("rev_audit").select("status,detail,form_refund,confirmed_at").eq("date",date).maybeSingle(),
       s.from("rev_credit_bills").select("customer").eq("bill_date",date).eq("source","auto-form"),
       s.from("rev_daily").select("kplus_rows,bank_rows").eq("date",date).maybeSingle(),
       s.from("rev_cash_proof").select("amount,image_path,uploaded_at,uploaded_role").eq("date",date).maybeSingle(),
@@ -487,7 +487,7 @@
       loadErr:q.map(function(x,i){ return (!x||x.error||(i===11&&nxtErr))? i : -1; }).filter(function(i){ return i>=0; }), /* v0.9.0 ส่วนไหนโหลดไม่ได้ → ตัวอนุมัติอัตโนมัติไม่บันทึกทั้งวัน */
       kLateWarn:kLateWarn, hasK:!!(dd.kplus_rows&&dd.kplus_rows.length), hasB:!!(dd.bank_rows&&dd.bank_rows.length),
       shop:((q[9]&&!q[9].error&&Array.isArray(q[9].data))? q[9].data : null),
-      proof:(q[4]&&q[4].data)||null, proofPending:((q[7]&&q[7].data)||[]).length,
+      proof:(q[4]&&q[4].data)||null, proofPending:((q[7]&&q[7].data)||[]).length, proofEdits:await proofEdits(s,date), auditRev:(au&&au.confirmed_at)? date+"|"+au.confirmed_at : null, /* 16 พ.ย.69: รอบผลตรวจที่ใช้คำนวณ → ใส่ในแถวอนุมัติ (ฐานตรวจ) */
       appr:(q[5]&&q[5].data)||[],
       pre:pre, past:past, refundXfer:rfx.amt, refundXferRows:rfx.rows, cnRefundOpen:rfx.open,
       refundOn:rfOn, refunds:RFD.rows||[], refundDeps:RFD.deps||[], raValid:RFD.raValid||{}, refundPhoto:RFD.photo||null, refundErr:RFD.err||null, cnValid:RFD.cnValid||{}, refundWd:RFD.wd||[],
@@ -499,6 +499,8 @@
      เคสจริง: KM6910-0118 รุ่งชัย 12,325 · KM6910-0119 คุณเต๋า 36,480 — เงินเข้ากสิกร 2/10 บิลออก 3/10
      นับให้เฉพาะเมื่อ (1) ทะเบียนมัดจำผูกเลขบิลนี้ (2) วันที่เงินเข้าก่อนวันบิล (3) เจอยอดนั้นจริงในสเตทเมนต์/K+ ของวันที่เงินเข้า
      · ข้ามแถวโอนที่มีเลข RA (มัดจำใน ACC หักจากบิลไปแล้ว) */
+  /* 16 พ.ย.69 คุณหลิง: แคชเชียร์แก้ยอดใบนับเองได้ (ไม่ต้องอนุมัติ) → การ์ดตัดบิลบอกว่ายอดนี้เคยถูกแก้ · อ่านไม่ได้/ยังไม่มีตาราง = [] (ไม่ขวางการ์ด) */
+  async function proofEdits(s,date){ try{ var r=await s.from("rev_cash_proof_log").select("old_amount,new_amount,by_role,at").eq("date",date).eq("action","update").eq("amount_changed",true).order("id"); return (!r.error&&Array.isArray(r.data))? r.data.filter(function(x){ return Math.abs(num(x.old_amount)-num(x.new_amount))>0.009; }) : []; }catch(e){ return []; } }
   /* v0.7.0 (20 ต.ค.69): ข้อมูลกล่องคืนเงินของวัน — แถวคืนเงิน · รูปล่าสุด · ใบลดหนี้ที่มีจริงใน ACC · ยอดเงินออกในสเตทเมนต์ (วันนั้น–3 วันถัดไป) ไว้ตรวจโอนคืน */
   async function refundData(s, date){
     var o={rows:[], deps:[], raValid:{}, billName:{}, photo:null, err:null, cnValid:{}, wd:[]};

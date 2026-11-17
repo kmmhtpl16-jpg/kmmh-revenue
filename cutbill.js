@@ -983,7 +983,8 @@
       var b=(x&&x.b)||{}, no=String(b.no||"");
       if(!no || dup[no]) return; dup[no]=1;
       if(x.grp && b.retail){ skip.push({b:b, why:"ลูกค้าปลีกโอนก้อนเดียวจ่ายหลายบิล — รอคุณหลิงดูก่อน"}); return; }
-      if(seen[no]){ skip.push({b:b, why: seen[no].status==="cancelled"? "เคยยกเลิกการอนุมัติ — รอคุณหลิงกดเอง" : "มีรายการอนุมัติอยู่แล้ว"}); return; }
+      if(seen[no]){ var _pk=seen[no].status==="cancelled" && String(seen[no].cut_note||"").indexOf("พักไว้ ")===0 && (seen[no].approved_role===AUTO_ROLE||seen[no].approved_role==="auto-recheck"); /* 17 พ.ย.69 */
+        skip.push({b:b, why: _pk? "พักไว้เพราะแคชเชียร์แก้ฟอร์ม — เมื่อบันทึกผลตรวจล่าสุดแล้ว ระบบจะลองอนุมัติคืนให้ถ้าผ่านกฎ ตอนเปิดหน้าตรวจรายได้ (เว้นรอบอย่างน้อย 30 นาที) หรือกดเองได้" : seen[no].status==="cancelled"? "เคยยกเลิกการอนุมัติ — รอคุณหลิงกดเอง" : "มีรายการอนุมัติอยู่แล้ว"}); return; }
       if(typeof b.out!=="number" || !isFinite(b.out) || !(r2(b.out)>0.01) || AUTO_METHODS.indexOf(x.method)<0){ skip.push({b:b, why:"ยอด/วิธีจ่ายไม่อยู่ในกฎ"}); return; }
       rows.push({bill_date:d0, bill_no:no, customer:b.name||null, amount:r2(b.out), method:x.method, evidence:x.src||null, status:"approved", approved_role:AUTO_ROLE});
     });

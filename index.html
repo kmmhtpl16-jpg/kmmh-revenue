@@ -3499,7 +3499,7 @@ async function cutAutoRun(date,R){
    · ใบที่เคยถอยอัตโนมัติ แล้วกลับมาพร้อมตัด → อนุมัติคืน · ห้ามแตะใบที่ตัดแล้ว (status cut) ทุกกรณี
    ใช้สวิตช์ autocut เดียวกับการ์ด · ข้อมูลวันไหนไม่ครบ (autoPick ไม่ ok) = ไม่ทำอะไรกับวันนั้น · รันซ้ำได้ ไม่เกิดแถวซ้ำ (bill_no unique + เงื่อนไขสถานะเดิม)
    ห่างกันอย่างน้อย 30 นาทีต่อเครื่อง (localStorage) · ไม่ขวางหน้า (รันหลังหน้าโหลด 10 วิ ทีละวัน) */
-const CUT_RECHECK_ROLE="auto-recheck", CUT_AUTO_ROLES=[CUT_AUTO_ROLE,CUT_RECHECK_ROLE], CUT_BACK_NOTE="ถอยอัตโนมัติ";
+const CUT_RECHECK_ROLE="auto-recheck", CUT_AUTO_ROLES=[CUT_AUTO_ROLE,CUT_RECHECK_ROLE], CUT_BACK_NOTE="ถอยอัตโนมัติ", CUT_PARK_NOTE="พักไว้ "; /* 17 พ.ย.69: ฐานพักคำอนุมัติเมื่อแคชเชียร์แก้ฟอร์ม (rev_cut_park_day) — กฎอนุมัติคืนเองแบบเดียวกับใบที่ถอยอัตโนมัติ */
 /* แก้ยอดใบที่กฎอัตโนมัติอนุมัติไว้ ให้ตรงการ์ดตอนนี้ — เปิด/ปิดตามที่คุณหลิงเลือก (true = แก้ให้เอง · false = เตือนอย่างเดียว) */
 const CUT_RECHECK_FIX_AMOUNT=true;
 let _cutRecheckBusy=false;
@@ -3560,8 +3560,8 @@ async function cutRecheckDay(date, stamp, lockOk){
     }
   }
   /* 3) ใบที่เคยถอยอัตโนมัติ แล้วกลับมาพร้อมตัด → อนุมัติคืน — ใช้ autoPick ชุดเดียวกับการ์ด (ทำเหมือนแถวที่ถอยไม่มีอยู่)
-     ใบที่คุณหลิงยกเลิกเอง (cut_note ไม่ขึ้นต้น "ถอยอัตโนมัติ" / role ไม่ใช่อัตโนมัติ) ไม่แตะ */
-  const backed=(R.D.appr||[]).filter(function(a){ return a&&a.status==="cancelled"&&String(a.cut_note||"").indexOf(CUT_BACK_NOTE)===0&&CUT_AUTO_ROLES.indexOf(a.approved_role)>=0&&!/^OB/.test(String(a.receipt_group||"")); });
+     ใบที่คุณหลิงยกเลิกเอง (cut_note ไม่ขึ้นต้น "ถอยอัตโนมัติ"/"พักไว้ " / role ไม่ใช่อัตโนมัติ) ไม่แตะ */
+  const backed=(R.D.appr||[]).filter(function(a){ const n=String(a&&a.cut_note||""); return a&&a.status==="cancelled"&&(n.indexOf(CUT_BACK_NOTE)===0||n.indexOf(CUT_PARK_NOTE)===0)&&CUT_AUTO_ROLES.indexOf(a.approved_role)>=0&&!/^OB/.test(String(a.receipt_group||"")); }); /* 17 พ.ย.69: + ใบที่ฐานพักไว้ (แคชเชียร์แก้ฟอร์ม) · ใบที่คุณหลิงอนุมัติเอง/ยกเลิกเอง ไม่แตะ */
   /* v0.8.1 ฟอร์มบิลเก่าวันนี้ไม่ตรงกับที่อนุมัติไว้ — เตือน (ไม่ถอยเอง) */
   if(_oldOk && R.fo.drift && R.fo.drift.length && R.fo.driftHeld) res.warn.push("บิลเก่าในฟอร์มไม่ตรงกับที่อนุมัติไว้: "+R.fo.drift.join(", ")+" — ไม่อนุมัติบิลเก่าเพิ่มเอง ให้คุณหลิงดู");
   if(backed.length){

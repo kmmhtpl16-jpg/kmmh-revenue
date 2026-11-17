@@ -3065,7 +3065,7 @@ async function uflRender(date,p,reqs,oth,rst){
   let f=null, fe=false, au=null, ae=false; try{ const q=await Promise.all([ sb.from("rev_cashier_form").select("status,submitted_at,updated_at").eq("date",date).maybeSingle(), sb.from("rev_audit").select("date,status").eq("date",date).maybeSingle(), sb.from("rev_form_stale").select("date").eq("date",date).maybeSingle() ]);
     if(q[0].error) fe=true; f=q[0].data; if(q[1].error) ae=true; au=q[1].data; if(!q[2].error&&q[2].data&&au) au={...au, status:"ฟอร์มถูกแก้"}; /* 16 พ.ย.69: ป้ายฟอร์มถูกแก้หลังตรวจ (ตารางแยก) */ }catch(e){ fe=true; ae=true; }
   if(_t!==window._uflTok || cpDate()!==date) return;
-  window._dayForm={date:date, status:fe?null:(f?f.status:"none"), audit:ae?null:(au?au.status:"none"), lock:!!(rst&&rst.dayLock)};
+  window._dayForm={date:date, status:fe?null:(f?f.status:"none"), audit:ae?null:(au?au.status:"none"), lock:!!(rst&&rst.dayLock), pend:(rst&&rst.pend)||0};
   /* 16 พ.ย.69: แคชเชียร์ขอแก้ฟอร์มหลังบันทึกตรวจรายได้แล้ว → ฐานตั้งสถานะ "ฟอร์มถูกแก้" · ส่งใหม่แล้ว = ดึงฟอร์มใหม่ให้เอง (เก็บเหตุผลใบลดหนี้เดิม แบบปุ่มแก้) แล้วรอกดบันทึกส่งข้อมูลทั้งหมด */
   /* r5 (Codex r4 #3): ดึงใหม่ต่อรอบส่ง · จำรอบเฉพาะเมื่อดึงสำเร็จ (ฟอร์มรอบนี้เข้าหน้าแล้ว) · ระหว่างดึงไม่ซ้อน · ล้มเหลว = รอบหน้าลองใหม่เอง */
   if(window._dayForm.status==="submitted" && window._dayForm.audit==="ฟอร์มถูกแก้" && f){ CF_AUTO.stale=CF_AUTO.stale||{}; CF_AUTO.staleBusy=CF_AUTO.staleBusy||{}; const rv=f.updated_at||f.submitted_at||"-";
@@ -3150,9 +3150,11 @@ async function cpReqDecide(id,ok){
 }
 /* ใส่คอมม่าหลักพันให้ช่องบาทระหว่างพิมพ์ (1000 → 1,000) */
 function cpFmtAmt(el){ const v=String(el.value||"").replace(/[^0-9.]/g,""); const parts=v.split("."); let i=parts[0].replace(/^0+(?=[0-9])/,""); i=i.replace(/\B(?=([0-9]{3})+(?![0-9]))/g,","); el.value=parts.length>1?i+"."+parts.slice(1).join("").slice(0,2):i; }
+function cfPendOk(n){ return !(ROLE==="cashier" && n>0) || confirm("⚠️ มีคำอนุมัติตัดบิลของวันนี้รอตัด "+n+" ใบ (ยังไม่ตัดใน ACC)\nถ้าแก้ ระบบจะพักคำอนุมัติไว้ รอส่งฟอร์มใหม่+ตรวจใหม่ แล้วอนุมัติใหม่\n\nแก้ต่อไหม?"); } /* 17 พ.ย.69 */
 async function cpOtherAdd(){
   const date=cpDate(); if(!date){ alert("เลือกวันที่ด้านบนก่อน"); return; }
-  if(!cpCanEdit(date)){ alert("บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง\nแคชเชียร์ลงรายรับอื่นๆ ได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
+  if(!cpCanEdit(date)){ alert("บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง หรือตัดบิลของวันนี้ใน ACC แล้ว\nแคชเชียร์ลงรายรับอื่นๆ ได้ 3 วัน (วันที่ฟอร์ม ถึง 2 วันถัดไป) จนกว่าตัดบิล"); return; }
+  { const s=window._dayForm; if(!cfPendOk(s&&s.date===date?s.pend:0)) return; }
   const chEl=document.getElementById("cpo_ch"), itEl=document.getElementById("cpo_item"), amEl=document.getElementById("cpo_amt");
   const ch=["cash","kplus","ksk"].indexOf(chEl&&chEl.value)>=0?chEl.value:"cash", item=String((itEl&&itEl.value)||"").trim();
   const amt=parseFloat(String((amEl&&amEl.value)||"").replace(/[, ]/g,""));
@@ -3190,8 +3192,10 @@ async function rfLoad(date, fi, xfer, rfd){
     try{ const b2=out.opts.map(function(o){ return o.bill2; }).filter(function(v,i,a){ return v && a.indexOf(v)===i; });
       if(b2.length){ const ra=await sb.rpc("rev_cashier_form_acc",{p_date:date,p_extra:b2}); if(ra&&!ra.error&&ra.data){ out.b2tot={}; (ra.data.bills||[]).forEach(function(b){ if(b2.indexOf(b[0])>=0) out.b2tot[b[0]]=+b[4]||0; }); } } }catch(_eB2){}
     const a=await sb.rpc("rev_refund_appr",{p_date:date});
-    ((a&&a.data)||[]).forEach(function(z){ if(z.status!=="cancelled"){ out.appr[z.bill_no]=z.status; if(z.bill_date===date) out.dayLock=true; } });
-  }catch(e){ console.warn("rfLoad",e); }
+    ((a&&a.data)||[]).forEach(function(z){ if(z.status!=="cancelled"){ const hard=z.status==="cut"||z.status==="cutting"; /* 17 พ.ย.69: ล็อกเมื่อตัดจริง/กำลังตัด · รอตัด = ฐานพักให้ */
+      if(z.bill_date!==date||hard) out.appr[z.bill_no]=z.status; if(z.bill_date===date){ if(hard) out.dayLock=true; else out.pend=(out.pend||0)+1; } } });
+    if(!a||a.error||!Array.isArray(a.data)) out.dayLock=true;
+  }catch(e){ console.warn("rfLoad",e); out.dayLock=true; /* r2: อ่านไม่ได้ = ล็อก */ }
   return out;
 }
 /* v0.7.2 (20 ต.ค.69): คุณหลิงขอให้กล่องคืนเงินสั้นลง — ในกรอบปิดวันเหลือบรรทัดเดียว + ปุ่มเปิด · ใน popup รายการแถวเดียว (มีปัญหา = 🚩 กดดูเหตุผล) · ฟอร์มซ่อนจนกด "เพิ่มรายการ" */
@@ -3324,7 +3328,8 @@ async function rfSave(id){
   const st=RF; if(!st) return; const date=st.date; const x=st.rows.find(function(z){ return +z.id===+id; }); if(!x) return;
   if(date!==cpDate()){ alert("วันที่เปลี่ยนไปแล้ว กดใหม่อีกครั้ง"); await loadCashProof(); return; }
   if(!cpCanEdit(date)){ alert("แคชเชียร์แก้ได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
-  if(ROLE==="cashier" && (st.appr[x.bill_no]||st.dayLock)){ alert("เจ้าของอนุมัติตัดบิลแล้ว แก้ไม่ได้ — แจ้งการเงิน/เจ้าของ"); return; }
+  if(ROLE==="cashier" && (st.appr[x.bill_no]||st.dayLock)){ alert("ตัดบิลแล้ว / กำลังตัด หรือบิลนี้อนุมัติตัดในวันอื่นแล้ว — แก้ไม่ได้ แจ้งการเงิน/เจ้าของ"); return; }
+  if(!cfPendOk(st.pend)) return;
   const amt=parseFloat(String((document.getElementById("rfe_amt")||{}).value||"").replace(/[, ]/g,"")), pay=(document.getElementById("rfe_pay")||{}).value==="transfer"?"transfer":"cash";
   const bill=rfBillNo((document.getElementById("rfe_bill")||{}).value,date);
   if(!(amt>0)){ alert("ใส่ยอดเงิน (มากกว่า 0)"); return; }
@@ -3353,7 +3358,8 @@ async function rfAdd(){
   const st=RF; if(!st) return; const date=st.date;
   if(date!==cpDate()){ alert("วันที่เปลี่ยนไปแล้ว กดใหม่อีกครั้ง"); await loadCashProof(); return; }
   if(!cpCanEdit(date)){ alert("บันทึกไม่ได้ เพราะวันที่ไม่ถูกต้อง\nแคชเชียร์ลงคืนเงินได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
-  if(ROLE==="cashier" && st.dayLock){ alert("เจ้าของอนุมัติตัดบิลของวันนี้แล้ว แก้กล่องคืนเงินไม่ได้ — แจ้งเจ้าของ"); return; }
+  if(ROLE==="cashier" && st.dayLock){ alert("ตัดบิลของวันนี้ใน ACC แล้ว (หรือกำลังตัด) — แก้กล่องคืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ"); return; }
+  if(!cfPendOk(st.pend)) return;
   const kind=(document.getElementById("rf_kind")||{}).value==="overpay"?"overpay":"cn";
   const pay=(document.getElementById("rf_pay")||{}).value==="transfer"?"transfer":"cash";
   const amt=parseFloat(String((document.getElementById("rf_amt")||{}).value||"").replace(/[, ]/g,""));
@@ -3393,7 +3399,8 @@ async function rfAdd(){
 async function rfDel(id){
   const st=RF; if(!st) return; const date=st.date; const x=st.rows.find(function(z){ return +z.id===+id; }); if(!x) return;
   if(!cpCanEdit(date)){ alert("แคชเชียร์ลบได้เฉพาะของวันนี้หรือเมื่อวาน"); return; }
-  if(ROLE==="cashier" && (st.appr[x.bill_no]||st.dayLock)){ alert("เจ้าของอนุมัติตัดบิลแล้ว ลบไม่ได้ — แจ้งเจ้าของ"); return; }
+  if(ROLE==="cashier" && (st.appr[x.bill_no]||st.dayLock)){ alert("ตัดบิลแล้ว / กำลังตัด หรือบิลนี้อนุมัติตัดในวันอื่นแล้ว — ลบไม่ได้ แจ้งเจ้าของ"); return; }
+  if(!cfPendOk(st.pend)) return;
   if(!confirm("ลบรายการคืนเงิน "+x.bill_no+(x.cn_no?" · "+x.cn_no:"")+" "+TH(+x.amount)+" ?")) return;
   try{ await ensureOwnerSession(); const r=await sb.from("rev_cash_refund").delete().eq("id",id); if(r.error) throw r.error; }
   catch(err){ alert("ลบไม่สำเร็จ: "+((err&&err.message)||err)); return; }

@@ -377,7 +377,9 @@ const RA_TRIED=new Set();
 function raMark(asked){ (asked||[]).forEach(v=>{ if(isRA(v)) RA_TRIED.add(DATA.date+'|'+v); }); } /* r2 Codex #6: เฉพาะ RA ที่ส่งไปถามในคำขอนั้นจริง */
 let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 /* 2 พ.ย.69 (คุณหลิงเลือก): แคชเชียร์ขอแก้ฟอร์มที่ส่งแล้วได้เอง 3 ครั้งต่อฟอร์ม 1 วัน จนกว่าจะกด "บันทึกส่งข้อมูลทั้งหมด" (มีแถว rev_audit) · ฐานข้อมูลตรวจซ้ำใน rev_cashier_form_guard */
-let REOPEN={used:null,max:null,audit:false,lock:null,until:null,err:''}, _reopening=false;
+let REOPEN={used:null,max:null,audit:false,lock:null,until:null,pending:0,err:''}, _reopening=false;
+/* 17 พ.ย.69: ข้อความ error ภาษาอังกฤษของฐาน (สิทธิ์) → ไทย ให้แคชเชียร์รู้ว่าไม่ผ่าน */
+function thErr(e){ const m=String((e&&e.message)||e||''); if(/row-level security|permission denied|violates/i.test(m)) return 'ระบบไม่ให้บันทึก (ไม่มีสิทธิ์ หรือหน้าเว็บเก่า) — กด F5 โหลดหน้าใหม่แล้วลองอีกครั้ง ถ้ายังไม่ได้ แจ้งการเงิน/เจ้าของ'; return m; }
 /* ช่องยอดที่พิมพ์ผิดและยังไม่ได้บันทึก {id ช่อง: {raw, why}} — ค้างไว้จนแก้ บล็อกส่ง/ปริ้น/Excel/คัดลอก (Codex v074 #1) */
 let BADAMT={};
 let _chqBusy=false; const CHQ_TOK=new WeakMap(); let _chqSeq=0;
@@ -424,7 +426,7 @@ async function loadDay(date){
     /* สิทธิ์ขอแก้ที่เหลือ (อ่านไม่ได้ = ไม่โชว์ปุ่ม ไม่ทำให้หน้าโหลดพัง) */
     let ro={used:null,max:null,audit:false,lock:null,until:null,err:''};
     if(ROLE==='cashier'&&row.status==='submitted'){ try{ const ri=await sb.rpc('rev_cashier_form_reopen_info',{p_date:date});
-      if(ri.error||!ri.data) ro.err=(ri.error&&ri.error.message)||'อ่านไม่ได้'; else ro={used:+ri.data.used||0,max:null,audit:!!ri.data.audit,lock:ri.data.lock||null,until:ri.data.until||bkkShift(date,2),err:''}; }catch(e){ ro.err=e.message||String(e); } }
+      if(ri.error||!ri.data) ro.err=(ri.error&&ri.error.message)||'อ่านไม่ได้'; else ro={used:+ri.data.used||0,max:null,audit:!!ri.data.audit,lock:ri.data.lock||null,until:ri.data.until||bkkShift(date,2),pending:+ri.data.pending||0,err:''}; }catch(e){ ro.err=e.message||String(e); } }
     if(tok!==_loadTok) return; REOPEN=ro;
     /* ACC ค้าง → ตัดที่ 25 วิ แล้วขึ้นว่าโหลดไม่ได้ (ไม่ให้หน้าล็อกเงียบๆ ไม่มีกำหนด) */
     const acc=await Promise.race([fetchAcc(date,extraBills(s)),new Promise((_,rej)=>setTimeout(()=>rej(new Error('ข้อมูล ACC ตอบช้าเกิน 25 วินาที')),25000))]);
@@ -785,8 +787,10 @@ async function exAux(date){
     /* 16 พ.ย.69: ประวัติแก้ใบนับ (rev_cash_proof_log · เจ้าของ/การเงินอ่านได้) — ยังไม่ขึ้นตาราง/อ่านไม่ได้ = ไม่แสดง */
     if(ROLE==='owner'||ROLE==='finance'){ try{ const pl=await sb.from('rev_cash_proof_log').select('old_amount,new_amount,old_image_path,new_image_path,by_role,at,amount_changed').eq('date',date).eq('action','update').eq('counts_only',false).order('id'); if(!pl.error) o.plog=pl.data||[]; }catch(_e){} }
     const ph=(q[3]&&!q[3].error&&q[3].data)||[]; o.nRfPhoto=ph.length; o.rfPhoto=ph.length?ph[ph.length-1].image_path:null;
-    ((q[4]&&!q[4].error&&q[4].data)||[]).forEach(z=>{ if(z&&z.status!=='cancelled'){ o.appr[z.bill_no]=z.status; if(z.bill_date===date) o.dayLock=true; } });
-  }catch(e){ o.err=e.message||String(e); }
+    ((q[4]&&!q[4].error&&q[4].data)||[]).forEach(z=>{ if(z&&z.status!=='cancelled'){ const hard=z.status==='cut'||z.status==='cutting'; /* 17 พ.ย.69 คุณหลิง: ล็อกเมื่อตัดจริง/กำลังตัด · รอตัด = ฐานพักคำอนุมัติให้เมื่อแคชเชียร์แก้ */
+      if(z.bill_date!==date||hard) o.appr[z.bill_no]=z.status; if(z.bill_date===date){ if(hard) o.dayLock=true; else o.pend=(o.pend||0)+1; } } });
+    if(!q[4]||q[4].error||!Array.isArray(q[4].data)) o.dayLock=true; /* อ่านสถานะตัดบิลไม่ได้ = ล็อกไว้ก่อน (ฐานกันอีกชั้น) */
+  }catch(e){ o.err=e.message||String(e); o.dayLock=true; /* r2: อ่านไม่ได้ = ล็อก */ }
   return o; }
 /* ใครลง/แก้ได้: กติกาเดียวกับกล่องเดิม — เจ้าของ/การเงินได้เสมอ · แคชเชียร์วันนี้/เมื่อวาน ก่อนส่งฟอร์ม และ (คืนเงิน) ก่อนเจ้าของอนุมัติตัดบิลของวันนี้ */
 function exCan(k){ if(TRIAL) return canEdit(); if(!_loadOk||_submitting||_copying||!ROLE) return false;
@@ -1087,7 +1091,7 @@ async function cpUpload(file){
   if(!file&&cur&&cpSame(counts,cur.counts)&&Math.abs(+cur.amount-amt)<0.009){ setChip('saveChip','warn','ตารางนับไม่ได้เปลี่ยน — ไม่มีอะไรต้องส่ง'); return; }
   let reason='';
   if(cur&&ROLE==='cashier'){
-    if(!confirm(`แก้ใบนับเงินสดวันที่ ${beDate(date)}\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)} (รูปใหม่)\n\nบันทึกได้เลย ไม่ต้องรออนุมัติ — ระบบเก็บประวัติและแจ้งเจ้าของ`)) return;
+    if(!confirm(`แก้ใบนับเงินสดวันที่ ${beDate(date)}\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)} (รูปใหม่)\n\nบันทึกได้เลย ไม่ต้องรออนุมัติ — ระบบเก็บประวัติและแจ้งเจ้าของ${EXO.pend?`\n⚠️ มีคำอนุมัติตัดบิลรอตัด ${EXO.pend} ใบ — ระบบจะพักไว้ รอตรวจใหม่`:''}`)) return;
   }else if(cur){
     if(ROLE==='finance'&&pend.length){ setChip('saveChip','bad','มีคำขอแก้ไขยอดเงินสดรออนุมัติอยู่แล้ว — รออนุมัติก่อน'); return; }
     reason=String(prompt(`${ROLE==='owner'?'แทนใบนับเดิม':'ส่งคำขอแก้ไขยอดเงินสด'} วันที่ ${beDate(date)}\nยอดเดิม ${fmt(+cur.amount)} → ยอดใหม่ ${fmt(amt)}${file?'':' (ใช้รูปเดิม)'}\n\nเหตุผลที่แก้ (จำเป็น):`)||'').trim();
@@ -1112,7 +1116,7 @@ async function cpUpload(file){
       setChip('saveChip','ok',cur&&ROLE==='cashier'?'แก้ใบนับเงินสดแล้ว (ระบบแจ้งเจ้าของ)':'บันทึกใบนับเงินสดแล้ว');
     }
     await cpReload(date,tok);
-  }catch(err){ setChip('saveChip','bad','บันทึกใบนับไม่สำเร็จ: '+(err.message||err)); }
+  }catch(err){ setChip('saveChip','bad','บันทึกใบนับไม่สำเร็จ: '+thErr(err)); }
   finally{ _cpBusy=false; renderAll(); }
 }
 /* เติม/จัดจำนวนแยกชนิด ยอดเท่าเดิม — แก้แค่ช่อง counts (ฐานยอมเฉพาะกรณีนี้ + บังคับรวม = ยอด) · ยอด/รูปไม่เปลี่ยน */
@@ -1463,8 +1467,8 @@ function renderAll(keepFocus){
   { const br=document.getElementById('bReopen'), okDay=inCashWin(DATA.date), lk=REOPEN.lock||(okDay?null:'old'); /* 16 พ.ย.69: ไม่จำกัดครั้ง · ล็อกเมื่อตัดบิล/เกิน 3 วัน */
     br.hidden=TRIAL||ROLE!=='cashier'||ROW.status!=='submitted'||!_loadOk||REOPEN.used==null||!!REOPEN.err;
     br.disabled=_reopening||_submitting||!!lk;
-    br.textContent=lk==='cut'?'🔒 ตัดบิลแล้ว — แก้ไม่ได้':lk==='old'?'🔒 เกิน 3 วัน — แก้ไม่ได้':'✏️ ขอแก้ฟอร์ม (แก้ได้ถึง '+dmy(REOPEN.until||bkkShift(DATA.date,2))+')';
-    br.title=lk?'ให้การเงินหรือเจ้าของแก้':'ฟอร์มกลับเป็นร่างให้แก้ แก้เสร็จกดส่งฟอร์มใหม่ (ขอแก้ได้ไม่จำกัดครั้ง จนกว่าตัดบิล หรือครบ 3 วัน)'; }
+    br.textContent=lk==='cut'?'🔒 ตัดบิลใน ACC แล้ว — แก้ไม่ได้':lk==='cutting'?'🔒 กำลังตัดบิล — รอสักครู่แล้วเปิดหน้าใหม่':lk==='old'?'🔒 เกิน 3 วัน — แก้ไม่ได้':'✏️ ขอแก้ฟอร์ม (แก้ได้ถึง '+dmy(REOPEN.until||bkkShift(DATA.date,2))+')';
+    br.title=lk?'ให้การเงินหรือเจ้าของแก้':'ฟอร์มกลับเป็นร่างให้แก้ แก้เสร็จกดส่งฟอร์มใหม่ (ขอแก้ได้ไม่จำกัดครั้ง จนกว่าตัดบิลใน ACC หรือครบ 3 วัน)'; }
   const tn=document.getElementById('topNote'); const notes=[];
   if(TRIAL){ if(!canEditDay()&&_loadOk) notes.push('โหมดทดลองใช้ได้กับวันนี้หรือวันที่ผ่านมาแล้วเท่านั้น'); }
   else if(!ed&&ROLE!=='owner') notes.push(ROW.status==='submitted'?'ส่งฟอร์มของวันนี้แล้ว — ใส่รายละเอียดต่อ/แก้คืนเงิน ที่หน้าตรวจรายได้ (ลิงก์ด้านล่าง)':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้ภายใน 3 วัน: วันที่ฟอร์ม ถึง 2 วันถัดไป)');
@@ -1841,14 +1845,14 @@ document.getElementById('bSubmit').onclick=async()=>{
 document.getElementById('bReopen').onclick=()=>{
   const b=document.getElementById('bReopen'); if(TRIAL||b.hidden||b.disabled||document.getElementById('roOk')) return;
   const date0=DATA.date, tok0=_loadTok;
-  b.insertAdjacentHTML('afterend','<span id="roOk" class="small" style="display:flex;gap:6px;align-items:center">ฟอร์มจะกลับเป็นร่างให้แก้ · แก้เสร็จต้องกดส่งฟอร์มใหม่ (ระบบเก็บฟอร์มก่อนแก้ไว้ในประวัติ) <button class="btn pri" id="roYes">ขอแก้</button><button class="btn" id="roNo">ยกเลิก</button></span>');
+  b.insertAdjacentHTML('afterend','<span id="roOk" class="small" style="display:flex;gap:6px;align-items:center">'+(REOPEN.pending>0?'<b style="color:#b45309">⚠️ มีคำอนุมัติตัดบิลรอตัด '+REOPEN.pending+' ใบ — ถ้าขอแก้ ระบบจะพักไว้ (ยังไม่ตัด) รอส่งฟอร์มใหม่+ตรวจใหม่ แล้วอนุมัติใหม่ ·</b> ':'')+'ฟอร์มจะกลับเป็นร่างให้แก้ · แก้เสร็จต้องกดส่งฟอร์มใหม่ (ระบบเก็บฟอร์มก่อนแก้ไว้ในประวัติ) <button class="btn pri" id="roYes">ขอแก้</button><button class="btn" id="roNo">ยกเลิก</button></span>');
   document.getElementById('roNo').onclick=()=>document.getElementById('roOk').remove();
   document.getElementById('roYes').onclick=async()=>{ document.getElementById('roOk').remove();
     if(_reopening||DATA.date!==date0||_loadTok!==tok0||ROW.status!=='submitted') return;
     _reopening=true; renderAll();
     try{ const r=await sb.from('rev_cashier_form').update({status:'draft'}).eq('date',date0).eq('status','submitted').select('date');
       const same=()=>DATA.date===date0&&_loadTok===tok0;
-      if(r.error){ if(same()) setChip('saveChip','bad','ขอแก้ไม่สำเร็จ: '+r.error.message); return; }
+      if(r.error){ if(same()) setChip('saveChip','bad','ขอแก้ไม่สำเร็จ: '+thErr(r.error)); return; }
       if(!r.data||!r.data.length){ if(same()) setChip('saveChip','bad','ขอแก้ไม่สำเร็จ: ฟอร์มไม่ได้อยู่ในสถานะส่งแล้ว — เปิดหน้านี้ใหม่'); return; }
       _reopening=false; if(same()){ await loadDay(date0); const tok1=_loadTok; if(DATA.date===date0&&_loadTok===tok1&&_loadOk) setChip('saveChip','ok','เปิดให้แก้แล้ว — แก้เสร็จกดส่งฟอร์มใหม่'); }
     } finally{ _reopening=false; renderAll(); } };

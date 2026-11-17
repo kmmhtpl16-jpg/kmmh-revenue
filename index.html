@@ -3003,7 +3003,7 @@ async function loadCashProof(){
   const date=cpDate(), fn=document.getElementById("fn_cashp"), box=document.getElementById("d_cashp"), ob=document.getElementById("cashp_other"); if(!fn||!box||!date||!sb) return;
   box.classList.remove("on","bad"); fn.innerHTML=""; { const a0=document.getElementById("cashp_amt"); if(a0) a0.placeholder="ยอดรวมในใบนับ"; }
   const _cpt=(window._cpTok=(window._cpTok||0)+1);
-  let p=null, oth=[], dly=null, axf=null, reqs=[]; try{ const q=await Promise.all([ sb.from("rev_cash_proof").select("*").eq("date",date).maybeSingle(), sb.from("rev_cash_other").select("id,item,amount,channel").eq("date",date).order("id"), sb.from("rev_daily").select("kplus_rows,bank_rows").eq("date",date).maybeSingle(), sb.from("rev_audit").select("detail->xfer").eq("date",date).maybeSingle(), sb.from("rev_cash_proof_req").select("*").eq("date",date).order("id") ]); p=q[0]&&q[0].data; reqs=(q[4]&&q[4].data)||[]; oth=(q[1]&&q[1].data)||[]; dly=(q[2]&&q[2].data)||null; axf=(q[3]&&q[3].data&&q[3].data.xfer)||null; }catch(e){}
+  let p=null, oth=[], dly=null, axf=null, reqs=[], crr=null, othOk=false; try{ const q=await Promise.all([ sb.from("rev_cash_proof").select("*").eq("date",date).maybeSingle(), sb.from("rev_cash_other").select("id,item,amount,channel").eq("date",date).order("id"), sb.from("rev_daily").select("kplus_rows,bank_rows").eq("date",date).maybeSingle(), sb.from("rev_audit").select("detail->xfer").eq("date",date).maybeSingle(), sb.from("rev_cash_proof_req").select("*").eq("date",date).order("id"), sb.from("rev_cash_carry").select("id,over_date,short_date,amount,reason").or("over_date.eq."+date+",short_date.eq."+date).order("id") ]); p=q[0]&&q[0].data; reqs=(q[4]&&q[4].data)||[]; crr=(q[5]&&!q[5].error&&Array.isArray(q[5].data))?q[5].data:null; othOk=!!(q[1]&&!q[1].error&&Array.isArray(q[1].data)); /* r2 (Codex r1 #3): รายรับอื่นๆ อ่านไม่ได้ = ยอดที่ต้องมีเชื่อไม่ได้ */ /* 17 พ.ย.69 ยกยอดเงินสดข้ามวัน · อ่านไม่ได้ = null (ใบนับไม่ถือว่าตรง) */ oth=(q[1]&&q[1].data)||[]; dly=(q[2]&&q[2].data)||null; axf=(q[3]&&q[3].data&&q[3].data.xfer)||null; }catch(e){}
   const fi=await cpFormInfo(date);
   if(_cpt!==window._cpTok || cpDate()!==date) return; /* เปลี่ยนวันระหว่างโหลด — ปล่อยให้รอบใหม่วาด */
   const sumOf=function(ch){ return Math.round(oth.filter(function(x){ return ch.indexOf(x.channel||"cash")>=0; }).reduce(function(s,x){return s+(+x.amount||0);},0)*100)/100; };
@@ -3041,14 +3041,19 @@ async function loadCashProof(){
   if(_cpt!==window._cpTok || cpDate()!==date) return;
   rfRender(_rst);
   const _rfx=fi? Math.min(_rx.amt||0, fi.refund||0) : 0;
-  const exp=fi? Math.round((fi.cash+oSum+fi.oldCash-(fi.refund-_rfx))*100)/100 : null;
-  const br=fi? '<div class="muted" style="font-size:12px">ต้องมี = เงินสดขาย '+TH(fi.cash)+(oSum?' + รายรับอื่นๆ '+TH(oSum):'')+(fi.oldCash?' + บิลเก่าเงินสด '+TH(fi.oldCash):'')+(fi.refund?(_rfx?' − คืนเงินสด '+TH(fi.refund-_rfx)+' (คืนเงิน '+TH(fi.refund)+' − โอนคืน '+TH(_rfx)+')':' − คืนเงิน '+TH(fi.refund)):'')+' = <b>'+TH(exp)+'</b></div>'+(_rx.rows||[]).map(function(r){ return '<div class="muted" style="font-size:11.5px;color:#0369a1">🏦 '+esc(r.cn_no||'CN')+' '+esc(String(r.cust||'').slice(0,24))+' '+TH(r.amt)+' โอนคืน '+beDate(r.exp_date)+'</div>'; }).join('') : '';
+  /* 17 พ.ย.69 ยกยอดเงินสดข้ามวัน: วันนี้ส่งเกิน (ยกไปหักวันอื่น) = +ยอด · วันนี้ส่งขาด (หักจากที่เกินวันอื่น) = −ยอด — สูตรเดียวกับการ์ดตัดบิล (cutbill v0.10.5) และฟอร์มรายรับ */
+  const cSum=crr? Math.round(crr.reduce(function(a,x){ return a+(x.over_date===date?(+x.amount||0):x.short_date===date?-(+x.amount||0):0); },0)*100)/100 : 0;
+  const exp=fi? Math.round((fi.cash+oSum+fi.oldCash-(fi.refund-_rfx)+cSum)*100)/100 : null;
+  const cTxt=crr==null? '<div style="font-size:12px;color:#b91c1c">🚩 โหลดยอดยกเงินสดข้ามวันไม่ได้ — ยอดที่ต้องมียังเชื่อไม่ได้ เปิดหน้าใหม่</div>' : crr.map(function(x){ const o=x.over_date===date; return '<div class="muted" style="font-size:11.5px">↔️ ยกยอดเงินสด '+(o?'+':'−')+TH(+x.amount)+(o?' (วันนี้ส่งเกิน ยกไปหัก '+beDate(x.short_date)+')':' (วันนี้ส่งขาด หักจากที่เกินวันที่ '+beDate(x.over_date)+')')+(x.reason?' — '+esc(x.reason):'')+'</div>'; }).join('');
+  const br=fi? '<div class="muted" style="font-size:12px">ต้องมี = เงินสดขาย '+TH(fi.cash)+(oSum?' + รายรับอื่นๆ '+TH(oSum):'')+(fi.oldCash?' + บิลเก่าเงินสด '+TH(fi.oldCash):'')+(fi.refund?(_rfx?' − คืนเงินสด '+TH(fi.refund-_rfx)+' (คืนเงิน '+TH(fi.refund)+' − โอนคืน '+TH(_rfx)+')':' − คืนเงิน '+TH(fi.refund)):'')+(cSum?(cSum>0?' + ยกยอดเงินสด '+TH(cSum):' − ยกยอดเงินสด '+TH(-cSum)):'')+' = <b>'+TH(exp)+'</b></div>'+cTxt+(_rx.rows||[]).map(function(r){ return '<div class="muted" style="font-size:11.5px;color:#0369a1">🏦 '+esc(r.cn_no||'CN')+' '+esc(String(r.cust||'').slice(0,24))+' '+TH(r.amt)+' โอนคืน '+beDate(r.exp_date)+'</div>'; }).join('') : '';
   cpReqRender(date,p,reqs);
   uflRender(date,p,reqs,oth,_rst);
   if(!p){ fn.innerHTML='<span style="color:#b45309">ยังไม่มีรูปใบนับของ '+beDate(date)+'</span>'+br; upState(date,false,null); return; }
-  const ok=(exp==null)||Math.abs(+p.amount-exp)<0.01;
+  /* 17 พ.ย.69 r2 (Codex r1 #3): ตรง = ข้อมูลครบ (ยกยอด + รายรับอื่นๆ อ่านได้ + มียอดจากฟอร์ม) และยอดเท่ากัน · ยังไม่มียอดจากฟอร์ม = รอ (ไม่ขึ้น ✅) */
+  const lackTxt=crr==null||!othOk? 'โหลดยกยอด/รายรับอื่นๆ ไม่ได้ — เปิดหน้าใหม่' : exp==null? 'ยังไม่มียอดจากฟอร์มให้เทียบ' : '';
+  const ok=!lackTxt&&Math.abs(+p.amount-exp)<0.01;
   box.classList.add(ok?"on":"bad");
-  fn.innerHTML=(ok?'✅ ':'🚩 ')+'นับได้ '+TH(+p.amount)+(exp!=null?(ok?' = ยอดที่ต้องมี':' · ต้องมี '+TH(exp)+' · ต่าง '+TH(+p.amount-exp)):'')+
+  fn.innerHTML=(ok?'✅ ':lackTxt?'⏳ ':'🚩 ')+'นับได้ '+TH(+p.amount)+(lackTxt?' · '+lackTxt:(ok?' = ยอดที่ต้องมี':' · ต้องมี '+TH(exp)+' · ต่าง '+TH(+p.amount-exp)))+
     ' · <a href="#" onclick="openSlip(\''+escAttr(p.image_path)+'\');return false;">ดูรูป</a>'+br;
   const a=document.getElementById("cashp_amt"); if(a&&!a.value) a.placeholder=(ROLE==="owner"?"ยอดใหม่ (แทนของเดิม "+TH(+p.amount)+")":"ยอดใหม่ที่ขอแก้ (เดิม "+TH(+p.amount)+")");
   const clean=ok && !(ob&&ob.innerHTML.indexOf("🚩")>=0) && !(_rst && !(RF&&RF.ok)) && !reqs.some(function(r){return r.status==="pending";});
@@ -3663,6 +3668,8 @@ async function renderCut(_again){
   }
   if((D.proofEdits||[]).length){ const pe=D.proofEdits, last=pe[pe.length-1]; h+='<div style="font-size:12px;color:#b45309">✏️ ยอดใบนับเงินสดเคยถูกแก้ '+pe.length+' ครั้ง · ล่าสุด '+TH(+last.old_amount)+' → '+TH(+last.new_amount)+' ('+esc(({cashier:"แคชเชียร์",finance:"การเงิน",owner:"เจ้าของ"})[last.by_role]||last.by_role||"")+' '+esc(String(new Date(last.at).toLocaleString("th-TH",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"})))+')'+(last.by_role==="cashier"?' — แคชเชียร์แก้เอง แนบรูปใหม่ (ไม่ต้องอนุมัติ)':'')+' · ดูรายละเอียด/รูปเดิม-ใหม่ในประวัติใบนับของฟอร์ม</div>'; } /* 16 พ.ย.69 */
   h+='<div class="muted">💵 เงินสด: '+(D.proof? (R.proofOk?'✅ ใบนับ '+TH(+D.proof.amount)+' ตรงกับยอดที่ต้องมี':'🚩 ใบนับ '+TH(+D.proof.amount)+' ไม่ตรงกับยอดที่ต้องมี '+TH(R.expCash!=null?R.expCash:D.cash)+(R.cpHint||'')) : '⏳ ยังไม่มีรูปใบนับเงินสด')+(R.refundXfer>0?' <span style="color:#0369a1">· โอนคืน'+(R.refund&&R.refund.on?'':'ตามใบลดหนี้')+' '+TH(R.refundXfer)+' ไม่หักจากลิ้นชัก</span>':'')+'</div>';
+  /* 17 พ.ย.69 ยกยอดเงินสดข้ามวัน (rev_cash_carry) — รวมในยอดที่ต้องมีแล้ว (cutbill v0.10.5) */
+  if((R.carryRows||[]).length) h+='<div class="muted">↔️ ยกยอดเงินสดข้ามวัน '+R.carryRows.map(function(x){ const o=x.over_date===date; return (o?'+':'−')+TH(+x.amount)+(o?' (ส่งเกิน ยกไปหัก '+beDate(x.short_date)+')':' (ส่งขาด หักจากที่เกินวันที่ '+beDate(x.over_date)+')')+(x.reason?' — '+esc(x.reason):''); }).join(' · ')+' — รวมในยอดที่ต้องมีแล้ว</div>';
   /* v0.5.6 (22 ต.ค.69): มัดจำรับเงินสดวันนี้ + ด่านเงินสดของวัน — แสดงบรรทัดเดียว (เดิมแปะซ้ำทุกบิลในรายการพักไว้) */
   if(R.raSum>0) h+='<div class="muted">💵 มัดจำรับเงินสดวันนี้ '+(R.raCash||[]).map(function(x){ return esc(x.no)+' '+TH(x.amt)+(x.bill?' (บิล '+esc(x.bill.replace(/^KM\d{4}-/,""))+')':''); }).join(' · ')+' — นับรวมในบิลเงินสดแล้ว</div>';
   const _gate=R.cashGate? '<div class="muted" style="color:#b91c1c;font-weight:600">🚩 ด่านเงินสดของวัน: '+esc(R.cashGate)+'</div>' : '';

@@ -374,6 +374,10 @@ function extraBills(s){ s=s||S; const out=[]; const add=v=>{ v=normBill(v); if(v
   (s.rcash||[]).forEach(r=>add(r.ra)); return out; }
 /* RA ที่ดึงจาก ACC รอบล่าสุดแล้ว (ไม่เจอ = ยังไม่ซิงก์จริง ไม่ใช่ยังไม่ได้ถาม) — คีย์ วันที่|RA */
 const RA_TRIED=new Set();
+/* 18 พ.ย.69 (เคส KM6911-0804): ผลถามบิลกับ ACC รายใบ (rev_refund_bills + rev_cashier_form_acc) · คีย์ วันที่|บิล → {at เวลา, inDay อยู่ในบิลของวัน, accDate วันที่บิลใน ACC หรือ ''}
+   ใช้ตัดสิน "ยังไม่ซิงก์ = บันทึกแบบพัก" จากผลของบิลนั้นเอง (Codex r1 #1) · บันทึกแบบพักทุกครั้ง = ถาม ACC ใหม่สำเร็จในรอบบันทึกนั้น สำหรับบิลนั้น (Codex r1 #2 / r3 #1) · ผลรอบเก่าไม่ทับรอบใหม่ (seq) */
+const BL_SEEN=new Map(); let _blSeq=0, _blApplied=0; /* _blApplied = รายการบิลของวัน (EXO.bills) รอบล่าสุดที่ใช้ · ผลรายใบเก็บ seq ของตัวเอง (Codex r2 #2) */
+function blSeen(bill){ return BL_SEEN.get(DATA.date+'|'+bill)||null; }
 function raMark(asked){ (asked||[]).forEach(v=>{ if(isRA(v)) RA_TRIED.add(DATA.date+'|'+v); }); } /* r2 Codex #6: เฉพาะ RA ที่ส่งไปถามในคำขอนั้นจริง */
 let _loadTok=0,_loadOk=false,_submitting=false,_copying=false,_copyNote='';
 /* 2 พ.ย.69 (คุณหลิงเลือก): แคชเชียร์ขอแก้ฟอร์มที่ส่งแล้วได้เอง 3 ครั้งต่อฟอร์ม 1 วัน จนกว่าจะกด "บันทึกส่งข้อมูลทั้งหมด" (มีแถว rev_audit) · ฐานข้อมูลตรวจซ้ำใน rev_cashier_form_guard */
@@ -855,6 +859,7 @@ function exCheckRefund(r,i,amt,op,dp,bill,cn){
   if(!op&&!cn&&dp){ /* 16 พ.ย.69: เงินสดเกิน (ไม่มี CN ไม่ได้โอนเกิน) → เก็บเป็นมัดจำ · ต้องเป็นบิลของวันนี้ · บิลละแถว */
     const dupC=S.refund.findIndex((x,j)=>j!==i&&x.dp&&!x.op&&!x.cn&&x.bill===bill); if(dupC>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงเงินสดเกินเก็บเป็นมัดจำแล้วที่แถว ${dupC+1}`};
     if(!EXO.bills) return {ok:false,unk:true,lv:'warn',t:'ตรวจยอดบิลกับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
+    if(!EXO.bills.find(z=>z.no===bill)&&(!blSeen(bill)||Date.now()-blSeen(bill).at>60000)) return {ok:false,unk:true,needBill:bill,lv:'warn',t:'บิลนี้ยังไม่อยู่ในรายการบิลของวันนี้ — กำลังดึงจาก ACC ใหม่…'};
     if(!EXO.bills.find(z=>z.no===bill)) return {ok:false,lv:'bad',t:'เงินสดเกินเก็บเป็นมัดจำ ใช้ได้เฉพาะบิลของวันนี้ — ถ้าคืนของ ใส่เลข CN · ถ้าลูกค้าโอนเกิน ติ๊ก "คืนเพราะโอนเกิน"'};
     if((S.xfer||[]).some(x=>normBill(x.bill)===bill)) return {ok:false,lv:'bad',t:'บิลนี้มีเงินโอนด้วย — ถ้าส่วนเกินมาจากเงินโอน ติ๊ก "คืนเพราะโอนเกิน" · ถ้ามาจากเงินสดจริง แจ้งการเงินลงให้'}; /* r3: รับผสม การ์ดตัดบิลจับคู่ไม่ได้ */
     return {ok:true,rec:{bill_no:bill,kind:'cashover',cn_no:null,amount:amt,pay:'cash',cn_manual:false}};
@@ -877,7 +882,16 @@ function exCheckRefund(r,i,amt,op,dp,bill,cn){
   const dupB=S.refund.findIndex((x,j)=>j!==i&&x.op&&x.bill===bill); /* โอนเกินบิลละแถว (ฐานกันซ้ำ) — คืนบางส่วน+เก็บมัดจำบางส่วน ยังไม่รองรับ */ if(dupB>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงคืนเงินโอนเกินแล้วที่แถว ${dupB+1}`};
   if(!EXO.bills) return {ok:false,unk:true,lv:'warn',t:'ตรวจยอดบิลกับ ACC ไม่ได้'+(EXO.err?` (${EXO.err})`:'')+' — เปิดหน้าใหม่'};
   const b=EXO.bills.find(z=>z.no===bill);
-  if(!b) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินได้เฉพาะบิลของวันนี้ — ถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
+  if(!b){ /* 18 พ.ย.69 คุณหลิง (เคส KM6911-0804 ซิงก์เข้า 16:30 หลังเปิดหน้า): "ควรต้องยอมให้คืนเงินสด จากการโอนเกินนะ" */
+    const B=BILL[bill], sn=blSeen(bill), bd=(sn&&sn.accDate)||(B&&B.date?String(B.date).slice(0,10):'');
+    if(bd&&bd!==DATA.date) return {ok:false,lv:'bad',t:`บิลนี้เป็นบิลวันที่ ${beDate(bd)} — ติ๊กโอนเกินได้เฉพาะบิลของวันนี้ · ถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN`};
+    if(!sn) return {ok:false,unk:true,needBill:bill,lv:'warn',t:'บิลนี้ยังไม่อยู่ในรายการบิลของวันนี้ — กำลังดึงจาก ACC ใหม่…'};
+    if(sn.inDay||bd) return {ok:false,unk:true,needBill:bill,lv:'warn',t:'บิลนี้เพิ่งเข้าจาก ACC — กำลังโหลดยอดบิลใหม่…'}; /* ผลรายใบบอกว่ามีบิลแล้ว แต่รายการบนจอยังเก่า = ถามใหม่ ไม่บันทึกแบบพัก */
+    const got0=r2x(S.xfer.filter(x=>normBill(x.bill)===bill).reduce((s,x)=>s+num(x.kp)+num(x.ks),0));
+    if(!(got0>0)) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินแล้ว แต่บิลนี้ไม่อยู่ในแท็บโอน — ลงบิลในแท็บโอนก่อน หรือถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
+    if(Math.round(amt*100)>Math.round(got0*100)) return {ok:false,lv:'bad',t:`ยอดคืนมากกว่าเงินที่โอนเข้าบิลนี้ (${fmt(got0)})`}; /* Codex r1 #3: เทียบเป็นสตางค์ */
+    /* ยังไม่ซิงก์ = บันทึกได้ แต่พักไว้ ⏳ — การ์ดตัดบิลเทียบ "โอนเข้า − คืนโอนเกิน = ยอดค้าง ACC" เองเมื่อบิลเข้า (ไม่ตรง = พักบิล) */
+    return {ok:true,wait:true,recheck:bill,warn:`บิล ${bill} ยังไม่ซิงก์จาก ACC — บันทึกได้ แต่บิลจะพักไว้ ⏳ จนรอบซิงก์ถัดไปเจอ แล้วระบบเทียบยอดโอนเกินเอง`,rec:{bill_no:bill,kind:'overpay',cn_no:null,amount:amt,pay,cn_manual:false,ra_no:null}}; }
   const got=r2x(S.xfer.filter(x=>normBill(x.bill)===bill).reduce((s,x)=>s+num(x.kp)+num(x.ks),0)), need=r2x(+(b.due!=null?b.due:b.out)||0), exc=r2x(got-need); /* 16 พ.ย.69: เทียบยอดบิลก่อนตัดใบเสร็จ (due) — บิลที่ตัดแล้วยอดค้าง (out) = 0 ทำให้เงินโอนทั้งก้อนกลายเป็น "เกิน" */
   if(!(got>0)) return {ok:false,lv:'bad',t:'ติ๊กโอนเกินแล้ว แต่บิลนี้ไม่อยู่ในแท็บโอน — ลงบิลในแท็บโอนก่อน หรือถ้าคืนตามใบลดหนี้ ให้เอาติ๊กออกแล้วใส่เลข CN'};
   if(exc<=0.5) return {ok:false,lv:'bad',t:`บิลนี้ไม่ได้โอนเกิน (โอน ${fmt(got)} · บิล ${fmt(need)})`};
@@ -912,12 +926,29 @@ async function exSync(k,r){
   if(TRIAL||!r) return; let st=EXST.get(r); if(!st){ st={}; EXST.set(r,st); }
   if(st.busy){ st.again=true; return; }
   const i=S[k].indexOf(r); if(i<0) return;
+  /* Codex r5: แคชเชียร์แก้/บันทึกแถวเงินสดเกินเก็บมัดจำเอง = ถาม ACC ใหม่ทันที (ไม่รอผลเก่าหมดอายุ 1 นาที) */
+  if(k==='refund'&&r.dp&&!r.op&&!r.cn&&r.bill&&Array.isArray(EXO.bills)&&!EXO.bills.find(z=>z.no===r.bill)){ const o=BL_SEEN.get(DATA.date+'|'+r.bill); if(o) BL_SEEN.set(DATA.date+'|'+r.bill,{...o,at:0}); } /* Codex r6: ทำให้หมดอายุ แต่เก็บ seq ไว้ — ผลรอบเก่าที่ตอบช้าทับไม่ได้ */
   let c=exCheck(k,r,i); st.lv=''; st.t='';
   /* ยอดบิลที่ CN ใช้จ่ายยังไม่มี → ดึง ACC (พร้อมบิลนั้น) แล้วตรวจใหม่ · ดึงไม่ได้ = ไม่บันทึก */
-  if(!c.ok&&((c.need2&&!BILL[c.need2])||c.needRA)){ const date=DATA.date, tok=_loadTok; st.busy=true; renderAll();
-    try{ const ex=extraBills(); if(c.need2&&ex.indexOf(c.need2)<0) ex.push(c.need2); const acc=await fetchAcc(date,ex); if(tok===_loadTok&&date===DATA.date){ setAcc(acc); raMark(acc._asked); } }catch(_e){}
+  if((!c.ok&&((c.need2&&!BILL[c.need2])||c.needRA||c.needBill))||(c.ok&&c.recheck)){ const date=DATA.date, tok=_loadTok, nb=c.needBill||c.recheck, seq=nb?++_blSeq:0; let gotBl=false; st.busy=true; renderAll();
+    try{ const ex=extraBills(); if(c.need2&&ex.indexOf(c.need2)<0) ex.push(c.need2); if(nb&&ex.indexOf(nb)<0) ex.push(nb);
+      /* 18 พ.ย.69: บิลที่ซิงก์เข้าหลังเปิดหน้า — ถามรายการบิลของวันใหม่ (ตัวเดียวกับตอนเปิดหน้า) พร้อม ACC · อ่านไม่ได้ = ไม่นับว่าถามแล้ว (ไม่ปล่อยให้บันทึกแบบพัก) */
+      const [acc,rb]=await Promise.all([fetchAcc(date,ex),nb?sb.rpc('rev_refund_bills',{p_date:date}):Promise.resolve(null)]);
+      if(tok===_loadTok&&date===DATA.date){ setAcc(acc); raMark(acc._asked);
+        if(nb&&rb&&!rb.error&&Array.isArray(rb.data)&&(acc._asked||[]).indexOf(nb)>=0){
+          if(seq>_blApplied){ _blApplied=seq; EXO.bills=rb.data; } /* Codex r1 #1: รายการบิลของวันรอบเก่าที่ตอบช้า ไม่ทับรอบใหม่ */
+          const key=date+'|'+nb, old=BL_SEEN.get(key), ab=(acc.bills||[]).find(z=>z&&z[0]===nb);
+          if(!old||seq>old.seq) BL_SEEN.set(key,{seq,at:Date.now(),inDay:rb.data.some(z=>z&&z.no===nb),accDate:ab&&ab[1]?String(ab[1]).slice(0,10):''});
+          gotBl=true; } } }catch(_e){} /* gotBl = รอบนี้ถามบิล nb สำเร็จจริง (Codex r2 #3) */
     st.busy=false; if(tok!==_loadTok||date!==DATA.date) return;
-    c=exCheck(k,r,S[k].indexOf(r)); if(!c.ok&&(c.need2||c.needRA)){ st.lv='bad'; st.t=c.needRA?'ดึงใบรับมัดจำจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง':'ดึงยอดบิลที่ใบลดหนี้ใช้จ่ายจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง'; } }
+    if(S[k].indexOf(r)<0){ renderAll(); return; } /* Codex r1 #5: ลบแถวระหว่างรอ ACC = ไม่บันทึก */
+    c=exCheck(k,r,S[k].indexOf(r));
+    /* Codex r2 #1/#3: หลังถาม ACC ต้องใช้ผลของบิลที่แถวต้องการ "ตอนนี้" — แถวเปลี่ยนบิลระหว่างรอ = ถามใหม่ให้บิลใหม่ · บิลเดิมแต่รอบนี้ถามไม่สำเร็จ/ยังต้องถาม = ไม่บันทึก */
+    const want=(!c.ok&&c.needBill)||(c.ok&&c.recheck)||'';
+    if(want){ if(want!==nb){ return exSync(k,r); } /* แถวเปลี่ยนบิลระหว่างรอ = ถามใหม่ให้บิลใหม่ */
+      if(!(c.ok&&gotBl)){ if(st.again){ st.again=false; return exSync(k,r); } /* Codex r7: แก้แถวระหว่างรอ = ลองใหม่ 1 ครั้งเหมือนทางเดิม */
+        st.lv='bad'; st.t='ดึงรายการบิลของวันจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง'; renderAll(); return; } } /* บันทึกแบบพักได้เฉพาะเมื่อรอบนี้ถามบิลนี้สำเร็จ */
+    if(!c.ok&&(c.need2||c.needRA||c.needBill)){ st.lv='bad'; st.t=c.needRA?'ดึงใบรับมัดจำจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง':c.needBill?'ดึงรายการบิลของวันจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง':'ดึงยอดบิลที่ใบลดหนี้ใช้จ่ายจาก ACC ไม่ได้ — เปิดหน้าใหม่แล้วลองอีกครั้ง'; } }
   if(!c.ok){ if(st.again){ st.again=false; return exSync(k,r); } renderAll(); return; }
   if(r._sv&&exSame(k,r)){ renderAll(); return; }
   if(!exCan(k)){ exRevert(k,r); st.lv='bad'; st.t='วันที่นี้แก้ไม่ได้แล้ว — คืนค่าเดิม'; renderAll(); return; }
@@ -1005,19 +1036,22 @@ function paneEx(R){
   const lockTxt=k=>!exCan(k)&&_loadOk?(ROLE==='cashier'&&ROW.status==='submitted'?'ส่งฟอร์มแล้ว — ช่องรายรับอื่นๆ/คืนเงินพิมพ์ไม่ได้แล้ว ถ้าต้องเพิ่ม/แก้ กด "ขอแก้ฟอร์ม" ก่อน หรือแจ้งการเงิน (ลงที่หน้าตรวจรายได้ กล่องคืนเงิน)':k==='refund'&&ROLE==='cashier'&&EXO.dayLock?'เจ้าของอนุมัติตัดบิลของวันนี้แล้ว — แก้คืนเงินไม่ได้ แจ้งการเงิน/เจ้าของ':'วันที่นี้แก้ไม่ได้ (แคชเชียร์แก้ได้ภายใน 3 วัน: วันที่ฟอร์ม ถึง 2 วันถัดไป)'):'';
   const lockBox=t=>t?`<div role="alert" style="margin:6px 0 8px;padding:10px 12px;border:2px solid var(--bad);border-radius:10px;background:#fef2f2;color:var(--bad);font-weight:600">🔒 ${esc(t)}</div>`:'';
   const lockMsg=lockTxt('refund');
+  /* 18 พ.ย.69 คุณหลิง: ข้อความ ✕/⚠/⏳ ต้องอ่านเห็นได้เลย ไม่ต้องเอาเมาส์ชี้ — แสดงใต้ตาราง (ข้อความเดียวกับไอคอน) */
+  const exNotes=k=>{ const L=(S[k]||[]).map((x,i)=>({i,info:R.rowInfo[k+':'+i]})).filter(z=>z.info&&z.info.st&&z.info.lv&&z.info.lv!=='ok');
+    return L.length?`<div class="small" role="status" style="margin:4px 0 8px;display:grid;gap:3px">${L.map(z=>`<div style="color:${z.info.lv==='bad'?'var(--bad)':'var(--warn)'};font-weight:600">${z.info.wait?'⏳':(ST_ICON[z.info.lv]||'•')} แถว ${z.i+1}: ${esc(z.info.st)}</div>`).join('')}</div>`:''; };
   const ph=EXO.rfPhoto?`<button type="button" class="btn" data-rfview="1" style="padding:2px 10px;font-size:.8rem">✅ ดูรูปใบคืนเงิน</button>`:`<span class="st ${S.refund.some(r=>r._sv)?'warn':''}">ยังไม่มีรูปใบคืนเงิน</span>`;
   const phUp=exCan('refund')?`<label class="btn" style="padding:2px 10px;font-size:.8rem">📷 ${EXO.rfPhoto?'เปลี่ยนรูป':'แนบรูปใบรายการจ่ายเงิน'}<input type="file" accept="image/*" capture="environment" id="rfPhIn" data-own="ex" data-k="refund" hidden></label>`:'';
   return `<div class="pane"><h2>รายรับอื่นๆ</h2><p class="hint">เงินที่ไม่มีบิล (ขายเศษเหล็ก ค่าขนส่ง ฯลฯ) · พิมพ์ลงทีละแถวได้เลย ครบแถวแล้วบันทึกเข้าระบบเอง (ที่เดียวกับกล่องในหน้าตรวจรายได้) · Enter/ลูกศร เลื่อนช่องเหมือน Excel</p>
   ${lockBox(lockTxt('other'))}
   <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>รายละเอียด</th><th style="text-align:right">บาท</th><th>รับเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
   ${ro.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('other',i,'desc',x.desc,'เช่น ขายเศษเหล็ก')}</td><td style="width:8em">${ownAmt('other',i,x.amt)}</td><td style="width:8em">${chanSel(i,x.chan)}</td>${exStCell('other',i,R)}${exDelCell('other',i,x)}</tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td>${boxBad('other')?'รวม':`รวม (สด ${fmt(R.ex.oc)} · โอน ${fmt(R.ex.ox)})`}</td><td style="text-align:right">${totTxt('other',R.ex.oc+R.ex.ox)}</td><td colspan="3"></td></tr></tfoot></table></div>
+  </tbody><tfoot><tr><td></td><td>${boxBad('other')?'รวม':`รวม (สด ${fmt(R.ex.oc)} · โอน ${fmt(R.ex.ox)})`}</td><td style="text-align:right">${totTxt('other',R.ex.oc+R.ex.ox)}</td><td colspan="3"></td></tr></tfoot></table></div>${exNotes('other')}
   <h2 style="margin-top:8px">คืนเงิน</h2><p class="hint">เลขบิล (พิมพ์แค่ 4 ตัวท้ายได้ เช่น 1194) + เลขใบลดหนี้ (ถ้ามี) + ยอดที่คืนจริง + คืนเป็นสด/โอนคืน · คืนเพราะลูกค้าโอนเกิน (ไม่มีใบลดหนี้) = ติ๊กช่อง "คืนเพราะโอนเกิน" (ต้องมีบิลนี้ในแท็บโอน)<br>ลูกค้ายังไม่รับเงินคืน ฝากไว้ที่ร้าน = ติ๊ก <b>"เก็บเป็นมัดจำ"</b> + ใส่เลข RA ที่ออกใน ACC (ไม่หักเงินสดในลิ้นชัก) · ใช้ได้กับ คืนของ (ใส่ CN) / โอนเกิน (ติ๊กโอนเกิน) / เงินสดเกิน (ไม่ต้องใส่ CN)</p>
   ${lockBox(lockMsg)}
   ${EXO.err?`<div class="small" style="color:var(--warn)">ตรวจกับ ACC ไม่ได้ (${esc(EXO.err)}) — ยังลงรายรับอื่นๆ ได้ · คืนเงินลองเปิดหน้าใหม่</div>`:''}
   <div class="tblwrap"><table class="entry"><thead><tr><th>#</th><th>เลขบิล</th><th>ใบลดหนี้</th><th style="text-align:center">คืนเพราะ<br>โอนเกิน</th><th style="text-align:center">เก็บเป็น<br>มัดจำ (RA)</th><th style="text-align:right">ยอดเงิน</th><th>คืนเป็น</th><th>สถานะ</th><th></th></tr></thead><tbody>
   ${rr.map((x,i)=>`<tr><td class="no">${i+1}</td><td>${txt('refund',i,'bill',x.bill,'1194 หรือ KM6910-1194','bill')}</td><td>${x.op?txt('refund',i,'cn','','ไม่ต้องใส่','bill').replace('<input ','<input disabled '):txt('refund',i,'cn',x.cn,'CN6910-0000','bill')}</td><td style="text-align:center"><input type="checkbox" data-rfop="${i}" title="คืนเงินเนื่องจากลูกค้าโอนเกิน (ไม่มีใบลดหนี้)" ${x.op?'checked':''} ${exCan('refund')?'':'disabled'} style="width:20px;height:20px"></td><td style="text-align:center;white-space:nowrap"><input type="checkbox" data-rfdp="${i}" title="ลูกค้ายังไม่รับเงินคืน ฝากไว้เป็นมัดจำ (ACC ออกใบรับมัดจำ RA)" ${x.dp?'checked':''} ${exCan('refund')?'':'disabled'} style="width:20px;height:20px;vertical-align:middle">${x.dp?txt('refund',i,'ra',x.ra,'RA เช่น 0003','bill').replace('<input ','<input style="width:8.5em;margin-left:4px" '):''}</td><td style="width:8em">${ownAmt('refund',i,x.amt)}</td><td style="width:7em">${paySel(i,x)}</td>${exStCell('refund',i,R)}${exDelCell('refund',i,x)}</tr>`).join('')}
-  </tbody><tfoot><tr><td></td><td colspan="4">${boxBad('refund')?'รวม':`รวมคืนเงิน (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})${R.ex.rd?` · เก็บเป็นมัดจำ ${fmt(R.ex.rd)} (ไม่นับเงินออก)`:''}`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td colspan="3"></td></tr></tfoot></table></div>
+  </tbody><tfoot><tr><td></td><td colspan="4">${boxBad('refund')?'รวม':`รวมคืนเงิน (สด ${fmt(R.ex.rc)} · โอน ${fmt(R.ex.rx)})${R.ex.rd?` · เก็บเป็นมัดจำ ${fmt(R.ex.rd)} (ไม่นับเงินออก)`:''}`}</td><td style="text-align:right">${totTxt('refund',R.ex.rc+R.ex.rx)}</td><td colspan="3"></td></tr></tfoot></table></div>${exNotes('refund')}
   <div class="small" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">รูปใบรายการจ่ายเงิน (คืนเงิน): ${ph} ${phUp}</div>${paneCarry(R)}</div>`;
 }
 /* ---------- ยกยอดเงินสดข้ามวัน (คุณหลิงเลือก 17 พ.ย.69 แทนการแทนยอดใบนับเอง) ----------

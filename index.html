@@ -1172,8 +1172,26 @@ function lateItemsFromRows(rows){ return (rows||[]).filter(function(r){ return i
 function lateSumFromRows(rows){ return Math.round(lateItemsFromRows(rows).reduce(function(s,x){ return s+x.amt; },0)*100)/100; }
 /* K+ หลัง 15:30 ที่ยังไม่ออกบิลในวันนั้น = ยอดที่บิลจะไปออกวันถัดไป
    ⚠️ ถ้าวันนั้นออกบิลให้แล้ว แปลว่าฟอร์มนับไปแล้ว ห้ามเอามาบวกซ้ำ ไม่งั้นเตือนหลอกทั้งที่ยอดตรง */
-function lateUnbilled(items, xf){ return (items||[]).filter(function(x){ return !xferBill(xf||[], (+x.amt||0), "knv"); }); }
-function lateUnbilledSum(items, xf){ return Math.round(lateUnbilled(items,xf).reduce(function(s,x){ return s+(+x.amt||0); },0)*100)/100; }
+/* 18 พ.ย.69 (เคส 12/11 ธง 920 หลอก): จับคู่ K+ ↔ บิลในชีตโอน (knv) แบบ 1 บิล : 1 รายการ — สูตรเดียวกับ kMatch ใน bell.js
+   รอบแรกยอดตรงเป๊ะ รอบสองต่างไม่เกิน 1 บาท (หาคู่ให้ได้มากที่สุด รายการที่จับได้แล้วไม่หลุด — Codex r1 #2) · บิลแต่ละแถวใช้ได้ครั้งเดียว · skip(แถว)=true ใช้ไม่ได้
+   รายการ K+ ทั้งวัน (ก่อน 15:30 ด้วย) จองบิลของตัวเองก่อน — เดิม K+ 16:45 920 ไปเจอบิล 921 ของรายการ 08:35 เลยไม่ยกไปวันถัดไป */
+function kBillsOf(xf){ return (xf||[]).map(function(x){ return {amt:(+x.knv||0), bill:x.bill, x:x}; }).filter(function(b){ return b.amt>0; }); }
+function kMatch(claims, bills, skip){
+  var off=bills.map(function(b){ return !!(skip && skip(b)); }), own=bills.map(function(){ return -1; }), res=claims.map(function(){ return -1; });
+  claims.forEach(function(c, ci){ var a=+c.amt||0;
+    for(var k=0;k<bills.length;k++){ if(off[k]||own[k]>=0) continue; if(Math.abs(bills[k].amt-a)<=0.005){ own[k]=ci; res[ci]=k; return; } } });
+  var fixed=own.map(function(o){ return o>=0; });
+  function aug(ci, vis){ var a=+claims[ci].amt||0;
+    for(var k=0;k<bills.length;k++){ if(off[k]||fixed[k]||vis[k]||Math.abs(bills[k].amt-a)>1) continue; vis[k]=1;
+      if(own[k]<0 || aug(own[k], vis)){ own[k]=ci; res[ci]=k; return true; } }
+    return false; }
+  claims.forEach(function(c, ci){ if(res[ci]<0) aug(ci, {}); });
+  return res.map(function(k){ return k<0?null:bills[k]; }); }
+function earlyKItems(rows){ return (rows||[]).filter(function(r){ return !isLateRowT(r.t); }).map(function(r){ return {amt:(+r.amt||0)}; }); }
+/* บิลที่จับคู่ได้ของ K+ หลัง 15:30 แต่ละรายการ (null = ยังไม่มีบิลวันนั้น) · rows = kplus_rows ทั้งวัน */
+function lateKMatch(items, xf, rows){ var early=earlyKItems(rows), m=kMatch(early.concat(items||[]), kBillsOf(xf)); return (items||[]).map(function(x, i){ return m[early.length+i]; }); }
+function lateUnbilled(items, xf, rows){ var m=lateKMatch(items, xf, rows); return (items||[]).filter(function(x, i){ return !m[i]; }); }
+function lateUnbilledSum(items, xf, rows){ return Math.round(lateUnbilled(items,xf,rows).reduce(function(s,x){ return s+(+x.amt||0); },0)*100)/100; }
 function isFlagRow(x){ return !!x && (x.source==="รับเข้าบัญชีอื่น" || /บัญชีอื่น|เกินรายงาน|เกินสเตทเมนต์/.test(x.ref||"")); }
 /* 🧾 รายการ "ข้ามวัน" ของช่องโอนกสิกร — กันธงเตือนหลอก (เคสจริง 1 ก.ย.69 ธง 46,195 ทั้งที่เงินเข้าครบ)
    (ก) pre = บิลวันนี้ที่ลูกค้าจ่ายด้วยมัดจำซึ่งโอนเข้าบัญชีไปแล้ววันก่อน → ฟอร์มลงวันนี้ แต่สเตทเมนต์วันนี้ไม่มี = หักออกจากฝั่งฟอร์ม
@@ -1983,21 +2001,33 @@ async function renderDay(date, edit){
     try{
       var _txf=(au.detail&&au.detail.xfer)||[];
       var _tkn=_txf.filter(function(x){return (+x.knv||0)>0;});
-      function _addCarry(b){ if(b && _carryBills.indexOf(b.bill)<0){ _carryIn+=(+b.knv||0); _carryBills.push(b.bill); } }
       if(_tkn.length){
-        var _tb=_tkn.map(function(x){return x.bill;});
+        var _tb=[]; _tkn.forEach(function(x){ [x.bill, String(x.bill||"").trim()].forEach(function(v){ if(v && _tb.indexOf(v)<0) _tb.push(v); }); }); /* ดึงทั้งเลขบิลดิบและตัดช่องว่าง (Codex r3) */
         /* (ก) */
         var _cr=await sb.from("rev_pending").select("amount,matched_bill_no,date,source").in("matched_bill_no",_tb).lt("date",date);
-        (_cr.data||[]).forEach(function(pp){ if(/ตัดรอบ/.test(pp.source||"")){ _addCarry(_tkn.find(function(x){return x.bill===pp.matched_bill_no;})); } });
+        /* 18 พ.ย.69 สูตรเดียวกับ bell.js: บิลเดียวหลายแถวโอน — นับแถวที่ตรงกับยอด K+ ที่กดจับคู่ไว้ (rev_pending.amount) ทีละรายการ · จับไม่ได้ = แถวแรก (เดิม) (Codex r2 #1)
+           _cutPv = รายการ K+ ตัดรอบของเมื่อวานที่กดจับคู่ไว้แล้ว — กันนับรายการเดียวกันซ้ำใน (ข) (Codex r1 #4) */
+        var _usedRow=[], _offBill={}; /* แถวโอนที่ (ก) ใช้แล้ว / บิลที่ (ก) นับแบบสูตรเดิม — (ข) ห้ามใช้ (Codex r4 #2) */
+        var _cutPv=[], _cp=(_cr.data||[]).filter(function(pp){ return /ตัดรอบ/.test(pp.source||""); }), _cbs={};
+        _tkn.forEach(function(x){ var bt=String(x.bill||"").trim(); if(!bt||_cbs[bt]) return;
+          var pr=_cp.filter(function(pp){ return String(pp.matched_bill_no||"").trim()===bt; }); if(!pr.length) return; _cbs[bt]=1;
+          var rows=_tkn.filter(function(y){ return String(y.bill||"").trim()===bt; });
+          var pa0=pr.map(function(pp){ var v=parseFloat(pp.amount); return {amt:((isFinite(v)&&v>0)?v:(+x.knv||0)), pv:String(pp.date||"").slice(0,10)===_carryFrom}; });
+          var got=0; kMatch(pa0, kBillsOf(rows)).forEach(function(r){ if(r){ _carryIn+=r.amt; got++; _usedRow.push(r.x); } });
+          if(!got){ _carryIn+=(+x.knv||0); _offBill[bt]=1; }
+          if(_carryBills.indexOf(x.bill)<0) _carryBills.push(x.bill);
+          pa0.forEach(function(p){ if(p.pv) _cutPv.push({amt:p.amt, bill:x.bill}); }); });
         /* (ข) */
         var _pa=await sb.from("rev_audit").select("detail").eq("date",_carryFrom).maybeSingle();
         var _pd=await sb.from("rev_daily").select("kplus_rows").eq("date",_carryFrom).maybeSingle();
         var _pxf=(_pa.data&&_pa.data.detail&&_pa.data.detail.xfer)||[];
-        lateKItems(_pa.data&&_pa.data.detail, _pd.data&&_pd.data.kplus_rows).forEach(function(it){
-          /* ถ้าเมื่อวานออกบิลให้ยอดนี้ไปแล้ว = ไม่ใช่ยอดยกมา (เช่น K+ 15:48 ที่บิลออกวันเดียวกัน) */
-          if(xferBill(_pxf,(+it.amt||0),"knv")) return;
-          _addCarry(_tkn.find(function(x){ return Math.abs((+x.knv||0)-(+it.amt||0))<=1; }));
-        });
+        /* ถ้าเมื่อวานออกบิลให้ยอดนี้ไปแล้ว = ไม่ใช่ยอดยกมา (เช่น K+ 15:48 ที่บิลออกวันเดียวกัน)
+           18 พ.ย.69: จับคู่ 1 บิล : 1 รายการ (kMatch) ทั้งฝั่งเมื่อวานและวันนี้ — บิลที่ใช้แล้วใช้ซ้ำไม่ได้ (เคส 12/11 ธง 920 หลอก) */
+        var _pRows=_pd.data&&_pd.data.kplus_rows;
+        var _pl=lateUnbilled(lateKItems(_pa.data&&_pa.data.detail, _pRows), _pxf, _pRows), _pc=kMatch(_pl, _cutPv);
+        _pl=_pl.filter(function(x, i){ return !_pc[i]; });
+        var _pm=kMatch(_pl, kBillsOf(_tkn), function(r){ return _usedRow.indexOf(r.x)>=0 || !!_offBill[String(r.bill||"").trim()]; });
+        _pl.forEach(function(it, i){ var b=_pm[i]; if(!b) return; _carryIn+=(+b.amt||0); if(b.bill && _carryBills.indexOf(b.bill)<0) _carryBills.push(b.bill); });
       }
     }catch(e){}
     /* v0.3.1 — วันที่บันทึกฟอร์มก่อนยอดเครื่องขึ้น rev_audit.machine_net = null
@@ -2052,10 +2082,10 @@ async function renderDay(date, edit){
     html+=figRow("ใบลดหนี้",_cnT,null);
     if(+(_dnT||0)>0) html+=figRow("ใบเพิ่มหนี้ (บวกกลับ)",_dnT,null);
     html+=figRow("K+ (วันนี้)",au.kplus_today,(da&&da.kplus_total!=null?TH(da.kplus_total)+" (จากรายงาน)":null));
-    (function(){ var _fk0=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; var _fk=(_fk0!=null&&_obx.k>0.005)?Math.round((_fk0+_obx.k)*100)/100:_fk0; var _obL=oldXferLine(_fk0,_obx.k,_obx.kRows,'K+')+oldXferUnkNote(_obx); var _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:(au.kplus_today!=null?au.kplus_today:null));  if(_oldK>0.005 && _rk!=null) _rk=Math.round((_rk-_oldK)*100)/100; var _obNote=((_oldK>0.005)?('<div class="muted" style="color:#15803d">✅ หักเงิน K+ ที่เอาไปปิดบิลเก่าออกแล้ว '+TH0(_oldK)+' ('+esc(_oldKInfo.bills.join(", "))+') — ไม่ใช่ยอดขายของวันนี้</div>'):"")+_obL; if(_fk==null||_rk==null){ html+=kCmp(_fk,_rk)+_obNote; return; } var _lti=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}):[]); var _lsum=_lti.reduce(function(s,x){return s+(+x.amt||0);},0); var _d=Math.round((_fk-_rk)*100)/100; if(_d<0 && Math.abs(_d)<=_lsum+1){ html+='<div class="kv"><span>K+ ฟอร์มแคชเชียร์ vs รายงาน</span><b style="color:#1d4ed8">'+TH(_fk)+' vs '+TH(_rk)+'</b></div><div class="muted" style="color:#1d4ed8">ℹ️ รายงานมากกว่าฟอร์ม '+TH0(-_d)+' — เป็น K+ หลัง 15:30 (ตัดรอบ) บิลออกวันถัดไป ปกติ ดูรายการด้านล่าง</div>'+_obNote; } else { /* v0.3.2 — มีทั้งยอดยกมา (เข้า) และ K+ หลัง 15:30 ที่ยังไม่ออกบิลวันนี้ (ยกไปวันถัดไป = ออก) ต้องคิดทั้งสองทาง · สูตรเดียวกับกล่อง "ฟอร์มลง K+ เกินรายงาน" ด้านล่าง (เคส 24 ก.ย.69 ธง 28 หลอก) */ var _lkOut=lateUnbilledSum(lateKItems(au.detail, da&&da.kplus_rows), ((au.detail&&au.detail.xfer)||[]).concat(oldKXf(_obx))); var _cmpRk=Math.round((_rk+(_carryIn>1?_carryIn:0)-(_lkOut>0.005?_lkOut:0))*100)/100; html+=kCmp(_fk,_cmpRk)+((_carryIn>1||_lkOut>0.005)&&Math.abs(_cmpRk-_rk)>0.005?('<div class="muted" style="font-size:12px">รายงาน '+TH(_rk)+(_carryIn>1?(' + ยอดยกมา '+TH(_carryIn)):'')+(_lkOut>0.005?(' − K+ หลัง 15:30 ยกไปวันถัดไป '+TH(_lkOut)):'')+' = '+TH(_cmpRk)+'</div>'):'')+_obNote; } })();
-    (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?((_obx.k>0.005)?Math.round(((+au.detail.form_knv)+_obx.k)*100)/100:au.detail.form_knv):null; let _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:null); if(_oldK>0.005 && _rk!=null) _rk=Math.round((_rk-_oldK)*100)/100; const _lk=lateUnbilledSum(lateKItems(au.detail, da&&da.kplus_rows), ((au.detail&&au.detail.xfer)||[]).concat(oldKXf(_obx))); if(_fk!=null&&_rk!=null){ var _impRaw=Math.round(((_fk-_rk)+_lk)*100)/100; const _imp=Math.round((_impRaw-_carryIn)*100)/100; var _carryBox=(_carryIn>1)?('<div style="margin:4px 0 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px">'+'<b style="color:#b45309">↩️ ยอดยกมาจาก '+beDate(_carryFrom)+' '+TH(_carryIn)+'<span class="muted"> · K+ หลัง 15:30 เมื่อวาน บิล '+esc(_carryBills.join(", "))+' (ปกติ)</span></b></div>'):"";
+    (function(){ var _fk0=(au.detail&&au.detail.form_knv!=null)?au.detail.form_knv:null; var _fk=(_fk0!=null&&_obx.k>0.005)?Math.round((_fk0+_obx.k)*100)/100:_fk0; var _obL=oldXferLine(_fk0,_obx.k,_obx.kRows,'K+')+oldXferUnkNote(_obx); var _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:(au.kplus_today!=null?au.kplus_today:null));  if(_oldK>0.005 && _rk!=null) _rk=Math.round((_rk-_oldK)*100)/100; var _obNote=((_oldK>0.005)?('<div class="muted" style="color:#15803d">✅ หักเงิน K+ ที่เอาไปปิดบิลเก่าออกแล้ว '+TH0(_oldK)+' ('+esc(_oldKInfo.bills.join(", "))+') — ไม่ใช่ยอดขายของวันนี้</div>'):"")+_obL; if(_fk==null||_rk==null){ html+=kCmp(_fk,_rk)+_obNote; return; } var _lti=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}):[]); var _lsum=lateUnbilledSum(_lti, ((au.detail&&au.detail.xfer)||[]).concat(oldKXf(_obx)), da&&da.kplus_rows); /* 18 พ.ย.69 นับเฉพาะ K+ หลัง 15:30 ที่ยังไม่มีบิลวันนี้ (จับคู่ 1:1 ชุดเดียวกับยอดยกไป) — ที่ออกบิลแล้วไม่ใช่เหตุที่รายงานมากกว่าฟอร์ม (Codex r2 #3) */ var _d=Math.round((_fk-_rk)*100)/100; if(_d<0 && Math.abs(_d)<=_lsum+1){ html+='<div class="kv"><span>K+ ฟอร์มแคชเชียร์ vs รายงาน</span><b style="color:#1d4ed8">'+TH(_fk)+' vs '+TH(_rk)+'</b></div><div class="muted" style="color:#1d4ed8">ℹ️ รายงานมากกว่าฟอร์ม '+TH0(-_d)+' — เป็น K+ หลัง 15:30 (ตัดรอบ) บิลออกวันถัดไป ปกติ ดูรายการด้านล่าง</div>'+_obNote; } else { /* v0.3.2 — มีทั้งยอดยกมา (เข้า) และ K+ หลัง 15:30 ที่ยังไม่ออกบิลวันนี้ (ยกไปวันถัดไป = ออก) ต้องคิดทั้งสองทาง · สูตรเดียวกับกล่อง "ฟอร์มลง K+ เกินรายงาน" ด้านล่าง (เคส 24 ก.ย.69 ธง 28 หลอก) */ var _lkOut=lateUnbilledSum(lateKItems(au.detail, da&&da.kplus_rows), ((au.detail&&au.detail.xfer)||[]).concat(oldKXf(_obx)), da&&da.kplus_rows); var _cmpRk=Math.round((_rk+(_carryIn>1?_carryIn:0)-(_lkOut>0.005?_lkOut:0))*100)/100; html+=kCmp(_fk,_cmpRk)+((_carryIn>1||_lkOut>0.005)&&Math.abs(_cmpRk-_rk)>0.005?('<div class="muted" style="font-size:12px">รายงาน '+TH(_rk)+(_carryIn>1?(' + ยอดยกมา '+TH(_carryIn)):'')+(_lkOut>0.005?(' − K+ หลัง 15:30 ยกไปวันถัดไป '+TH(_lkOut)):'')+' = '+TH(_cmpRk)+'</div>'):'')+_obNote; } })();
+    (function(){ const _fk=(au.detail&&au.detail.form_knv!=null)?((_obx.k>0.005)?Math.round(((+au.detail.form_knv)+_obx.k)*100)/100:au.detail.form_knv):null; let _rk=(da&&da.kplus_total!=null)?da.kplus_total:((au.detail&&au.detail.report_knv!=null)?au.detail.report_knv:null); if(_oldK>0.005 && _rk!=null) _rk=Math.round((_rk-_oldK)*100)/100; const _lk=lateUnbilledSum(lateKItems(au.detail, da&&da.kplus_rows), ((au.detail&&au.detail.xfer)||[]).concat(oldKXf(_obx)), da&&da.kplus_rows); if(_fk!=null&&_rk!=null){ var _impRaw=Math.round(((_fk-_rk)+_lk)*100)/100; const _imp=Math.round((_impRaw-_carryIn)*100)/100; var _carryBox=(_carryIn>1)?('<div style="margin:4px 0 0;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px">'+'<b style="color:#b45309">↩️ ยอดยกมาจาก '+beDate(_carryFrom)+' '+TH(_carryIn)+'<span class="muted"> · K+ หลัง 15:30 เมื่อวาน บิล '+esc(_carryBills.join(", "))+' (ปกติ)</span></b></div>'):"";
         if(_carryIn>1 && _imp<=1){ html+=_carryBox; } else if(_imp>1){ html+=_carryBox; const Q4=String.fromCharCode(39); if(_otherAcct.length){ const _mb=_otherAcct.map(function(x){return x.matched_bill_no;}).filter(Boolean).join(', '); const _allm=_otherAcct.every(function(x){return x.status==='matched';}); html+='<div style="margin:4px 0 0;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px"><b style="color:#15803d">✅ ติดธงรับเข้าบัญชีอื่นแล้ว '+TH(_otherAcctSum)+(_allm?(' — จับคู่บิลแล้ว'+(_mb?(' '+esc(_mb)):'')):' — รอออกบิล/จับคู่')+'</b><div class="muted" style="margin:2px 0 0">ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' บันทึกเป็นเงินรับเข้าบัญชีอื่นเรียบร้อย ไม่ต้องติดธงซ้ำ'+(function(){ var _sp=(_otherAcct.find(function(x){return x.slip_path;})||{}).slip_path; return _sp?(' · <a href="#" style="color:#2563eb;font-weight:700" onclick="openSlip('+Q4+_sp+Q4+');return false;">📎 ดูสลิปที่แนบ</a>'):' · <span style="color:#b45309">⚠️ ยังไม่ได้แนบสลิป</span>'; })()+'</div><button class="btn sec" style="padding:3px 10px;margin:6px 0 0;border-color:#fca5a5;color:#b91c1c" onclick="reflagOtherAcct('+Q4+date+Q4+')">↩️ แนบสลิปผิด? ติดธงใหม่</button></div>'; } else { html+='<div style="margin:4px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px"><b style="color:#1d4ed8">🔎 ฟอร์มลง K+ เกินรายงาน '+TH(_imp)+' — น่าจะลูกค้าโอนเข้าบัญชีอื่น</b><div class="muted" style="margin:2px 0 6px">(ฟอร์ม '+TH(_fk)+' − รายงาน '+TH(_rk)+')'+(_lk>0?' + K+หลัง15:30 '+TH(_lk):'')+' = '+TH(_imp)+'</div><button class="btn sec" style="padding:3px 10px;margin:0" onclick="prefillOtherAcct('+_imp+','+Q4+date+Q4+','+Q4+'K+ ฟอร์มเกินรายงาน-โอนบัญชีอื่น ('+beDate(date)+')'+Q4+')">🏷️ ติดธงรับเข้าบัญชีอื่น + แนบสลิป</button></div>'; } } } })();
-    (function(){ const _li=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}).map(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return {hhmm:m?m[1]+':'+m[2]:'',amt:r.amt,name:''};}):[]); if(_li.length){ const _nd=nextISO(date); const Q5=String.fromCharCode(39); html+='<div style="margin:4px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_li.length+' รายการ รวม '+TH(_li.reduce((s,x)=>s+(x.amt||0),0))+') — ตัดรอบ (นับใน K+ วันนี้แล้ว) จับคู่เลขบิลที่ออก '+beDate(_nd)+'</b><div class="muted" style="margin:2px 0 4px">↩️ ยกไปเป็น <b>ยอดยกมา</b> ของวันที่ '+beDate(_nd)+'</div>'+_li.map(function(x){ var _mb=xferBill(((au.detail&&au.detail.xfer)||[]).concat(_ndXfer), x.amt, 'knv'); var _mo=(!_mb)?xferBill(oldKXf(_obx), x.amt, 'knv'):null; /* 31 ต.ค.69 ปิดบิลเก่าแล้ว ไม่ชวนจับคู่วันถัดไป (Codex r3) */ var _pm=(!_mb&&!_mo)?((pq&&pq.data)?pq.data:[]).find(function(pp){return /ตัดรอบ/.test(pp.source||'')&&Math.abs((parseFloat(pp.amount)||0)-(x.amt||0))<=1;}):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):_mo?('<span style="color:#15803d;font-weight:700">✓ ปิดบิลเก่า '+esc(_mo)+' (แท็บบิลเก่า)</span>'):(_pm?('<span style="color:#15803d;font-weight:700">✓ จับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="matchKLateBill('+(x.amt||0)+','+Q5+(x.hhmm||'')+Q5+','+Q5+date+Q5+',this)">จับคู่บิล</button>')); return '<div class="kv"><span>'+(x.hhmm||'')+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' '+act+'</b></div>'; }).join('')+'</div>'; } })();
+    (function(){ const _li=(au.detail&&au.detail.kplus_late_items&&au.detail.kplus_late_items.length)?au.detail.kplus_late_items:((da&&da.kplus_rows)?da.kplus_rows.filter(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return m&&(+m[1]>15||(+m[1]===15&&+m[2]>=30));}).map(function(r){var m=String(r.t||'').match(/(\d{2}):(\d{2})/);return {hhmm:m?m[1]+':'+m[2]:'',amt:r.amt,name:''};}):[]); if(_li.length){ const _nd=nextISO(date); const Q5=String.fromCharCode(39); /* 18 พ.ย.69 ป้ายบิลใช้การจับคู่ 1 บิล : 1 รายการ ชุดเดียวกับยอด "ยกไปวันถัดไป" (บิลวันนี้ + บิลเก่า K+) แล้วที่เหลือค่อยหาในบิลวันถัดไป */ const _oxf=oldKXf(_obx), _liT=lateKMatch(_li, ((au.detail&&au.detail.xfer)||[]).concat(_oxf), da&&da.kplus_rows); const _liM=_li.map(function(x,i){ var t=_liT[i]; return t?((_oxf.indexOf(t.x)>=0)?{o:normBill(t.bill)}:{d:normBill(t.bill)}):{}; }); /* ที่เหลือ: ① ที่กดจับคู่บิลไว้แล้ว (rev_pending K+ ตัดรอบ ใบละ 1 รายการ) ② บิลวันถัดไป (ไม่ใช้บิลที่กดจับคู่ไว้แล้ว) — Codex r1 #5 */ (function(){ var _pp=((pq&&pq.data)?pq.data:[]).filter(function(pp){ return /ตัดรอบ/.test(pp.source||''); }); var _r1=[], _i1=[]; _li.forEach(function(x,i){ if(!_liT[i]){ _r1.push(x); _i1.push(i); } }); var _m1=kMatch(_r1, _pp.map(function(pp){ return {amt:(parseFloat(pp.amount)||0), bill:pp.matched_bill_no, p:pp}; })); var _r2=[], _i2=[]; _r1.forEach(function(x,j){ if(_m1[j]) _liM[_i1[j]]={p:_m1[j].p}; else { _r2.push(x); _i2.push(_i1[j]); } }); var _nb=kBillsOf(_ndXfer), _uR=[], _oB={}, _pb={}; _pp.forEach(function(pp){ var b=String(pp.matched_bill_no||'').trim(); if(b) (_pb[b]=_pb[b]||[]).push(pp); }); Object.keys(_pb).forEach(function(b){ var rows=_nb.filter(function(r){ return String(r.bill||'').trim()===b; }); if(!rows.length) return; var got=0; kMatch(_pb[b].map(function(pp){ var v=parseFloat(pp.amount); return {amt:((isFinite(v)&&v>0)?v:rows[0].amt)}; }), rows).forEach(function(r){ if(r){ _uR.push(r); got++; } }); if(!got) _oB[b]=1; }); /* กันเฉพาะแถวบิลวันถัดไปที่ถูกกดจับคู่ไว้ · จับไม่ได้ = กันทั้งบิล (สูตรเดียวกับยอดยกมา — Codex r5) */ var _m2=kMatch(_r2, _nb, function(r){ return _uR.indexOf(r)>=0 || !!_oB[String(r.bill||'').trim()]; }); _r2.forEach(function(x,j){ if(_m2[j]) _liM[_i2[j]]={d:normBill(_m2[j].bill)}; }); })(); html+='<div style="margin:4px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px"><b style="color:#b45309">⏰ K+ หลัง 15:30 ('+_li.length+' รายการ รวม '+TH(_li.reduce((s,x)=>s+(x.amt||0),0))+') — ตัดรอบ (นับใน K+ วันนี้แล้ว) จับคู่เลขบิลที่ออก '+beDate(_nd)+'</b><div class="muted" style="margin:2px 0 4px">↩️ ยกไปเป็น <b>ยอดยกมา</b> ของวันที่ '+beDate(_nd)+'</div>'+_li.map(function(x,_xi){ var _mb=_liM[_xi].d||null; var _mo=_mb?null:(_liM[_xi].o||null); /* 31 ต.ค.69 ปิดบิลเก่าแล้ว ไม่ชวนจับคู่วันถัดไป (Codex r3) */ var _pm=(!_mb&&!_mo)?(_liM[_xi].p||null):null; var act=_mb?('<span style="color:#15803d;font-weight:700">✓ บิล '+esc(_mb)+'</span>'):_mo?('<span style="color:#15803d;font-weight:700">✓ ปิดบิลเก่า '+esc(_mo)+' (แท็บบิลเก่า)</span>'):(_pm?('<span style="color:#15803d;font-weight:700">✓ จับคู่แล้ว'+(_pm.matched_bill_no?(' · บิล '+esc(_pm.matched_bill_no)):'')+'</span>'):('<button class="btn sec" style="padding:2px 8px;margin-left:6px" onclick="matchKLateBill('+(x.amt||0)+','+Q5+(x.hhmm||'')+Q5+','+Q5+date+Q5+',this)">จับคู่บิล</button>')); return '<div class="kv"><span>'+(x.hhmm||'')+' · '+esc(x.name||"-")+'</span><b>'+TH(x.amt)+' '+act+'</b></div>'; }).join('')+'</div>'; } })();
     html+=figRow("ฝากเข้าบัญชี (วันนี้)",au.bank_dep_today,(da&&da.bank_dep_total!=null?TH(da.bank_dep_total)+" (จากสเตทเมนต์)":null));
     await (async function(){ var _fks=(au.detail&&au.detail.form_ksk!=null)?(+au.detail.form_ksk):null;
       var _sd=(da&&da.bank_dep_total!=null)?Math.round((((+da.bank_dep_total)||0)-((+da.bank_kplus_settle)||0))*100)/100:((au.detail&&au.detail.stmt_direct!=null)?(+au.detail.stmt_direct):null);
@@ -2996,8 +3026,8 @@ async function taskAlertRun(){
 function revBoot(){ loadDeposits(); loadPending(); loadMonthStatus(); try{ if(ROLE==="cashier") taskAlertRun(); }catch(e){} try{ cutRecheckSoon(); }catch(e){} }  /* เรียกหลังรู้ role แล้ว (useRole) */
 </script>
 <script src="credit.js?v=20261105a"></script><div id="mpOv" class="mpov"><div class="mpbox" id="mpBody"></div></div>
-<script src="bell.js?v=20261028c"></script>
-<script src="cutbill.js?v=20261118a"></script>
+<script src="bell.js?v=20261118k"></script>
+<script src="cutbill.js?v=20261118b"></script>
 <script src="mpager.js?v=20261001a"></script>
 <!-- v0.6.0 (22 ต.ค.69) ฟอร์มรายรับในโปรแกรม: ปุ่มดึงฟอร์ม + เทียบกับ Excel ช่วงทดลองคู่ขนาน -->
 <script src="cashierform-core.js?v=20261022a"></script>
@@ -3569,7 +3599,9 @@ async function cutRecheckDay(date, stamp, lockOk){
     if(c.st==="?"){ res.warn.push(a.bill_no+" ("+(c.why||"ตรวจไม่ได้")+" — ไม่ถอย/ไม่แก้ ให้คุณหลิงดู)"); continue; }
     if(c.st==="h"||c.st==="s"){
       const msg=(c.st==="s"?"ไม่ต้องตัด: ":"")+(c.why||"พักไว้");
-      if(!auto){ res.warn.push(a.bill_no+" (คุณหลิงอนุมัติไว้ แต่ตอนนี้"+(c.st==="s"?"":"พัก")+": "+msg+")"); continue; }
+      if(!auto){ /* cutbill v0.10.7: ใบเสนอใหม่ (หลักฐานคืนเงินมาทีหลัง) ที่คุณหลิงกดอนุมัติจากปุ่มเสนอใหม่ ยอด/วิธีจ่ายยังตรงการ์ด — ไม่ต้องเตือนซ้ำ (r2 Codex #6: ผูกกับหลักฐานในแถว) */
+        if(c.propose && String(a.evidence||"").indexOf(CUT_LATE_MARK)===0 && c.psrc && String(a.evidence||"")===String(c.psrc) && Math.round((+a.amount||0)*100)===Math.round((+c.out||0)*100) && a.method===c.method) continue;
+        res.warn.push(a.bill_no+" (คุณหลิงอนุมัติไว้ แต่ตอนนี้"+(c.st==="s"?"":"พัก")+": "+msg+")"); continue; }
       if(!(await ok())){ res.skip="หยุดก่อนเขียน"; return res; }
       const u=await sb.from("rev_cut_approvals").update({status:"cancelled",cut_note:CUT_BACK_NOTE+" "+stamp+": "+msg}).eq("bill_no",a.bill_no).eq("status","approved").in("approved_role",CUT_AUTO_ROLES).eq("amount",a.amount).eq("method",a.method).select("bill_no");
       if(u.error) throw u.error; if(u.data&&u.data.length) res.back.push(a.bill_no);
@@ -3695,6 +3727,9 @@ async function renderCut(_again){
   const _gate=R.cashGate? '<div class="muted" style="color:#b91c1c;font-weight:600">🚩 ด่านเงินสดของวัน: '+esc(R.cashGate)+'</div>' : '';
   h+=_gate;
   if(R.refund&&R.refund.on&&(R.refund.rows.length||R.refund.gate)) h+='<div class="muted">↩️ คืนเงิน: '+(R.refund.gate?'🚩 '+esc(R.refund.gate):'✅ ใบคืนเงิน '+R.refund.rows.length+' รายการ '+TH(R.refund.sum)+' ตรงกับฟอร์ม')+'</div>';
+  /* cutbill v0.10.7 (18 พ.ย.69 เคส 0580): ใบคืนเงินที่ลงหลังยืนยันผลตรวจ — บอกให้เห็น ไม่พักเงียบ */
+  const _LR=R.lateRf||{}; const _LP=R.p||[];
+  if(_LR.on) h+='<div class="muted" style="color:#b45309">🕓 ใบคืนเงินที่ลงหลังยืนยันผลตรวจ: '+esc((_LR.rows||[]).map(function(x){ return '#'+x.id+' '+String(x.bill_no||'').replace(/^KM\d{4}-/,'')+' '+(x.pay==='deposit'?'เก็บเป็นมัดจำ':x.pay==='transfer'?'โอนคืน':'คืนสด')+' '+TH(+x.amount); }).join(' · '))+(_LR.only?' — ผลตรวจที่ยืนยันไว้ยังไม่นับใบนี้'+(_LR.cashOk?' · ใบนับเงินสดตรงเมื่อหักคืนสดนี้':' · ⚠ ใบนับเงินสดยังไม่ตรงแม้หักคืนสดนี้'):'')+'</div>';
   /* v0.5.5 (21 ต.ค.69): หน้าการ์ดเหลือบรรทัดสรุป — รายการบิลทั้งหมดอยู่ใน popup (กดชิป หรือ "ดูรายละเอียด") เจ้าของสั่ง: ไม่เอามากองเรียงในหน้า */
   const obRow=function(x){ return '<div class="cut-row"><div><b>'+esc(x.b.no)+'</b> <span class="muted">('+beDate(x.b.date)+')</span> · '+esc(x.b.name)+'<div><span class="cut-tag ct-ok">'+esc(x.ap&&x.ap.rc_no?(x.ap.method+' · '+x.ap.rc_no):(x.method+' · '+x.src))+'</span></div></div><div class="r">'+TH(x.ap?+x.ap.amount:(x.amt||x.b.out))+'</div></div>'; };
   const obSum=function(a){ return a.reduce(function(s,x){return s+(+x.amt||0);},0); };
@@ -3707,6 +3742,7 @@ async function renderCut(_again){
   if(FO.err) det+='<div class="cut-sec"><div class="muted" style="color:#b45309">⚠ คิดบิลเก่าในฟอร์มไม่ได้ ('+esc(FO.err)+') — บิลเก่าในฟอร์มยังไม่เข้ารอบตัด ลองเปิดใหม่</div></div>';
   if(FO.hold.length) det+='<div class="cut-sec"><h3 style="color:#c2410c">🧾 บิลเก่าในฟอร์ม — พักรอคุณหลิง <span class="muted">'+FO.hold.length+' บิล · '+TH(obSum(FO.hold))+'</span></h3><div class="muted" style="color:#9a3412;margin-bottom:4px">แคชเชียร์ลงในแท็บบิลเก่า แต่ยังไม่ผ่านกฎ — ระบบไม่ตัดเอง · คุณหลิงยืนยันเงินเองแล้วสั่งตัดในแชทได้</div><div class="cut-grp h">'+FO.hold.map(function(x){ return foRow(x,true); }).join("")+'</div></div>';
   if((FO.chq||[]).length) det+='<div class="cut-sec"><div class="muted">🧾 บิลเก่าในฟอร์มจ่ายด้วยเช็ค '+FO.chq.length+' บิล — ใช้ทางเดิม (บิลเก่ารอตัด · กดอนุมัติเอง)</div></div>';
+  if(_LP.length) det+='<div class="cut-sec"><h3 style="color:#a16207">🟡 เสนอใหม่ — หลักฐานมาทีหลัง รอคุณหลิงกดอนุมัติ <span class="muted">'+_LP.length+' บิล · '+TH(cutSum(_LP))+'</span></h3><div class="muted" style="color:#854d0e;margin-bottom:4px">เงินเข้าไม่เท่ายอดบิล แล้วใบคืนเงินมาลงหลังยืนยันผลตรวจ — คิดแล้วเท่ายอดบิลพอดี · กฎอัตโนมัติไม่อนุมัติให้ (บิลนี้ยังนับอยู่ในพักไว้)</div><div class="cut-grp h">'+cutList(_LP,"h")+'</div></div>';
   if(AU.on&&AU.ok&&(AU.skip||[]).length) det+='<div class="cut-sec"><h3 style="color:#c2410c">🤖 กฎไม่อนุมัติให้เอง — รอคุณหลิงกด <span class="muted">'+AU.skip.length+' บิล</span></h3><div class="cut-grp h">'+AU.skip.map(function(x){ return cutRow({b:x.b, why:x.why},"h"); }).join("")+'</div></div>';
   if(R.t.length) det+='<div class="cut-sec"><h3 style="color:#15803d">✅ พร้อมตัด — เงินโอน <span class="muted">'+R.t.length+' บิล · '+TH(cutSum(R.t))+'</span></h3><div class="cut-grp t">'+cutList(R.t,"t")+'</div></div>';
   if(R.c.length) det+='<div class="cut-sec"><h3 style="color:#15803d">✅ พร้อมตัด — เงินสด <span class="muted">'+R.c.length+' บิล · '+TH(cutSum(R.c))+'</span></h3><div class="cut-grp t">'+cutList(R.c,"c")+'</div></div>';
@@ -3727,6 +3763,7 @@ async function renderCut(_again){
   if(OB.ready.length) h+=_sr("🧾 บิลเก่า รอตัด", OB.ready.length+" บิล · "+TH(obSum(OB.ready)));
   if(OB.chqErr) h+='<div class="muted" style="color:#b45309">⚠ โหลดรายการเช็คของวันนี้ไม่ได้ ('+esc(OB.chqErr)+') — บิลที่จ่ายด้วยเช็คยังไม่ขึ้น ลองเปิดใหม่</div>';
   if(R.appr.length+OB.appr.length+FO.appr.length) h+=_sr("🕒 อนุมัติแล้ว รอเลขาตัด", (R.appr.length+OB.appr.length+FO.appr.length)+" บิล"+(_nAuto?" (🤖 กฎ "+_nAuto+")":""));
+  if(_LP.length) h+=_sr('<span style="color:#a16207">🟡 เสนอใหม่ (หลักฐานมาทีหลัง)</span>', _LP.length+" บิล · "+TH(cutSum(_LP)), "ดู ›");
   if(R.h.length) h+=_sr("⏸ พักไว้", R.h.length+" บิล · "+TH(cutSum(R.h)), "ดูว่าทำไม ›");
   if(unk.length) h+=_sr('<span style="color:#b91c1c">🔎 เลขบิลในชีตโอนหาไม่เจอ</span>', unk.length+" รายการ", "ดู ›");
   if(FO.hold.length) h+=_sr('<span style="color:#c2410c">🧾 บิลเก่าในฟอร์ม พักรอคุณหลิง</span>', FO.hold.length+" บิล · "+TH(obSum(FO.hold)), "ดูว่าทำไม ›");
@@ -3736,6 +3773,7 @@ async function renderCut(_again){
   h+='<div style="text-align:right;margin-top:2px"><button type="button" class="cut-link" style="color:#475569" onclick="cutPop()">ดูรายละเอียดทุกบิล ›</button></div>';
   if(ROLE==="owner"){
     { const _obr=((OB&&OB.ready)||[]).concat(FO.ready||[]); if(ready.length||_obr.length) h+='<button class="btn" style="width:100%;margin-top:12px;min-height:48px" onclick="cutApprove()">✅ อนุมัติตัด '+(ready.length+_obr.length)+' บิล · '+TH(cutSum(ready)+obSum(_obr))+' บาท'+(_obr.length?' <span style="font-weight:600">(รวมบิลเก่า '+_obr.length+' บิล)</span>':'')+'</button><div class="muted" style="text-align:center;margin-top:4px">บิลที่พักไว้จะไม่ถูกอนุมัติ</div>'; }
+    if(_LP.length) h+='<button class="btn sec" style="width:100%;margin-top:8px;min-height:44px" onclick="cutApproveLate()">🟡 อนุมัติตัดบิลเสนอใหม่ '+_LP.length+' บิล · '+TH(cutSum(_LP))+' บาท</button><div class="muted" style="text-align:center;margin-top:4px">'+esc(_LP.map(function(x){ return String(x.b.no).replace(/^KM\d{4}-/,""); }).join(", "))+' — ดูหลักฐานใน "ดู ›" ก่อนกด</div>';
     const _nApr=R.appr.length+(FO.dayAppr||[]).filter(function(a){ return a&&a.status==="approved"; }).length;
     if(_nApr) h+='<div class="cut-done">🕒 อนุมัติแล้ว '+_nApr+' บิล'+(_nAuto?' (🤖 กฎอัตโนมัติ '+_nAuto+')':'')+' — เลขาจะตัดใน ACC-BILLING ให้ตามรอบตัด ไม่ต้องสั่งในแชท · ตัดเสร็จจะขึ้นเลข RC ตรงนี้<div style="margin-top:6px">'+(_nAuto?'<button class="btn sec" onclick="cutCancel(true)">↩️ ยกเลิกเฉพาะที่กฎอนุมัติ ('+_nAuto+')</button> ':'')+'<button class="btn sec" onclick="cutCancel()">↩️ ยกเลิกการอนุมัติที่ยังไม่ตัด</button></div></div>';
   }
@@ -3765,6 +3803,32 @@ async function cutApprove(){
   for(const x of _ob){ if(!x.apc) continue; const rw=rows.filter(function(z){ return z.bill_no===x.b.no; })[0]; if(!rw) continue;
     const u=await sb.from("rev_cut_approvals").update({bill_date:rw.bill_date,customer:rw.customer,amount:rw.amount,method:rw.method,evidence:rw.evidence,receipt_group:rw.receipt_group,status:"approved",approved_role:ROLE,audit_rev:CUT.D.auditRev||null,approved_at:new Date().toISOString(),cut_note:null}).eq("bill_no",x.b.no).eq("status","cancelled");
     if(u.error){ alert("อนุมัติบิล "+x.b.no+" ไม่สำเร็จ: "+u.error.message); } }
+  renderCut();
+}
+/* cutbill v0.10.7 (18 พ.ย.69 คุณหลิง เคส 0580): อนุมัติบิล "เสนอใหม่" (หลักฐานคืนเงินมาทีหลัง) — คุณหลิงกดเองเท่านั้น (ไม่ใช่กฎอัตโนมัติ)
+   แถวเดียวกับ cutApprove (approved_role = เจ้าของ) · ใบที่มีแถวอยู่แล้ว (ยกเลิกไว้/อนุมัติแล้ว) ไม่แตะ — ให้ไปทางเดิม */
+const CUT_LATE_MARK="เสนอใหม่หลังยืนยันผลตรวจ (คุณหลิงกดอนุมัติ)"; /* ต้องตรงกับ LATE_MARK ใน cutbill.js */
+async function cutApproveLate(){
+  if(ROLE!=="owner"||!CUT) return; const date=CUT.D.date, shown={};
+  (CUT.p||[]).forEach(function(x){ if(x&&x.propose&&x.b) shown[x.b.no]={out:+x.b.out, method:x.method}; });
+  if(!Object.keys(shown).length) return;
+  /* r2 Codex r1 #2: คิดใหม่จากฐานตอนกด (ไม่ใช้ผลที่เปิดค้างไว้) — เอาเฉพาะใบที่ยังเสนออยู่ ยอด/วิธีจ่ายเท่าที่เห็นบนการ์ด · ยังไม่มีแถวอนุมัติ/ยกเลิก */
+  let R2; try{ await ensureOwnerSession(); R2=await RevCut.compute(date); }catch(e){ alert("คิดบิลใหม่ไม่ได้: "+(e.message||e)); return; }
+  if(!R2||!R2.D||R2.D.date!==date||cpDate()!==date){ alert("วันที่เปลี่ยนระหว่างคิด — เปิดการ์ดใหม่"); return; }
+  const seen={}; (R2.D.appr||[]).forEach(function(a){ if(a&&a.bill_no) seen[a.bill_no]=1; });
+  const L=(R2.p||[]).filter(function(x){ const s=x&&x.propose&&x.b&&shown[x.b.no]; return s && !seen[x.b.no] && !x.b._apr && !x.b._cut && Math.round(s.out*100)===Math.round((+x.b.out)*100) && s.method===x.method && String(x.psrc||"").indexOf(CUT_LATE_MARK)===0; });
+  if(!L.length){ alert("ตอนนี้ไม่มีบิลเสนอใหม่ที่ยังตรงกับการ์ด (ข้อมูลเปลี่ยน หรือมีรายการอนุมัติ/ยกเลิกอยู่แล้ว) — เปิดการ์ดใหม่"); renderCut(); return; }
+  if(!confirm("อนุมัติตัดบิลเสนอใหม่ "+L.length+" บิล ยอด "+TH(cutSum(L))+" บาท ของวันที่ "+beDate(date)+"\n\n"+L.map(function(x){ return x.b.no+" "+TH(+x.b.out)+"\n  "+(x.psrc||""); }).join("\n")+"\n\n?")) return;
+  /* r4 Codex r3 #1: คิดใหม่อีกรอบหลังกดยืนยัน (ข้อมูลอาจเปลี่ยนระหว่างกล่องยืนยันเปิดอยู่) — เขียนเฉพาะใบที่ยังเสนอ ยอด/วิธีจ่าย/หลักฐานเหมือนที่คุณหลิงเห็นในกล่องยืนยัน */
+  let R3; try{ R3=await RevCut.compute(date); }catch(e){ alert("คิดบิลใหม่ไม่ได้: "+(e.message||e)); return; }
+  if(!R3||!R3.D||R3.D.date!==date||cpDate()!==date){ alert("วันที่เปลี่ยนระหว่างคิด — เปิดการ์ดใหม่"); return; }
+  const seen3={}; (R3.D.appr||[]).forEach(function(a){ if(a&&a.bill_no) seen3[a.bill_no]=1; });
+  const ok3={}; (R3.p||[]).forEach(function(x){ if(x&&x.propose&&x.b&&!seen3[x.b.no]) ok3[x.b.no]=x; });
+  const L3=L.filter(function(x){ const y=ok3[x.b.no]; return y && Math.round((+y.b.out)*100)===Math.round((+x.b.out)*100) && y.method===x.method && y.psrc===x.psrc; });
+  if(L3.length!==L.length){ alert("ข้อมูลเปลี่ยนระหว่างยืนยัน ("+L.filter(function(x){ return L3.indexOf(x)<0; }).map(function(x){ return x.b.no; }).join(", ")+") — ยังไม่บันทึก เปิดการ์ดใหม่แล้วดูอีกครั้ง"); renderCut(); return; }
+  const rows=L3.map(function(x){ return {bill_date:date,bill_no:x.b.no,customer:x.b.name,amount:+x.b.out,method:x.method,evidence:x.psrc||null,status:"approved",approved_role:ROLE,audit_rev:R3.D.auditRev||null}; });
+  const r=await sb.from("rev_cut_approvals").upsert(rows,{onConflict:"bill_no",ignoreDuplicates:true});
+  if(r.error){ alert("อนุมัติไม่สำเร็จ: "+r.error.message); return; }
   renderCut();
 }
 async function cutApproveOld(){

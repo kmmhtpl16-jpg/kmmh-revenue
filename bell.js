@@ -120,8 +120,29 @@
     if(au && au.lti && au.lti.length) return au.lti;
     return (rows||[]).filter(function(r){ return isLateT(r.t); }).map(function(r){ return {amt:(+r.amt||0)}; });
   }
-  function billedIn(xf, amt){ for(var i=0;i<(xf||[]).length;i++){ if((+xf[i].knv||0)>0 && Math.abs((+xf[i].knv||0)-amt)<=1) return xf[i].bill||true; } return null; }
-  function unbilled(items, xf){ return (items||[]).filter(function(x){ return !billedIn(xf,(+x.amt||0)); }); }
+  /* 18 พ.ย.69 (เคส 12/11 ธง 920 หลอก): จับคู่ K+ ↔ บิลในชีตโอน (knv) แบบ 1 บิล : 1 รายการ — สูตรเดียวกับ kMatch ใน index.html
+     รอบแรกยอดตรงเป๊ะ รอบสองต่างไม่เกิน 1 บาท (หาคู่ให้ได้มากที่สุด รายการที่จับได้แล้วไม่หลุด — Codex r1 #2) · บิลแต่ละแถวใช้ได้ครั้งเดียว · skip(แถว)=true ใช้ไม่ได้
+     เดิมจับด้วยยอดอย่างเดียว ±1 → K+ 16:45 920 ไปเจอบิล 921 ของรายการ 08:35 → ถือว่าออกบิลแล้ว → ไม่ยกไปวันถัดไป */
+  function kBills(xf){ return (xf||[]).map(function(x){ return {amt:(+x.knv||0), bill:x.bill, x:x}; }).filter(function(b){ return b.amt>0; }); }
+  function kMatch(claims, bills, skip){
+    var off=bills.map(function(b){ return !!(skip && skip(b)); }), own=bills.map(function(){ return -1; }), res=claims.map(function(){ return -1; });
+    claims.forEach(function(c, ci){ var a=+c.amt||0;
+      for(var k=0;k<bills.length;k++){ if(off[k]||own[k]>=0) continue; if(Math.abs(bills[k].amt-a)<=0.005){ own[k]=ci; res[ci]=k; return; } } });
+    var fixed=own.map(function(o){ return o>=0; });
+    function aug(ci, vis){ var a=+claims[ci].amt||0;
+      for(var k=0;k<bills.length;k++){ if(off[k]||fixed[k]||vis[k]||Math.abs(bills[k].amt-a)>1) continue; vis[k]=1;
+        if(own[k]<0 || aug(own[k], vis)){ own[k]=ci; res[ci]=k; return true; } }
+      return false; }
+    claims.forEach(function(c, ci){ if(res[ci]<0) aug(ci, {}); });
+    return res.map(function(k){ return k<0?null:bills[k]; });
+  }
+  function earlyItemsOf(rows){ return (rows||[]).filter(function(r){ return !isLateT(r.t); }).map(function(r){ return {amt:(+r.amt||0)}; }); }
+  /* K+ หลัง 15:30 ที่ยังไม่มีบิลในวันนั้น — รายการ K+ ทั้งวัน (ก่อน 15:30 ด้วย) จองบิลของตัวเองก่อน */
+  function unbilled(au, rows, xf){
+    var late=lateItemsOf(au, rows), early=earlyItemsOf(rows);
+    var m=kMatch(early.concat(late), kBills(xf));
+    return late.filter(function(x, i){ return !m[early.length+i]; });
+  }
   function sumAmt(a){ return r2(a.reduce(function(s,x){ return s+(+x.amt||0); },0)); }
   function gapDays(audits, dailies, flagged, fromISO, cutBills, deps, pendAll){
     cutBills=cutBills||{}; deps=deps||[]; pendAll=pendAll||[];
@@ -137,23 +158,34 @@
       var xf=a.xfer||[];
       var gapK=0;
       if(fk!=null && d.kplus_total!=null){
-        var lateU=unbilled(lateItemsOf(a, d.kplus_rows), xf);
+        var lateU=unbilled(a, d.kplus_rows, xf);
         var carry=0, seen={};
         /* ยอดยกมา (ก): บิลของวันนี้ที่เคยถูกจับคู่เป็น "K+ ตัดรอบ" ของวันก่อนหน้าไปแล้ว
            ⚠️ ต้องมีข้อนี้ ไม่งั้นวันที่บิลข้ามวันเกิน 1 วันจะถูกเตือนหลอก (เกณฑ์เดียวกับหน้ารายละเอียดวัน) */
+        var pv=shiftISO(dt,-1), cutPv=[], usedRow=[], offBill={}; /* แถวโอนที่ (ก) ใช้แล้ว / บิลที่ (ก) นับแบบสูตรเดิม (Codex r4 #2) */
         xf.forEach(function(x){
-          var b=x.bill; if(!b || seen[b]) return;
-          var pdt=cutBills[b];
-          if(pdt && pdt<dt){ seen[b]=1; carry+=(+x.knv||0); }
+          var b=x.bill, bk=String(b||"").trim(); if(!bk || seen[bk] || !((+x.knv||0)>0)) return; /* เลขบิลตัดช่องว่างทุกจุด (Codex r3) */ /* แถวที่มียอด K+ เท่านั้น (เหมือน _tkn ในหน้ารายละเอียดวัน) */
+          var pdt=cutBills[bk];
+          if(pdt && pdt<dt){ seen[bk]=1;
+            /* 18 พ.ย.69: บิลเดียวหลายแถวโอน — นับแถวที่ตรงกับยอด K+ ที่กดจับคู่ไว้ (rev_pending.amount) ทีละรายการ · จับไม่ได้ = แถวแรก (เดิม) (Codex r2 #1)
+               รายการของเมื่อวานที่กดจับคู่ไว้ → cutPv ใช้ระบุรายการ ไม่ให้ (ข) นับซ้ำ (Codex r1 #4) */
+            var bt=String(b).trim(), rows=xf.filter(function(y){ return String(y.bill||"").trim()===bt && (+y.knv||0)>0; });
+            var pr=pendAll.filter(function(pp){ var pd0=String(pp.date||"").slice(0,10); return /ตัดรอบ/.test(pp.source||"") && String(pp.matched_bill_no||"").trim()===bt && pd0 && pd0<dt; });
+            var pa0=pr.map(function(pp){ var v=num(pp.amount); return {amt:(v>0?v:(+x.knv||0)), pv:String(pp.date||"").slice(0,10)===pv}; });
+            var pm0=kMatch(pa0, kBills(rows)), got=0;
+            pm0.forEach(function(r){ if(r){ carry+=r.amt; got++; usedRow.push(r.x); } });
+            if(!got){ carry+=(+x.knv||0); offBill[bk]=1; }
+            pa0.forEach(function(p){ if(p.pv) cutPv.push({amt:p.amt, bill:b}); });
+            if(pdt===pv && !pa0.length) cutPv.push({amt:(+x.knv||0), bill:b}); }
         });
         /* ยอดยกมา (ข): รายการหลัง 15:30 ของเมื่อวานที่เมื่อวานยังไม่ออกบิล แล้ววันนี้มีบิลยอดตรงกัน */
-        var pv=shiftISO(dt,-1);
         var pa=A[pv], pd=D[pv];
         if(pa||pd){
-          unbilled(lateItemsOf(pa, pd&&pd.kplus_rows), (pa&&pa.xfer)||[]).forEach(function(it){
-            var b=billedIn(xf,(+it.amt||0));
-            if(b && !seen[b]){ seen[b]=1; carry+=(+it.amt||0); }
-          });
+          /* 1 บิล : 1 รายการ · บิลที่นับใน (ก) แล้วใช้ซ้ำไม่ได้ · รายการของเมื่อวานที่ (ก) จับคู่ไว้แล้ว (กดจับคู่บิล) ห้ามนับซ้ำใน (ข) — เคส 21/10 KM6910-0846 */
+          var pl=unbilled(pa, pd&&pd.kplus_rows, (pa&&pa.xfer)||[]), pc=kMatch(pl, cutPv);
+          pl=pl.filter(function(x, i){ return !pc[i]; });
+          var pm=kMatch(pl, kBills(xf), function(r){ return usedRow.indexOf(r.x)>=0 || !!offBill[String(r.bill||"").trim()]; });
+          pl.forEach(function(it, i){ var b=pm[i]; if(b) carry+=b.amt; }); /* ยอดบิลในฟอร์ม (สูตรเดียวกับ (ก) และหน้ารายละเอียดวัน — Codex r1 #1) */
         }
         gapK=r2((fk-num(d.kplus_total))+sumAmt(lateU)-carry);
       }

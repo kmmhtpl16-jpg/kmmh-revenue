@@ -108,6 +108,7 @@
     var raCash=(D.raCash||[]).map(function(x){ return {no:String(x.no||""), amt:r2(x.amt), bill:String(x.bill||"").trim(), name:x.name||""}; }).filter(function(x){ return x.amt>0.01; });
     function raCashOf(no){ return raCash.filter(function(x){ return x.bill===no; })[0]||null; }
     function take(arr,amt){ var i=arr.findIndex(function(x){ return Math.abs(num(x)-amt)<=1; }); if(i<0) return false; arr.splice(i,1); return true; }
+    function takeX(arr,amt,st){ var i=arr.findIndex(function(x){ return Math.abs(num(x)-amt)<=1; }); if(i<0) return false; var v=num(arr[i]); if(Math.round(v*100)!==Math.round(num(amt)*100)) st.inexact=1; st.real=r2((st.real||0)+v); arr.splice(i,1); return true; } /* v0.10.7 r3: เหมือน take (เลือกตัวเดียวกัน) + จดยอดจริงที่จับได้ */
     /* v0.4.9: เงินที่โอนเข้ามาก่อนวันออกบิล ผูกกับเลขบิลนี้แล้ว — ใช้ก่อนยอดของวันนี้ (กันไปกินยอดวันนี้ของบิลอื่นที่ยอดเท่ากัน) */
     var pre={}; Object.keys(D.pre||{}).forEach(function(k){ pre[k]=(D.pre[k]||[]).slice(); });
     /* v0.5.0 (2): ส่วนที่โอนเกินยอดค้าง = มัดจำ RA ในชีตโอนที่ไปหักบิลอื่นของลูกค้าเดียวกันวันนี้ (ใช้แต่ละ RA ได้ครั้งเดียว) */
@@ -157,15 +158,15 @@
       var xs=(D.xfer||[]).filter(function(x){ return x.bill===b.no && !x.ra; });
       if(xs.length && dcoOf(b)>0.5){ R.h.push({b:b, why:"เงินสดเกิน "+TH(dcoOf(b))+" เก็บเป็นมัดจำ"+rasOf(b)+" แต่บิลนี้มีเงินโอนด้วย — ต้องตรวจเอง"}); return; } /* r3 Codex r2 #4: รับผสม ไม่จับคู่อัตโนมัติ */
       if(xs.length){
-        var got=0, src=[], raHit=null, wrong=[], wrongAmt=0;
+        var got=0, src=[], raHit=null, wrong=[], wrongAmt=0, xst={}; /* v0.10.7 r3: xst = ยอดที่จับได้ตรงตัวไหม (เสนอใหม่ใช้ยอดที่จับคู่จริงเท่านั้น · Codex r2 #1) */
         xs.forEach(function(x){
           var kv=num(x.knv), ks=num(x.ksk);
           var pk, ps;
-          if(kv>0){ if((pk=takePre(b.no,kv))){ got+=kv; src.push(preLbl(pk,date0)+" "+TH(kv)); } else if(take(kp,kv)){ got+=kv; src.push("K+ "+TH(kv)); } else if(take(bk,kv)){ wrongAmt+=kv; wrong.push("เงินเข้าจริงทางกสิกร "+TH(kv)+" (แคชเชียร์ลงช่อง K+)"); } }
-          if(ks>0){ if((ps=takePre(b.no,ks))){ got+=ks; src.push(preLbl(ps,date0)+" "+TH(ks)); } else if(take(bk,ks)){ got+=ks; src.push("เข้ากสิกร "+TH(ks)); } else if(take(kp,ks)){ wrongAmt+=ks; wrong.push("เงินเข้าจริงทาง K+ "+TH(ks)+" (แคชเชียร์ลงช่องกสิกร)"); } }
+          if(kv>0){ if((pk=takePre(b.no,kv))){ xst.pre=1; got+=kv; src.push(preLbl(pk,date0)+" "+TH(kv)); } else if(takeX(kp,kv,xst)){ got+=kv; src.push("K+ "+TH(kv)); } else if(take(bk,kv)){ wrongAmt+=kv; wrong.push("เงินเข้าจริงทางกสิกร "+TH(kv)+" (แคชเชียร์ลงช่อง K+)"); } }
+          if(ks>0){ if((ps=takePre(b.no,ks))){ xst.pre=1; got+=ks; src.push(preLbl(ps,date0)+" "+TH(ks)); } else if(takeX(bk,ks,xst)){ got+=ks; src.push("เข้ากสิกร "+TH(ks)); } else if(take(kp,ks)){ wrongAmt+=ks; wrong.push("เงินเข้าจริงทาง K+ "+TH(ks)+" (แคชเชียร์ลงช่องกสิกร)"); } }
           /* v0.6.0: หาในช่องที่แคชเชียร์ลงไม่เจอ แต่เจอยอดนี้ในอีกบัญชี → จองยอดไว้ให้บิลนี้ แต่ไม่ตัด ให้แคชเชียร์แก้ไฟล์ Excel ก่อน */
         });
-        got=r2(got);
+        got=r2(got); b._xGot=(xst.inexact||xst.pre||wrong.length)? null : r2(xst.real||0); /* เงินที่จับคู่ได้ตรงตัวจาก K+/สเตทเมนต์ของวันนี้ (มีเงินก่อนวันเปิดบิล/ลงผิดช่อง/ยอดคลาด = null) */
         if(wrong.length && Math.abs(r2(got+wrongAmt)-b.out)<=1){ R.h.push({b:b, why: wrong.join(" + ")+" — โปรดแก้รายการในไฟล์ Excel แล้วอัปเอกสารใหม่", fix:true}); return; }
         var ovR=RF.on? num((RF.by[b.no]||{}).ov) : 0; /* v0.7.0 ลูกค้าโอนเกิน ร้านคืนส่วนเกิน (ใบคืนเงิน) */
         if(ovR>0.5 && Math.abs(got-ovR-b.out)<=1){ RF.ovUsed[b.no]=1; R.t.push({b:b, method:"เงินโอน", src:src.join(" + ")+" · คืนเงินโอนเกิน "+TH(ovR)+" (ใบคืนเงิน)"}); return; }
@@ -180,8 +181,11 @@
         else if(!got){ var hh={b:b, why:"หาเงินโอนเข้าไม่เจอใน K+/สเตทเมนต์"}; R.h.push(hh);
           var sk=0, ss=0; xs.forEach(function(x){ sk+=num(x.knv); ss+=num(x.ksk); }); noMoney.push({h:hh, b:b, knv:r2(sk), ksk:r2(ss)}); }
         /* v0.9.6: ทางสุดท้าย (พักอยู่แล้วเหมือนเดิม) — แค่บอกเหตุผลชัดขึ้นเมื่อเงินเข้าเท่ายอดบิลเต็ม แต่ ACC ลดหนี้บิลนี้ไป และกล่องคืนเงินยังไม่มีแถว (Codex r1: ไม่ขวางทาง RA/อื่นที่อยู่ก่อนหน้า) */
-        else if(got>b.out+1 && !(cnBack(b)>0) && !(b.dep>0) && r2(num(b.tot)-b.out)>0.5 && Math.abs(got-num(b.tot))<=1) R.h.push({b:b, why:"เงินเข้า "+TH(got)+" มากกว่ายอดค้าง ACC "+TH(b.out)+" อยู่ "+TH(got-b.out)+" (บิลถูกลดหนี้/หักไปแล้ว) — ถ้าคืนเงินลูกค้าตามใบลดหนี้แล้ว ให้ลงกล่องคืนเงิน (เลขใบลดหนี้) ก่อน · ยังไม่ลง = ยังไม่ตัด"});
-        else R.h.push({b:b, why: "เงินเข้า "+TH(got)+" ไม่เท่ายอดค้าง "+TH(b.out)});
+        else if(got>b.out+1 && !(cnBack(b)>0) && !(b.dep>0) && r2(num(b.tot)-b.out)>0.5 && Math.abs(got-num(b.tot))<=1 && Math.round(r2(xs.reduce(function(a,x){ return a+num(x.knv)+num(x.ksk); },0))*100)===Math.round(got*100)) /* r5 Codex r4 #2: จับได้บางก้อน → ไปป้าย "หาเงินโอนเจอบางส่วน" (ยังพักเหมือนเดิม) */ R.h.push({b:b, why:"เงินเข้า "+TH(got)+" มากกว่ายอดค้าง ACC "+TH(b.out)+" อยู่ "+TH(got-b.out)+" (บิลถูกลดหนี้/หักไปแล้ว) — ถ้าคืนเงินลูกค้าตามใบลดหนี้แล้ว ให้ลงกล่องคืนเงิน (เลขใบลดหนี้) ก่อน · ยังไม่ลง = ยังไม่ตัด"});
+        else { var dfx=r2(got-b.out), shSum=r2(xs.reduce(function(a,x){ return a+num(x.knv)+num(x.ksk); },0));
+          if(Math.round(shSum*100)!==Math.round(got*100)){ R.h.push({b:b, diff:dfx, why:"หาเงินโอนเจอบางส่วน: ชีตโอนลง "+TH(shSum)+" เจอใน K+/สเตทเมนต์ "+TH(got)+" · ยอดค้าง "+TH(b.out)+" — ตรวจก้อนที่หาไม่เจอก่อน (ยังสรุปว่าโอนเกิน/ขาดไม่ได้)"}); return; } /* r4 Codex r3 #2 */ /* v0.10.7 (18 พ.ย.69 คุณหลิง เคส 0580): ป้ายบอกส่วนต่างชัด ๆ + บอกทางให้ระบบเสนอใหม่ (เดิม "เงินเข้า … ไม่เท่ายอดค้าง …") */
+          R.h.push({b:b, diff:dfx, why: dfx>0? "โอนเกิน "+TH(dfx)+" (เงินเข้า "+TH(got)+" · ยอดค้าง "+TH(b.out)+") — ทอน/คืนส่วนเกินให้ลูกค้าแล้ว? ลงกล่องคืนเงิน \"คืนเพราะโอนเกิน\" "+TH(dfx)+" แล้วระบบจะตรวจบิลนี้ใหม่ · ยังไม่ลง = ยังไม่ตัด"
+            : "โอนขาด "+TH(-dfx)+" (เงินเข้า "+TH(got)+" · ยอดค้าง "+TH(b.out)+(b.dep>0?" · หักมัดจำแล้ว "+TH(b.dep):"")+") — พักรอคุณหลิง"}); }
         return;
       }
       /* v0.9.3 (24 ต.ค.69): บิลมีมัดจำ ส่วนที่เหลืออาจจ่ายเป็นเงินสดวันนี้ (เคส 0986 23/10 มัดจำสด 10,182 + สด 2,000) หรือยังไม่จ่าย (เคส 0842 21/10 จ่าย 2,130 วันที่ 23/10)
@@ -310,6 +314,12 @@
         R.shopWarn.push({name:nm, bills:L.map(function(x){ return x.b.no; }), declared:dec, sum:sum, diff:d, why:why});
       });
     }
+    /* v0.10.7 (18 พ.ย.69 คุณหลิง เคส KM6911-0580): ใบคืนเงินที่ลงหลังกดยืนยันผลตรวจของวัน (เช่น ระบบคืนเงินมีบั๊ก ลงไม่ได้ตอนนั้น มาลงย้อนหลัง)
+       ผลตรวจที่ยืนยันแล้วยังจำ "คืนเงินในฟอร์ม" ยอดเดิม → ด่านคืนเงินไม่ผ่าน บิลที่หลักฐานครบแล้วเลยถูกพักเงียบ ๆ
+       → ชี้ให้เห็นว่าด่านไม่ผ่านเพราะใบที่ลงทีหลังอย่างเดียว · บิลโอนเกินที่ใบคืนเงิน (โอนเกิน) ลงทีหลังอธิบายส่วนต่างได้พอดี + ใบนับเงินสดตรงเมื่อหักคืนสดที่ลงทีหลัง
+         = "เสนอใหม่" (propose) ให้คุณหลิงกดอนุมัติเอง · กฎอัตโนมัติไม่อนุมัติให้ (ยังอยู่ในกองพัก) */
+    var LR=lateRefund(D, RF, expCash); R.lateRf=LR;
+    if(LR.only && RF.gate) RF.gate+=" · ต่างเท่ากับใบคืนเงินที่ลงหลังยืนยันผลตรวจ "+TH(LR.sum)+" ("+LR.rows.map(function(x){ return "#"+x.id+" "+String(x.bill_no||"").slice(-4); }).join(", ")+") — บันทึกผลตรวจวันนี้ใหม่ให้ฟอร์มนับด้วย";
     /* v0.7.0: บิลที่คืนเงินจนคงค้าง 0 ถูกนับเข้ายอดเงินสด — ถ้าแถวคืนเงินของบิลนั้นมีปัญหา ยอดเงินสดทั้งวันเชื่อไม่ได้ */
     var cxProb=null;
     if(RF.on){ Object.keys(RF.by).forEach(function(bn){ if((RF.by[bn].ov>0.5||RF.by[bn].dov>0.5) && !RF.ovUsed[bn]){ RF.prob[bn]=(RF.by[bn].ov>0.5?"ใบคืนเงินโอนเกิน "+TH(RF.by[bn].ov):"")+(RF.by[bn].dov>0.5?(RF.by[bn].ov>0.5?" + ":"")+"โอนเกินเก็บเป็นมัดจำ "+TH(RF.by[bn].dov):"")+" ไม่ตรงกับเงินที่โอนเข้าบิลนี้"; if(!cxProb) cxProb=bn.slice(-4)+": "+RF.prob[bn]; } }); }
@@ -366,8 +376,10 @@
     });
     if(shopPass && cashC.some(function(x){ return shopOk[x.b.no] && !shopBad[x.b.no]; })) R.cashGate+=" · ร้านค้าเงินสดที่ลงช่องร้านค้าตรงบิลพอดี ผ่านตามปกติ (พักเฉพาะกองเงินสดปลีก)";
     /* v0.7.0: บิลเงินโอนที่ผูกกับแถวคืนเงิน — มีปัญหารายบิล หรือด่านรวมของวันไม่ผ่าน → พักไว้ */
+    R.p=[]; /* v0.10.7 บิลที่เสนอใหม่ (หลักฐานคืนเงินมาทีหลัง) — อยู่ใน R.h ด้วย (กฎอัตโนมัติไม่หยิบ) */
     if(RF.on){ R.t=R.t.filter(function(x){ var no=x.b.no, why=RF.prob[no] || (RF.gate && RF.by[no] ? RF.gate+" — ต้องตรวจก่อน" : null);
-      if(why){ R.h.push({b:x.b, why:why}); return false; } return true; }); }
+      if(why){ var lp=(!RF.prob[no] && RF.gate)? lateProposal(x, LR, RF) : null;
+        if(lp){ R.h.push(lp); R.p.push(lp); } else R.h.push({b:x.b, why:why}); return false; } return true; }); }
     /* v0.8.0: ด่านจากตาราง ④ เดิม — เลขบิลในชีตโอนที่ไม่มีในบิลของวันนี้ (พิมพ์ผิด หรือเป็นบิลวันอื่น) */
     var nextSet={}; (D.nextNos||[]).forEach(function(n){ nextSet[n]=1; });
     R.unk=(D.xfer||[]).filter(function(x){ var k=billKey(x.bill); return k && !x.ra && !billByNo[k] && !nextSet[k] && !(D.pre&&D.pre[k]); })
@@ -375,16 +387,57 @@
     /* v0.9.7: บิลที่ตัดแล้ว/อนุมัติแล้ว ใช้คิดด่านของวัน — ไม่ขึ้นเป็นพร้อมตัด/พัก/ไม่ต้องตัด ซ้ำ (อยู่ใน R.cut / R.appr อยู่แล้ว)
        อนุมัติแล้ว: เก็บผลคิดตอนนี้ไว้ที่ R.apprCheck[เลขบิล] = {st:"t"|"c"|"h"|"s"|"done", why, method} ให้ตัวคำนวณใหม่รู้ว่าใบไหนตอนนี้ไม่ผ่านแล้ว */
     R.apprCheck={};
-    ["t","c","h","s","done"].forEach(function(k){ (R[k]||[]).forEach(function(x){ if(x&&x.b&&x.b._apr&&!x.b._cut&&!R.apprCheck[x.b.no]) R.apprCheck[x.b.no]={st:k, why:x.why||null, method:x.method||null, out:r2(x.b.out), src:x.src||null, grp:x.grp||null, retail:!!x.b.retail}; }); });
+    ["t","c","h","s","done"].forEach(function(k){ (R[k]||[]).forEach(function(x){ if(x&&x.b&&x.b._apr&&!x.b._cut&&!R.apprCheck[x.b.no]) R.apprCheck[x.b.no]={st:k, why:x.why||null, method:x.method||null, out:r2(x.b.out), src:x.src||null, grp:x.grp||null, retail:!!x.b.retail, propose:!!x.propose, psrc:x.psrc||null}; }); });
     /* กันตกหล่น: ใบอนุมัติที่ไม่มีผลคิดในรายการไหนเลย = "ตรวจไม่ได้" (ตัวคำนวณใหม่เตือน ไม่ถือว่าผ่าน · Codex r3) — ใบที่ ACC ค้าง 0 แล้วไปทาง done ก่อนถึงด่านอนุมัติ ไม่อยู่ใน R.appr อยู่แล้ว */
     (R.appr||[]).forEach(function(x){ if(x&&x.b&&!x.b._cut&&!R.apprCheck[x.b.no]) R.apprCheck[x.b.no]={st:"?", why:"ตรวจไม่ได้ (ไม่มีผลคิด)", method:null, out:r2(x.b.out)}; });
     var keep=function(x){ return !(x && x.b && (x.b._cut || x.b._apr)); };
-    ["t","c","h","s","done","late"].forEach(function(k){ if(Array.isArray(R[k])) R[k]=R[k].filter(keep); });
+    ["t","c","h","s","done","late","p"].forEach(function(k){ if(Array.isArray(R[k])) R[k]=R[k].filter(keep); }); /* v0.10.7 r2 Codex #7: + R.p */
     R.appr=(R.appr||[]).filter(function(x){ return !(x && x.b && x.b._cut); });
     R.bad=(R.bad||[]).filter(function(b){ return !b._cut && !b._apr; });
     /* v0.10.0: เงิน K+/สเตทเมนต์ที่บิลของวันยังไม่ได้ใช้ — บิลเก่าในฟอร์มหาเงินจากกองที่เหลือนี้ (บิลของวันได้ก่อนเสมอ) */
     R.poolLeft={kp:kp.slice(), bk:bk.slice()};
     return R;
+  }
+  /* v0.10.7 (18 พ.ย.69): ใบคืนเงินของวันที่ลงหลังเวลายืนยันผลตรวจ (rev_audit.confirmed_at)
+     rows/bills = แถวที่ลงทีหลัง · sum = ยอดที่ไม่ใช่ "เก็บเป็นมัดจำ" · cash = ส่วนที่คืนเป็นเงินสด (ออกจากลิ้นชัก)
+     only = ด่านคืนเงินไม่ผ่าน (กล่อง ≠ ฟอร์ม เกิน 1 บาท) และถ้าไม่นับแถวที่ลงทีหลัง กล่อง = ฟอร์มพอดี → ต่างเพราะใบที่ลงทีหลังอย่างเดียว
+     cashOk = ใบนับเงินสดตรงกับยอดที่ต้องมีหลังหักคืนสดที่ลงทีหลัง (ไม่มียอดยก/ใบนับ/มีคำขอแก้ยอดค้าง = ไม่ผ่าน)
+     ไม่รู้เวลายืนยัน / โหลดกล่องไม่ได้ = ไม่ใช้กติกานี้ (on false) */
+  var LATE_MARK="เสนอใหม่หลังยืนยันผลตรวจ (คุณหลิงกดอนุมัติ)"; /* ขึ้นต้นหลักฐานในแถวอนุมัติ — หน้าเว็บใช้แยกใบที่อนุมัติจากทางนี้ */
+  function lateRefund(D, RF, expCash){
+    var o={on:false, only:false, sum:0, cash:0, xfer:0, rows:[], bills:{}, cashOk:false, expLive:null, seen:{}, paid:{}};
+    if(!RF || !RF.on || D.refundErr) return o;
+    var t0=Date.parse(String(D.auditAt||"")); if(!isFinite(t0)) return o;
+    (RF.rows||[]).concat(D.refundDeps||[]).forEach(function(x){ if(!x) return; var t=Date.parse(String(x.created_at||"")); if(!(isFinite(t) && t>t0)) return;
+      var bn=String(x.bill_no||"").trim(), a=r2(x.amount); o.rows.push(x); (o.bills[bn]=o.bills[bn]||[]).push(x);
+      if(x.pay!=="deposit"){ o.sum=r2(o.sum+a); if(x.pay==="transfer") o.xfer=r2(o.xfer+a); else o.cash=r2(o.cash+a); } });
+    o.on=o.rows.length>0;
+    /* r2 Codex r1 #1: ด่านรูปใบคืนเงินยังต้องผ่าน (เดิมถูกบังด้วยข้อความยอดต่าง) */
+    o.only=o.on && o.sum>0.005 && Math.abs(r2(RF.sum)-r2(D.refund))>1 && Math.round(r2(RF.sum-o.sum)*100)===Math.round(r2(D.refund)*100) /* r4 Codex r3 #3: สตางค์ตรงตัว */ && (!(RF.rows||[]).length || !!RF.photo);
+    /* r2 Codex r1 #4: มีโอนคืนที่ลงทีหลัง → ยอดโอนคืนที่ไม่หักลิ้นชัก (rfX) ปนกับยอดฟอร์มเดิม คิดเงินสดที่ต้องมีให้แน่นอนไม่ได้ → ไม่ถือว่าใบนับตรง */
+    /* r6 Codex r5: เทียบสตางค์ตรงตัว · มีส่วน CN ผูกซ้ำ (RF.ex) หรือตรวจคืนเงินจริงต่อบิลไม่ได้ = ยอดเงินสดที่ต้องมีกำกวม → ไม่ถือว่าใบนับตรง */
+    var cnAmb=!!((RF.ex && (num(RF.ex.total)>0.005 || (RF.ex.list||[]).length)) || D.cnRealErr);
+    if(expCash!=null && !(o.xfer>0.005) && !cnAmb){ o.expLive=r2(expCash-o.cash); o.cashOk=!!(D.proof && !D.proofPending && Math.round(num(D.proof.amount)*100)===Math.round(o.expLive*100)); }
+    (D.appr||[]).forEach(function(a){ if(a && a.bill_no) o.seen[a.bill_no]=a.status||"?"; }); /* r2 #8: ใบที่มีรายการอนุมัติ/ยกเลิกอยู่แล้ว ไม่เสนอ */
+    (D.xfer||[]).forEach(function(x){ if(!x || x.ra) return; var k=billKey(x.bill); if(k) o.paid[k]=r2((o.paid[k]||0)+num(x.knv)+num(x.ksk)); });
+    return o;
+  }
+  /* บิลเงินโอนที่ classify จับคู่ได้แล้ว (x ใน R.t) แต่ถูกด่านคืนเงินของวันพัก → เสนอใหม่ได้เมื่อ: ด่านไม่ผ่านเพราะใบที่ลงทีหลังอย่างเดียว · ใบนับเงินสดตรง (หักคืนสดที่ลงทีหลัง)
+     · แถวที่ลงทีหลังของบิลนี้เป็น "คืนเพราะโอนเกิน" ทั้งหมด และใช้อธิบายส่วนต่างของบิลนี้พอดีแล้ว (RF.ovUsed) · ใบลดหนี้/เงินสดเกินที่ลงทีหลัง = พักแบบเดิม */
+  function lateProposal(x, LR, RF){
+    var no=x&&x.b&&x.b.no, L=(LR&&LR.bills&&LR.bills[no])||[];
+    if(!no || !LR.only || !LR.cashOk || !L.length || !RF.ovUsed[no] || LR.seen[no]==="cancelled") return null; /* อนุมัติ/ตัดแล้ว = ยังคิดได้ (บอก apprCheck) แล้วท้าย classify กรองออกจาก R.p/R.h */
+    if(!L.every(function(r){ return r.kind==="overpay"; })) return null;
+    /* r2 Codex r1 #5: ต้องตรงพอดี (ไม่ใช้ช่วง ±1 ของกฎเดิม) และส่วนเกินทั้งหมดของบิลมาจากแถวที่ลงทีหลัง
+       เงินโอนเข้าตามชีตโอน − (คืนเพราะโอนเกิน + เก็บเป็นมัดจำ) = ยอดค้าง ACC ±0.01 · แถวที่ลงทีหลังรวม = ส่วนเกินทั้งหมดของบิล ±0.01 */
+    var e=RF.by[no]||{}, ovAll=r2(num(e.ov)+num(e.dov)), lateAmt=r2(L.reduce(function(s,r){ return s+num(r.amount); },0)), paid=num(LR.paid[no]);
+    var real=x.b._xGot, ct=function(v){ return Math.round(num(v)*100); }; /* r3 Codex r2 #1/#3: ใช้เงินที่จับคู่ได้จริง (ไม่ใช่ยอดในชีต) · เทียบเป็นสตางค์ */
+    if(real==null || !(paid>0) || ct(real)!==ct(paid) || ct(real)-ct(ovAll)!==ct(x.b.out) || ct(lateAmt)!==ct(ovAll)) return null;
+    var bkk=function(c){ var t=Date.parse(String(c||"")); return isFinite(t)? dmy(new Date(t+7*3600e3).toISOString().slice(0,10)) : "?"; };
+    var pay=function(r){ return r.pay==="deposit"? "เก็บเป็นมัดจำ" : r.pay==="transfer"? "โอนคืน" : "คืนสด"; };
+    var ev=L.map(function(r){ return pay(r)+" "+TH(r.amount)+" (ใบคืนเงิน #"+r.id+" ลง "+bkk(r.created_at)+")"; }).join(" + ");
+    return {b:x.b, propose:true, method:x.method, psrc:LATE_MARK+" · เงินเข้า "+TH(paid)+" − "+ev+" = ยอดค้าง "+TH(x.b.out)+" · "+(x.src||""),
+      why:"🟡 เสนอใหม่ (หลักฐานมาทีหลัง): เงินเข้า "+TH(paid)+" ("+(x.src||"")+") − "+ev+" = ยอดค้าง "+TH(x.b.out)+" พอดี · ใบนับเงินสดตรงเมื่อหักคืนสดที่ลงทีหลัง — รอคุณหลิงกดอนุมัติ (กฎไม่อนุมัติให้เอง)"};
   }
   /* v0.9.5 (26 ต.ค.69): เทียบกองเงินสดปลีก (คุณ 1) กับยอดในชีต "ง-ส คุณ1" ทีละยอด
      ยอดในฟอร์ม = D.retailCash (ตรวจรายได้เก็บ detail.retail_cash ตอนอัปฟอร์ม ตั้งแต่ 26 ต.ค.69) · วันเก่าไม่มี → ประกอบกลับจาก detail.bill_audit.cash
@@ -510,7 +563,7 @@
     var rfx=rfOn? {amt:0, rows:[], open:[]} : await refundXfer(s, date, det.cns||[]);
     var RFD=rfOn? await refundData(s, date) : {};
     return {
-      date:date, status:au?au.status:null, nextFirst:nxt[0]||null, nextNos:nxt,
+      date:date, status:au?au.status:null, auditAt:(au&&au.confirmed_at)||null, /* v0.10.7 เวลายืนยันผลตรวจ — จับใบคืนเงินที่ลงทีหลัง */ nextFirst:nxt[0]||null, nextNos:nxt,
       retailCash:(Array.isArray(det.retail_cash)? det.retail_cash : null), billAudit:(det.bill_audit||null), /* v0.9.5 ยอดในชีต ง-ส คุณ1 / ผลตรวจยอดบิล (ใช้ rcMatch) */
       formAcct:formAcct, declMissing:declMissing, /* v0.9.4 · นับไม่ได้ (q[14] error) = loadErr → ตัวอนุมัติอัตโนมัติไม่บันทึกทั้งวันอยู่แล้ว */
       raCash:((q[12]&&!q[12].error&&Array.isArray(q[12].data))? q[12].data : []),

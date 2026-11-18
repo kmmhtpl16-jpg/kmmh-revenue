@@ -66,6 +66,24 @@
      acc = { bills:{KM..:{date,code,name,total}}, deps:{RA..:{date,code,name,total,method}},
              uses:[{ra,bill,amt}], cns:[{cn,bill,amt}] }   (cns = ใบลดหนี้ที่หักบิลนั้น ทั้งจากบิลอื่นและบิลตัวเอง · กันซ้ำด้วย cn+bill) */
   function usesOf(acc, bill){ return (acc.uses||[]).filter(function(u){ return u.bill===bill; }); }
+  /* v0.4.11 (18 พ.ย.69 คุณหลิง เคสเจริญวิจิตร 17/11) CN ผูกซ้ำ — คืนเงินจริงคิดต่อบิลที่ใบลดหนี้ตัดหนี้ (ฐาน rev_cn_real_refund · สูตรเดียวกับ RevCut.cnExcess ใน cutbill.js)
+     groups[].real = max(0, min(รวม CN, เงินที่บิลรับแล้ว + รวม CN − ยอดบิล)) · null = รู้ไม่ได้ (บิลลูกค้าปลีก) → ไม่ตัดสิน
+     แถวคืนเงิน kind cn ของวันนี้ ได้สิทธิ์ตามลำดับ id หลังหักที่วันก่อนคืนไปแล้ว · คืน {list, byIdx:{index ในแถววันนี้: สตางค์ที่เกิน}} */
+  var CN_FROM="2026-11-17";   /* วันแรกที่ใช้กติกา (เหมือน RevCut.CN_FROM) */
+  function cnExcess(refunds, groups, date){
+    var o={list:[], byIdx:{}, byIdxCh:{}}; if(!Array.isArray(groups)||String(date).slice(0,10)<CN_FROM) return o;
+    groups.forEach(function(g){ if(!g||g.real==null) return; var real=cents(g.real); if(!isFinite(real)||real<0) return;
+      var cns=(Array.isArray(g.cns)?g.cns:[]).map(function(c){ return normCn(c&&c.cn); }).filter(Boolean);
+      var ids=(Array.isArray(g.cn_ids)&&g.cn_ids.length? g.cn_ids : cns).map(normCn).filter(Boolean); if(!ids.length) return; if(!cns.length) cns=ids;   /* แถวที่อ้าง CN ที่ยกเลิกแล้วของบิลเดียวกันยังนับ */
+      var before=(g.refunded_before!=null&&isFinite(cents(g.refunded_before)))? cents(g.refunded_before) : (Array.isArray(g.refunds)?g.refunds:[]).filter(function(x){ return x&&String(x.date||"").slice(0,10)<date; }).reduce(function(t,x){ var v=cents(x.amount); return t+(isFinite(v)&&v>0?v:0); },0);
+      var mine=[]; (refunds||[]).forEach(function(r,i){ var c=cents(r.amt); if(r.kind==="cn"&&ids.indexOf(normCn(r.cn))>=0&&isFinite(c)&&c>0) mine.push({i:i,r:r,c:c}); });
+      if(!mine.length) return; mine.sort(function(a,b){ return (+a.r.id||0)-(+b.r.id||0); });
+      var pays={}; mine.forEach(function(m){ pays[m.r.pay==="deposit"?"deposit":m.r.pay==="transfer"?"transfer":"cash"]=1; }); var pk=Object.keys(pays), oneCh=pk.length===1;
+      var left=Math.max(0,real-before), today=0, ex=0;
+      mine.forEach(function(m){ var take=Math.min(m.c,left), e=m.c-take; left-=take; today+=m.c; if(e>0){ o.byIdx[m.i]=(o.byIdx[m.i]||0)+e; if(oneCh) o.byIdxCh[m.i]=o.byIdx[m.i]; ex+=e; } });
+      if(ex>0) o.list.push({bill:String(g.bill||""), real:real, before:before, today:today, excess:ex, cns:cns, mixed:!oneCh, pays:pk, rows:mine.filter(function(m){ return o.byIdx[m.i]; }).map(function(m){ return m.r; })}); });
+    return o;
+  }
   function cnsOf(acc, bill){ var seen={}; return (acc.cns||[]).filter(function(c){ var k=c.cn+"|"+c.bill; if(c.bill!==bill||seen[k]) return false; seen[k]=1; return true; }); }
 
   /* ---------- ตรวจหลายวันตามลำดับ (เงินก้อนเดียวใช้ได้ครั้งเดียวข้ามวัน) ----------
@@ -86,7 +104,7 @@
 
   function checkDay(d, ctx){
     var date=String(d.date).slice(0,10), dn=dayNum(date), f=d.form||{}, acc=d.acc||{bills:{},deps:{},uses:[],cns:[]};
-    var R={date:date, lines:[], notes:[], ok:[], info:{notInForm:[], unusedMoney:[]}, counts:{xfer:0,found:0}};
+    var R={date:date, lines:[], notes:[], ok:[], info:{notInForm:[], unusedMoney:[]}, counts:{xfer:0,found:0}}, cnUnverifiedEx=false;
     function line(lv, cat, text, extra){ var o={lv:lv, cat:cat, text:text}; if(extra) for(var k in extra) o[k]=extra[k]; (lv==="note"?R.notes:lv==="ok"?R.ok:R.lines).push(o); return o; }
     function billOf(no){ return acc.bills&&acc.bills[no]; }
     function depOf(no){ return acc.deps&&acc.deps[no]; }
@@ -119,13 +137,17 @@
     /* ===== 0b) คืนเงินเพราะรับเกิน (overpay): ตรวจก่อนนับเงินสด — ผิดเงื่อนไข = แถวคืนเงินผิด → ใบนับวันนี้ยืนยัน RA ไม่ได้
        · อ้างเลข RA ไม่ได้ (คืนมัดจำ = หลักฐานรายการถอนในสเตทเมนต์ ไม่ใช่คืนรับเกิน)
        · รวมต่อบิลต้องไม่เกินเงินที่บิลนั้นรับในฟอร์มวันนี้ (เงินสด/โอน ทั้งบิลวันนี้และบิลเก่า) */
+    var EX=cnExcess(d.refunds, d.cnReal, date); ctx.exCum=ctx.exCum||{};
+    (d.refunds||[]).forEach(function(r,i){ if(EX.byIdx[i]){ r._ex=EX.byIdx[i]; r._exCh=EX.byIdxCh[i]||0; var k=normCn(r.cn); ctx.exCum[k]=(ctx.exCum[k]||0)+EX.byIdx[i]; } });
+    EX.list.forEach(function(l){ cnUnverifiedEx=true; line("hold","refund","CN ผูกซ้ำ: "+l.cns.join(" + ")+" ตัดหนี้บิล "+l.bill+" ใบเดียวกัน — คืนเงินจริงของบิลนี้มีแค่ "+baht(l.real)+(l.before?" (คืนไปแล้ววันก่อน "+baht(l.before)+")":"")+" แต่ลงคืนไว้ "+baht(l.today)+" เกิน "+baht(l.excess)+(l.mixed?" (ลงหลายช่องทาง แยกไม่ได้ว่าแถวไหนเกิน)":"")+" — ส่วนเกินไม่นับเป็นเงินออก ให้คุณหลิงดู",{bill:l.bill}); });
     var rfCn={}; (ctx.cnRefunds||[]).concat(ctx.cnRefunds?[]:(d.refunds||[])).forEach(function(r){ if(!r.cn) return; if(ctx.cnRefunds && String(r.date).slice(0,10)>date) return; var c=cents(r.amt); if(isFinite(c)&&c>0) rfCn[r.cn]=(rfCn[r.cn]||0)+c; });
+    Object.keys(ctx.exCum).forEach(function(k){ if(rfCn[k]!=null) rfCn[k]=Math.max(0,rfCn[k]-ctx.exCum[k]); });   /* v0.4.11 ส่วน CN ผูกซ้ำ (วันนี้และวันก่อนที่ตรวจแล้ว) ไม่ใช่เงินคืน */
     /* นับเฉพาะเงินรับใหม่: บิลที่ ACC ปิดเต็มใบด้วยมัดจำ (+ใบลดหนี้สุทธิ) แล้ว ไม่ถือว่ามีเงินรับใหม่ — เงื่อนไขเดียวกับขั้น 3b/4 */
     function raFull(no){ var b=billOf(no); if(!b) return false; var dc=usesNow(no).reduce(function(s,u){return s+cents(u.amt);},0); return dc>0 && dc+cnNet(no)>=cents(b.total); }
     var recv={}; ["scash","oldc"].forEach(function(k){ rows(k).forEach(function(r){ var no=normBill(r.bill); if(raFull(no)) return; recv[no]=(recv[no]||0)+cents(r.amt); }); });
     rows("oldx").forEach(function(r){ var no=normBill(r.bill); if(raFull(no)) return; recv[no]=(recv[no]||0)+cents(r.amt); });
     rows("xfer").forEach(function(r){ var no=normBill(r.bill); if(raFull(no)) return; recv[no]=(recv[no]||0)+cents(r.kp)+cents(r.ks); });
-    var ovp={}, cnUnverified=false; (d.refunds||[]).forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt);
+    var ovp={}, cnUnverified=cnUnverifiedEx; (d.refunds||[]).forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt);
       /* คืนเงินทุกชนิดอ้างเลข RA ไม่ได้ (คืนมัดจำ = รายการถอนในสเตทเมนต์) — ตรวจก่อนยอด เพื่อให้ RA เสียแม้ยอดผิดรูป */
       if(isRA(no)){ line("bad","refund","คืนเงินอ้างใบรับมัดจำ "+no+" "+String(r.amt)+" — คืนมัดจำต้องดูจากรายการถอนในสเตทเมนต์",{bill:no}); r._bad=true; var sr=ctx.ra[no]=ctx.ra[no]||{}; sr.bad=true; sr.formDate=sr.formDate||date; return; }
       if(r._bad||!isFinite(c)||c<0) return;
@@ -149,14 +171,16 @@
     (d.others||[]).forEach(function(o,i){ var c=cents(o.amt); if(!isFinite(c)||c<0){ line("bad","form","รายรับอื่นๆ แถว "+(i+1)+": ยอด \""+o.amt+"\" ไม่ถูกต้อง"); o._bad=true; return; } if(o.ch!=="xfer") cashC+=c; });
     (d.refunds||[]).forEach(function(r,i){ var c=cents(r.amt); if(!isFinite(c)||c<0){ line("bad","form","คืนเงิน แถว "+(i+1)+": ยอด \""+r.amt+"\" ไม่ถูกต้อง"); r._bad=true; } });
     cashDirty=cashDirty||(d.others||[]).some(function(o){return o._bad;})||(d.refunds||[]).some(function(r){return r._bad;});
-    var refundCash=0; (d.refunds||[]).forEach(function(r){ if(r.pay==="cash" && !r._bad){ var c=cents(r.amt); if(isFinite(c)) refundCash+=c; } });
+    var refundCash=0; (d.refunds||[]).forEach(function(r){ if(r.pay==="cash" && !r._bad){ var c=cents(r.amt); if(isFinite(c)) refundCash+=c-(r._exCh||0); } });   /* v0.4.11 ส่วน CN ผูกซ้ำไม่ได้ออกจากลิ้นชัก */
     cashC-=refundCash;
     var cashOk=false;
+    var exMixCash=EX.list.some(function(l){ return l.mixed && l.pays.indexOf("cash")>=0; });   /* Codex r4 #4: คืนสดปนช่องทางอื่นในกลุ่ม CN ผูกซ้ำ = เงินสดคืนจริงสรุปไม่ได้ */
+    if(exMixCash) line("hold","cash","CN ผูกซ้ำ ลงคืนสดปนโอน/มัดจำ — ยอดเงินสดที่ต้องมีสรุปไม่ได้ ใบนับวันนี้ใช้ยืนยันไม่ได้ จนแคชเชียร์แก้แถวที่เกิน");
     if(d.proof==null||String(d.proof).trim()==="") line("wait","cash","ยังไม่มีใบนับเงินสด (ฟอร์มนำส่ง "+baht(cashC)+")");
     else if(!isFinite(cents(d.proof))||cents(d.proof)<0) line("bad","cash","ยอดใบนับเงินสด \""+d.proof+"\" ไม่ถูกต้อง (ต้องเป็นตัวเลขไม่ติดลบ)");
     else if(cashC<0) line("hold","cash","ยอดเงินสดนำส่งตามฟอร์มติดลบ "+baht(cashC)+" (คืนเงินสดมากกว่าที่รับ) — ให้คุณหลิงดูว่าเอาเงินจากไหนมาคืน");
     else { var pc=cents(d.proof), df=pc-cashC;
-      if(df===0){ cashOk=!cashDirty && !cnUnverified; line("ok","cash","เงินสดนำส่ง "+baht(cashC)+" = ใบนับ"+(refundCash?" (หักคืนเงินสด "+baht(refundCash)+")":"")); }
+      if(df===0){ cashOk=!cashDirty && !cnUnverified && !exMixCash; line("ok","cash","เงินสดนำส่ง "+baht(cashC)+" = ใบนับ"+(refundCash?" (หักคืนเงินสด "+baht(refundCash)+")":"")); }
       else line("bad","cash","เงินสด"+(df<0?"ขาด ":"เกิน ")+baht(Math.abs(df))+" — ฟอร์มนำส่ง "+baht(cashC)+" · ใบนับ "+baht(pc), {diff:df}); }
 
     /* ===== 2) มัดจำ RA ที่รับวันนี้ (ฟอร์ม): ยอดตรง ACC · เงินสด = ผ่านเมื่อใบนับตรง · โอน = ผ่านเมื่อเจอเงิน (ข้อ 5) ===== */
@@ -406,6 +430,6 @@
     return o;
   }
 
-  var api={ checkDays:checkDays, moneyFromDaily:moneyFromDaily, accFromRpc:accFromRpc, cents:cents, baht:baht, dmy:dmy, RETAIL:RETAIL, EARLY_DAYS:EARLY_DAYS, SHORT_MAX:SHORT_MAX, version:"0.4.10" };
+  var api={ CN_FROM:CN_FROM, cnExcess:cnExcess, checkDays:checkDays, moneyFromDaily:moneyFromDaily, accFromRpc:accFromRpc, cents:cents, baht:baht, dmy:dmy, RETAIL:RETAIL, EARLY_DAYS:EARLY_DAYS, SHORT_MAX:SHORT_MAX, version:"0.4.11" };
   if(typeof module!=="undefined" && module.exports) module.exports=api; else root.FormCheck=api;
 })(typeof window!=="undefined"?window:this);

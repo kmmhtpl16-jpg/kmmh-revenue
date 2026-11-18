@@ -784,7 +784,13 @@ async function exAux(date){
   try{ const q=await Promise.all([aux?sb.rpc('rev_refund_cn_options',{p_date:date}):{data:null},aux?sb.rpc('rev_refund_bills',{p_date:date}):{data:null},
       sb.from('rev_cash_proof_req').select('*').eq('date',date).order('id'),sb.from('rev_cash_refund_proof').select('id,image_path').eq('date',date).order('id'),sb.rpc('rev_refund_appr',{p_date:date})]);
     if(q[0].error||q[1].error) o.err=(q[0].error||q[1].error).message||'อ่านไม่ได้';
-    else if(aux){ o.opts=Array.isArray(q[0].data)?q[0].data:[]; o.bills=Array.isArray(q[1].data)?q[1].data:[]; }
+    else if(aux){ o.opts=Array.isArray(q[0].data)?q[0].data:[]; o.bills=Array.isArray(q[1].data)?q[1].data:[];
+      /* 18 พ.ย.69 (เคสเจริญวิจิตร 17/11) คืนเงินจริงต่อบิลที่ CN ตัดหนี้ — ฐานยังไม่มี/อ่านไม่ได้ = real null → ใช้ตัวกันเดิม (cnCap) อย่างเดียว */
+      try{ const all=o.opts.map(z=>z.cn).filter(Boolean), got=[]; let miss=false; /* Codex r10: ถามทีละ 300 ใบให้ครบทุก CN ที่เลือกได้ (กลุ่มเดียวกันจากหลายชุด = ผลเหมือนกัน ใช้ตัวแรก) */
+        for(let i=0;i<Math.max(1,all.length);i+=300){ const rq=await sb.rpc('rev_cn_real_refund',{p_date:date,p_cns:all.slice(i,i+300)});
+          if(rq.error&&(rq.error.code==='PGRST202'||rq.status===404)){ miss=true; break; } if(rq.error||!Array.isArray(rq.data)) throw new Error((rq.error&&rq.error.message)||'ข้อมูลผิดรูป');
+          rq.data.forEach(g=>{ if(g&&!got.some(x=>x.bill===g.bill)) got.push(g); }); }
+        if(!miss) o.real=got; }catch(_e){ o.realErr=_e.message||String(_e); } } /* Codex r3 #6: ยังไม่มีฟังก์ชัน = ตัวกันเดิม · ผิดพลาดอื่น = ไม่ให้ลงคืนตาม CN จนโหลดได้ */
     o.reqs=(q[2]&&!q[2].error&&q[2].data)||[];
     /* 16 พ.ย.69: ประวัติแก้ใบนับ (rev_cash_proof_log · เจ้าของ/การเงินอ่านได้) — ยังไม่ขึ้นตาราง/อ่านไม่ได้ = ไม่แสดง */
     if(ROLE==='owner'||ROLE==='finance'){ try{ const pl=await sb.from('rev_cash_proof_log').select('old_amount,new_amount,old_image_path,new_image_path,by_role,at,amount_changed').eq('date',date).eq('action','update').eq('counts_only',false).order('id'); if(!pl.error) o.plog=pl.data||[]; }catch(_e){} }
@@ -811,6 +817,21 @@ function cnCap(o,skip){ if(!o||!o.bill2) return null; const B=BILL[o.bill2]; if(
   const inGrp=cn=>!!cn&&cn!==o.cn&&grp.some(z=>z.cn===cn);
   const other=r2x(S.refund.filter(x=>x!==skip).reduce((t,x)=>t+Math.max(x._sv&&inGrp(x._sv.cn)?num(x._sv.amt):0,inGrp(x.cn)?num(x.amt):0),0));
   return {known:true,bill:o.bill2,used,left:r2x(Math.max(0,Math.min(+o.amt||0,sum-used-other))),multi:grp.length>1}; }
+/* 18 พ.ย.69 CN ผูกซ้ำ: ใบลดหนี้หลายใบตัดหนี้บิลเดียวกัน (inv_no2 ถ้ามี ไม่งั้น inv_no) → คืนเงินจริงรวมของกลุ่ม = max(0, min(รวม CN, เงินที่บิลรับแล้ว + รวม CN − ยอดบิล))
+   เงินที่รับแล้ว = ค่ามากกว่าระหว่าง ACC กับฟอร์มทุกวัน (วันนี้ใช้ที่พิมพ์อยู่บนจอ) · หักที่วันอื่นคืนไปแล้ว + แถวอื่นของวันนี้ในกลุ่มเดียวกัน · บิลลูกค้าปลีกที่หาเงินไม่ครบ = รู้ไม่ได้ → ไม่ใช้ข้อนี้ */
+function cnGrp(o,skip){ if(!o||String(DATA.date||'')<'2026-11-17') return null; /* วันเริ่มใช้ = RevCut.CN_FROM */
+  if(EXO.realErr) return {err:EXO.realErr}; if(!Array.isArray(EXO.real)) return null; const tgt=String(o.bill2||o.bill||'').trim().toUpperCase(), g=EXO.real.find(z=>z&&z.bill===tgt); if(!g||g.form_bad) return null; /* Codex r2 #3: ยอดในฟอร์มผิดรูป = รู้ไม่ได้ */
+  const live=r2x(['scash','oldc','oldx'].reduce((t,k)=>t+(S[k]||[]).filter(x=>normBill(x.bill)===tgt).reduce((u,x)=>u+num(x.amt),0),0)+(S.xfer||[]).filter(x=>normBill(x.bill)===tgt).reduce((u,x)=>u+num(x.kp)+num(x.ks),0));
+  /* Codex r4 #3: คืนรับเกิน/เงินสดเกินของบิลนี้ที่พิมพ์บนจอ (ยังไม่บันทึก) หักเหมือนฐาน · ของวันนี้ในฐาน (ov_day) คืนกลับก่อน แล้วใช้ที่จอแทน */
+  const liveOv=r2x((S.refund||[]).filter(x=>!x.cn&&(x.op||x.dp)&&normBill(x.bill)===tgt).reduce((t,x)=>t+num(x.amt),0));
+  const paidF=r2x((+g.base_form||0)+live-liveOv), paidA=r2x((+g.base_acc||0)-liveOv), paid=Math.max(paidA,paidF); /* Codex r5/r8: ฐานรวมจากฐานข้อมูล (วันนี้ใช้ที่พิมพ์บนจอ) · ACC ฐานสุทธิเดียวกัน */
+  const tot=+g.total||0; if(g.acc_only_if_full!==false&&paidF<tot) return null; /* Codex r9: ธงไม่ใช่ false ชัดเจน = รู้ไม่ได้ */ /* เหมือนฐาน: ลูกค้าปลีก/ใบเสร็จตัด CN แล้วหาเงินไม่ครบ = รู้ไม่ได้ */
+  const real=r2x(Math.max(0,Math.min(+g.cn_sum||0,paid+(+g.cn_sum||0)-(+g.total||0)))), cns0=(g.cns||[]).map(z=>z&&z.cn).filter(Boolean), ids=(Array.isArray(g.cn_ids)&&g.cn_ids.length?g.cn_ids:cns0), cns=cns0.length?cns0:ids;
+  const before=r2x(+g.refunded_before||0); /* ฐานคิดเฉพาะวันก่อนหน้า (Codex r1 #11) */
+  const inG=cn=>!!cn&&ids.includes(String(cn).trim().toUpperCase());
+  const other=r2x(S.refund.filter(x=>x!==skip&&!x.op).reduce((t,x)=>t+Math.max(x._sv&&!x._sv.op&&inG(x._sv.cn)?num(x._sv.amt):0,inG(x.cn)?num(x.amt):0),0));
+  const hid=r2x(+g.refunded_today_hidden||0); /* Codex r7: แถววันนี้ที่อ้าง CN เก่า (ฐานไม่ส่งเลขให้แคชเชียร์) นับเป็นยอดรวม */
+  return {bill:tgt,real,before,other:r2x(other+hid),cns,left:r2x(Math.max(0,real-before-other-hid))}; }
 function exCheck(k,r,i){
   const amt=num(r.amt);
   if(k==='other'){ const desc=String(r.desc||'').trim();
@@ -846,8 +867,11 @@ function exCheckRefund(r,i,amt,op,dp,bill,cn){
     if(bill!==o.bill&&bill!==o.bill2) return {ok:false,lv:'bad',t:`ใบลดหนี้นี้ใน ACC ผูกบิล ${[o.bill,o.bill2].filter(Boolean).join(' / ')} ไม่ใช่บิลนี้`};
     if(amt>(+o.amt||0)+0.01) return {ok:false,lv:'bad',t:`ยอดเกินใบลดหนี้ (${fmt(+o.amt)})`};
     const cap=cnCap(o,r);
-    if(cap&&!cap.known) return {ok:false,unk:true,need2:cap.bill,lv:'warn',t:`CN นี้ใช้จ่ายบิล ${cap.bill} ด้วย — กำลังดึงยอดบิลนั้นจาก ACC (ถ้าค้าง เปิดหน้าใหม่)`};
-    if(cap&&amt>cap.left+0.01) return {ok:false,lv:'bad',t:`CN นี้ใช้จ่ายบิล ${cap.bill.slice(-4)}${cap.multi?' (รวมใบลดหนี้อื่นที่จ่ายบิลเดียวกัน)':''} ยอด ${fmt(cap.used)} แล้ว → คืนได้แค่ ${fmt(cap.left)}`};
+    if(cap&&!cap.known&&!cnGrp(o,r)) return {ok:false,unk:true,need2:cap.bill,lv:'warn',t:`CN นี้ใช้จ่ายบิล ${cap.bill} ด้วย — กำลังดึงยอดบิลนั้นจาก ACC (ถ้าค้าง เปิดหน้าใหม่)`};
+    const G=cnGrp(o,r); /* 18 พ.ย.69: รู้คืนจริงของบิลที่ CN ตัดหนี้ → ใช้ข้อนี้แทนตัวกันเดิม (ตัวกันเดิมถือว่าบิลยังไม่จ่ายเสมอ) */
+    if(G&&G.err) return {ok:false,unk:true,lv:'warn',t:`ตรวจคืนเงินจริงต่อบิลไม่ได้ (${G.err}) — เปิดหน้าใหม่`};
+    if(G){ if(amt>G.left+0.01) return {ok:false,lv:'bad',t:`CN ผูกซ้ำ — ${G.cns.join(' + ')} ตัดหนี้บิล ${G.bill.slice(-4)} ใบเดียวกัน คืนเงินจริงของบิลนี้รวมได้แค่ ${fmt(G.real)}${(G.before+G.other)>0?` (ลงคืนแล้ว ${fmt(G.before+G.other)})`:''} → แถวนี้คืนได้ไม่เกิน ${fmt(G.left)}`}; }
+    else if(cap&&amt>cap.left+0.01) return {ok:false,lv:'bad',t:`CN นี้ใช้จ่ายบิล ${cap.bill.slice(-4)}${cap.multi?' (รวมใบลดหนี้อื่นที่จ่ายบิลเดียวกัน)':''} ยอด ${fmt(cap.used)} แล้ว → คืนได้แค่ ${fmt(cap.left)}`};
     return {ok:true,rec:{bill_no:bill,kind:'cn',cn_no:cn,amount:amt,pay,cn_manual:false,ra_no:null}};
   }
   const dupB=S.refund.findIndex((x,j)=>j!==i&&x.op&&x.bill===bill); /* โอนเกินบิลละแถว (ฐานกันซ้ำ) — คืนบางส่วน+เก็บมัดจำบางส่วน ยังไม่รองรับ */ if(dupB>=0) return {ok:false,lv:'bad',t:`บิลนี้ลงคืนเงินโอนเกินแล้วที่แถว ${dupB+1}`};

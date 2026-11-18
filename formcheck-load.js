@@ -46,7 +46,7 @@
     var res=await Promise.all([
       must(sb.from("rev_daily").select("date,kplus_rows,bank_rows,bank_asof").gte("date",moneyLo).lte("date",to).order("date"),"K+/สเตทเมนต์"),
       must(sb.from("rev_cash_proof").select("date,amount").gte("date",lo).lte("date",to),"ใบนับเงินสด"),
-      must(sb.from("rev_cash_refund").select("date,bill_no,kind,cn_no,amount,pay").gte("date",lo).lte("date",to),"คืนเงิน"),
+      must(sb.from("rev_cash_refund").select("id,date,bill_no,kind,cn_no,amount,pay").gte("date",lo).lte("date",to),"คืนเงิน"),
       must(sb.from("rev_cash_other").select("date,item,amount,channel").gte("date",lo).lte("date",to),"รายรับอื่นๆ"),
       must(sb.from("rev_pending").select("id,date,amount,source,ref,slip_path,status,matched_bill_no").gte("date",iso(dn(lo)-back)).lte("date",to).or("source.eq.รับเข้าบัญชีอื่น,ref.ilike.*บัญชีอื่น*"),"แถวติดธงบัญชีอื่น"),
       must(sb.from("rev_audit").select("date,status").gte("date",from).lte("date",to),"ผลหน้าเดิม"),
@@ -54,12 +54,17 @@
     ]);
     var daily=res[0], proof={}, ref={}, oth={}, audit={};
     res[1].forEach(function(r){ proof[String(r.date).slice(0,10)]=r.amount; });
-    res[2].forEach(function(r){ var d=String(r.date).slice(0,10); (ref[d]=ref[d]||[]).push({bill:r.bill_no,kind:r.kind,cn:r.cn_no,amt:r.amount,pay:r.pay}); });
+    res[2].forEach(function(r){ var d=String(r.date).slice(0,10); (ref[d]=ref[d]||[]).push({id:r.id,bill:r.bill_no,kind:r.kind,cn:r.cn_no,amt:r.amount,pay:r.pay}); });
+    /* v0.4.11 คืนเงินจริงต่อบิลที่ CN ตัดหนี้ (CN ผูกซ้ำ) — เฉพาะวันที่มีคืนเงินอ้าง CN · ฐานยังไม่มีฟังก์ชัน = null (กติกาเดิม) · ดึงไม่ได้แบบอื่น = หยุดทั้งหน้า */
+    var cnReal={}, cnDays=Object.keys(ref).filter(function(d){ return ref[d].some(function(r){ return r.kind==="cn"&&r.cn; }); });
+    for(var ci=0; ci<cnDays.length; ci++){ var cq=await sb.rpc("rev_cn_real_refund",{p_date:cnDays[ci]});
+      if(cq.error){ var ce=cq.error; if(ce.code==="PGRST202"||cq.status===404){ cnReal=null; break; } throw new Error("คืนเงินจริงต่อบิล "+cnDays[ci]+": "+(ce.message||String(ce))); }
+      if(!Array.isArray(cq.data)) throw new Error("คืนเงินจริงต่อบิล "+cnDays[ci]+": ข้อมูลผิดรูป"); cnReal[cnDays[ci]]=cq.data; }
     res[3].forEach(function(r){ var d=String(r.date).slice(0,10); (oth[d]=oth[d]||[]).push({item:r.item,amt:r.amount,ch:r.channel}); });
     res[5].forEach(function(r){ audit[String(r.date).slice(0,10)]=r.status; });
     var dailyBy={}; daily.forEach(function(r){ dailyBy[String(r.date).slice(0,10)]=r; });
     var days=forms.map(function(f){ var date=String(f.date).slice(0,10), dd=dailyBy[date];
-      return { date:date, form:f.entries||{}, proof:(date in proof)?proof[date]:null, refunds:ref[date]||[], others:oth[date]||[],
+      return { date:date, form:f.entries||{}, proof:(date in proof)?proof[date]:null, refunds:ref[date]||[], others:oth[date]||[], cnReal:(cnReal&&cnReal[date])||null,
         acc:FC.accFromRpc(accBy[date]), shown:date>=from,
         stmt:{ kp:!!(dd&&dd.kplus_rows&&dd.kplus_rows.length), ks:!!(dd&&dd.bank_rows&&dd.bank_rows.length) },
         bankPartial:dd&&dd.bank_asof||null, oldStatus:audit[date]||null }; });

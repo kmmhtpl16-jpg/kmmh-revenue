@@ -70,6 +70,7 @@ a{color:var(--amber)}
 .bub.clip{max-height:340px;overflow:hidden;-webkit-mask-image:linear-gradient(#000 80%,transparent);mask-image:linear-gradient(#000 80%,transparent)}
 .more{align-self:flex-start;border:none;background:none;color:var(--amber);font-size:13px;font-weight:600;padding:4px 0;min-height:32px;cursor:pointer}
 .meta{font-size:11px;color:var(--dim)}
+.mlink{align-self:flex-start;display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border-radius:12px;background:var(--chip);color:var(--amber);font-size:13px;font-weight:600;text-decoration:none}
 .foot{display:flex;align-items:center;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--line)}
 .ro{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;padding:6px 14px;border-radius:22px;background:var(--chip);color:var(--muted);font-size:13px;line-height:1.4}
 .soon{font-size:11px;color:var(--dim);text-align:center;padding:0 12px 8px;background:var(--bar)}
@@ -335,6 +336,7 @@ function avatar(id,m){
   img.onerror=function(){ this.onerror=null; this.removeAttribute("src"); };
   return img;
 }
+var MSG_LINK_RE=/^https:\/\/kmmhtpl16-jpg\.github\.io\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]*(\?[A-Za-z0-9_.=&%-]*)?$/;
 function msgNode(r){
   var m=MEMBERS[r.sender]||{name:r.sender==="owner"?"คุณหลิง":"ระบบ",title:"",color:"#4A5D80"};
   var d=new Date(r.posted_at);
@@ -346,6 +348,11 @@ function msgNode(r){
   if(m.title){ var t=document.createElement("span"); t.textContent=m.title; who.appendChild(t); }
   col.appendChild(who);
   var bub=document.createElement("div"); bub.className="bub"; fillBody(bub,r.body,r.body_format); col.appendChild(bub);
+  /* ปุ่มเปิดหน้าที่แนบมากับรายงาน (เช่น โปรแกรมรายงานตรวจสอบคุณภาพ) — รับเฉพาะหน้าเว็บของร้านใน github.io */
+  if(MSG_LINK_RE.test(String(r.link||""))){
+    var lk=document.createElement("a"); lk.className="mlink"; lk.href=String(r.link); lk.target="_blank"; lk.rel="noopener";
+    lk.textContent=(String(r.link_label||"").trim()||"เปิดดู")+" ›"; col.appendChild(lk);
+  }
   var meta=document.createElement("span"); meta.className="meta"; meta.textContent=hhmm(d); col.appendChild(meta);
   row.appendChild(col);
   return {row:row,bub:bub,col:col,meta:meta};
@@ -485,7 +492,7 @@ async function load(){
     try{ await sb.rpc("hq_chat_ack_stale"); }catch(_e){}
     if(g!==GEN) return;
     var q=await sb.from("hq_chat_messages")
-      .select("id,sender,kind,body,body_format,posted_at")
+      .select("id,sender,kind,body,body_format,link,link_label,posted_at")
       .eq("room","hq").order("posted_at",{ascending:false}).order("id",{ascending:false}).limit(60);
     if(!READY || g!==GEN) return;   /* ระหว่างรอ สิทธิ์หลุด/เข้าใหม่แล้ว — ไม่วาดผลรุ่นเก่า */
     if(authErr(q.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }   /* r2 (Codex ② r1 #2) */

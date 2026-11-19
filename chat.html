@@ -70,6 +70,7 @@ a{color:var(--amber)}
 .bub.clip{max-height:340px;overflow:hidden;-webkit-mask-image:linear-gradient(#000 80%,transparent);mask-image:linear-gradient(#000 80%,transparent)}
 .more{align-self:flex-start;border:none;background:none;color:var(--amber);font-size:13px;font-weight:600;padding:4px 0;min-height:32px;cursor:pointer}
 .meta{font-size:11px;color:var(--dim)}
+.flash .bub,.flash .mebub{outline:2px solid var(--amber);outline-offset:2px}
 .mlink{align-self:flex-start;display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border-radius:12px;background:var(--chip);color:var(--amber);font-size:13px;font-weight:600;text-decoration:none}
 .foot{display:flex;align-items:center;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--line)}
 .ro{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;padding:6px 14px;border-radius:22px;background:var(--chip);color:var(--muted);font-size:13px;line-height:1.4}
@@ -190,7 +191,8 @@ a{color:var(--amber)}
     <div class="shead"><b>งานที่สั่ง</b><button class="ibtn" aria-label="ปิด" onclick="closeAct()">✕</button></div>
     <p class="ntxt" id="actTxt"></p>
     <button class="nbtn pri" id="actCancel">ยกเลิกงานนี้</button>
-    <button class="nbtn" onclick="closeAct()">ไม่ยกเลิก</button>
+    <button class="nbtn" id="actPin">📌 ปักหมุด</button>
+    <button class="nbtn" id="actClose" onclick="closeAct()">ไม่ยกเลิก</button>
     <div class="nmsg" id="actMsg" role="status"></div>
   </div>
 </div>
@@ -340,7 +342,7 @@ var MSG_LINK_RE=/^https:\/\/kmmhtpl16-jpg\.github\.io\/[A-Za-z0-9-]+\/[A-Za-z0-9
 function msgNode(r){
   var m=MEMBERS[r.sender]||{name:r.sender==="owner"?"คุณหลิง":"ระบบ",title:"",color:"#4A5D80"};
   var d=new Date(r.posted_at);
-  var row=document.createElement("div"); row.className="msg";
+  var row=document.createElement("div"); row.className="msg"; row.id="m"+r.id;
   row.appendChild(avatar(r.sender,m));
   var col=document.createElement("div"); col.className="mcol";
   var who=document.createElement("div"); who.className="who";
@@ -353,8 +355,9 @@ function msgNode(r){
     var lk=document.createElement("a"); lk.className="mlink"; lk.href=String(r.link); lk.target="_blank"; lk.rel="noopener";
     lk.textContent=(String(r.link_label||"").trim()||"เปิดดู")+" ›"; col.appendChild(lk);
   }
-  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=hhmm(d); col.appendChild(meta);
+  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=(r.pinned?"📌 ":"")+hhmm(d); col.appendChild(meta);
   row.appendChild(col);
+  holdToCancel(bub,r);   /* กดค้าง = ปักหมุด/เอาหมุดออก */
   return {row:row,bub:bub,col:col,meta:meta};
 }
 /* ---------- ขั้น ③ ข้อความเจ้าของ: ขวา สีอำพัน · @ชื่อ ตัวหนา · สถานะงานใต้ข้อความ · กดค้าง = ยกเลิก ---------- */
@@ -389,11 +392,10 @@ function cutLabel(c){
 }
 function mineNode(r){
   var t=TASKS[r.id], c=CUTS[r.id], d=new Date(r.posted_at);
-  var row=document.createElement("div"); row.className="me";
+  var row=document.createElement("div"); row.className="me"; row.id="m"+r.id;
   var bub=document.createElement("div"); bub.className="mebub"+(t&&t.status==="cancelled"?" cx":""); fillMine(bub,r.body); row.appendChild(bub);
-  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=(c?cutLabel(c):taskLabel(t))+" · "+hhmm(d); row.appendChild(meta);
-  if(c){ if((c.status==="requested"||c.status==="running") && !c.stop) holdToCancel(bub,r); }
-  else if(t && t.status==="queued") holdToCancel(bub,r);
+  var meta=document.createElement("span"); meta.className="meta"; meta.textContent=(r.pinned?"📌 ":"")+(c?cutLabel(c):taskLabel(t))+" · "+hhmm(d); row.appendChild(meta);
+  holdToCancel(bub,r);   /* กดค้าง = ยกเลิก/หยุด (ถ้ายังทำได้) + ปักหมุด */
   return {row:row,bub:bub,col:row,meta:meta};
 }
 function holdToCancel(el,r){
@@ -404,26 +406,51 @@ function holdToCancel(el,r){
   el.addEventListener("touchend",stop); el.addEventListener("touchmove",stop,{passive:true}); el.addEventListener("touchcancel",stop);
   el.addEventListener("contextmenu",function(ev){ ev.preventDefault(); stop(); openAct(r); });
 }
-var ACT_ID=null;
+var ACT_ID=null, ACT_ROW=null;
+function canCancel(r){
+  var c=CUTS[r.id], t=TASKS[r.id];
+  if(r.sender!=="owner") return false;
+  if(c) return (c.status==="requested"||c.status==="running") && !c.stop;
+  return !!(t && t.status==="queued");
+}
 function openAct(r){
   if(!READY) return;
-  ACT_ID=r.id;
-  var c=CUTS[r.id];
-  if(c){   /* ขั้น ④: หยุดคำสั่งตัด */
+  ACT_ID=r.id; ACT_ROW=r;
+  var c=CUTS[r.id], cc=canCancel(r), prev=String(r.body||"").replace(/<[^>]*>/g,"");
+  prev="“"+prev.slice(0,120)+(prev.length>120?"…":"")+"”";
+  $("actCancel").classList.toggle("hide",!cc);
+  if(cc && c){   /* ขั้น ④: หยุดคำสั่งตัด */
     $("act").querySelector(".shead b").textContent="คำสั่งตัดบิล";
-    $("actTxt").textContent="“"+String(r.body||"")+"” — ถ้ากดหยุด คอมร้านจะไม่เริ่มใบเสร็จใบถัดไป · ใบที่บันทึกไปแล้วยังอยู่ (ไม่ถูกยกเลิก)";
+    $("actTxt").textContent=prev+" — ถ้ากดหยุด คอมร้านจะไม่เริ่มใบเสร็จใบถัดไป · ใบที่บันทึกไปแล้วยังอยู่ (ไม่ถูกยกเลิก)";
     $("actCancel").textContent="หยุดตัด"; $("actCancel").onclick=doStopCut;
-    $("act").querySelector(".nbtn:not(.pri)").textContent="ตัดต่อ";
-  } else {
+    $("actClose").textContent="ตัดต่อ";
+  } else if(cc){
     $("act").querySelector(".shead b").textContent="งานที่สั่ง";
-    $("actTxt").textContent="“"+String(r.body||"").slice(0,120)+(String(r.body||"").length>120?"…":"")+"” — ยกเลิกได้จนกว่าผู้ช่วยจะหยิบไปทำ ข้อความยังอยู่แต่ขีดฆ่าไว้";
+    $("actTxt").textContent=prev+" — ยกเลิกได้จนกว่าผู้ช่วยจะหยิบไปทำ ข้อความยังอยู่แต่ขีดฆ่าไว้";
     $("actCancel").textContent="ยกเลิกงานนี้"; $("actCancel").onclick=doCancel;
-    $("act").querySelector(".nbtn:not(.pri)").textContent="ไม่ยกเลิก";
+    $("actClose").textContent="ไม่ยกเลิก";
+  } else {
+    $("act").querySelector(".shead b").textContent="ข้อความ";
+    $("actTxt").textContent=prev;
+    $("actClose").textContent="ปิด";
   }
-  $("actMsg").textContent=""; $("actCancel").disabled=false;
+  $("actPin").textContent=r.pinned ? "เอาหมุดออก" : "📌 ปักหมุดข้อความนี้";
+  $("actPin").classList.toggle("pri",!cc); $("actPin").onclick=doPin;
+  $("actMsg").textContent=""; $("actCancel").disabled=false; $("actPin").disabled=false;
   $("act").classList.remove("hide");
 }
-function closeAct(){ $("act").classList.add("hide"); ACT_ID=null; }
+async function doPin(){
+  var id=ACT_ID, r=ACT_ROW, g=GEN; if(!id || !r || !sb) return;
+  $("actPin").disabled=true; $("actCancel").disabled=true; $("actMsg").textContent=r.pinned?"กำลังเอาหมุดออก…":"กำลังปักหมุด…";
+  try{
+    var q=await sb.rpc("hq_chat_pin",{p_message_id:id,p_pin:!r.pinned});
+    if(g!==GEN) return;
+    if(authErr(q.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }
+    if(q.error || q.data===false){ $("actMsg").textContent="ไม่สำเร็จ ลองใหม่"; $("actPin").disabled=false; $("actCancel").disabled=false; return; }
+    closeAct(); await load();
+  }catch(e){ console.warn("pin",e); if(g===GEN){ $("actMsg").textContent="เชื่อมต่อไม่ได้ ลองใหม่"; $("actPin").disabled=false; $("actCancel").disabled=false; } }
+}
+function closeAct(){ $("act").classList.add("hide"); ACT_ID=null; ACT_ROW=null; }
 async function doCancel(){
   var id=ACT_ID, g=GEN; if(!id || !sb) return;
   $("actCancel").disabled=true; $("actMsg").textContent="กำลังยกเลิก…";
@@ -492,7 +519,7 @@ async function load(){
     try{ await sb.rpc("hq_chat_ack_stale"); }catch(_e){}
     if(g!==GEN) return;
     var q=await sb.from("hq_chat_messages")
-      .select("id,sender,kind,body,body_format,link,link_label,posted_at")
+      .select("id,sender,kind,body,body_format,link,link_label,pinned,posted_at")
       .eq("room","hq").order("posted_at",{ascending:false}).order("id",{ascending:false}).limit(60);
     if(!READY || g!==GEN) return;   /* ระหว่างรอ สิทธิ์หลุด/เข้าใหม่แล้ว — ไม่วาดผลรุ่นเก่า */
     if(authErr(q.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; }   /* r2 (Codex ② r1 #2) */
@@ -527,18 +554,31 @@ async function load(){
 var PINS=[];
 var PIN_LINK_RE=/^https:\/\/kmmhtpl16-jpg\.github\.io\/kmmh-revenue\/index\.html\?cut=\d{4}-\d{2}-\d{2}$/;
 function dmy(s){ var p=String(s||"").split("-"); return p.length===3 ? (p[2]+"/"+p[1]) : ""; }
-function pinText(p){ return p.audited ? ("บิลพักรอคุณหลิง "+p.held+" ใบ (บิลวันที่ "+dmy(p.bill_day)+")") : ("บิลวันที่ "+dmy(p.bill_day)+" ยังไม่ได้ตรวจ"); }
+function pinText(p){
+  var who=p.sender==="owner" ? "คุณหลิง" : ((MEMBERS[p.sender]||{}).name||"ระบบ");
+  var t=decodeEnt(String(p.body||"").replace(/<[^>]*>/g,"")).replace(/\s+/g," ").trim();
+  return who+": "+(t.length>70 ? t.slice(0,70)+"…" : t);
+}
+function goPin(p){   /* ไปที่ข้อความ ถ้ายังอยู่ในหน้า · ไม่อยู่แล้วแต่มีลิงก์ของร้าน = เปิดลิงก์ */
+  closeMembers();
+  var el=document.getElementById("m"+p.id);
+  if(el){ el.scrollIntoView({block:"center",behavior:"smooth"}); el.classList.add("flash"); setTimeout(function(){ el.classList.remove("flash"); },1600); return; }
+  if(MSG_LINK_RE.test(String(p.link||""))) window.open(String(p.link),"_blank","noopener");
+  else fErr("ข้อความนี้เก่าเกินกว่าที่โหลดไว้ (แสดง 60 ข้อความล่าสุด)");
+}
 function safeLink(u){ return PIN_LINK_RE.test(String(u||"")) ? String(u) : "index.html"; }   /* ลิงก์จากฐานต้องเป็นหน้าตรวจรายได้เท่านั้น */
 function authErr(e){ return !!e && (e.code==="42501" || e.status===401 || e.status===403); }
 async function loadPins(g){
   if(!sb || !READY || g!==GEN) return;
-  var r=await sb.rpc("hq_chat_pins");
+  /* 19 พ.ย. 69: หมุด = ข้อความที่เจ้าของปักเอง (กดค้างที่ข้อความ) · ระบบเลิกปักบิลพักเอง */
+  var r=await sb.from("hq_chat_messages").select("id,sender,body,link,pinned_at")
+    .eq("room","hq").eq("pinned",true).order("pinned_at",{ascending:false}).limit(30);
   if(!READY || g!==GEN) return;                                        /* สิทธิ์หลุด/เข้าใหม่ระหว่างรอ — ไม่วาด */
   if(authErr(r.error)){ showGate("สิทธิ์หมดอายุ ใส่ PIN ใหม่"); return; } /* r2 (Codex ② r1 #2): ปิดหน้าทั้งหมด ไม่ใช่แค่หมุด */
   showPins(r.error ? [] : (r.data||[]));
 }
 function showPins(list){
-  PINS=(list||[]).filter(function(p){ return !p.audited || Number(p.held)>0; });
+  PINS=(list||[]);
   var bar=$("pinbar"), c=$("pinCount");
   c.textContent=PINS.length ? String(PINS.length) : "";
   if(!PINS.length){ bar.classList.add("hide"); bar.removeAttribute("href"); return; }
@@ -546,19 +586,21 @@ function showPins(list){
   bar.insertAdjacentHTML("beforeend",'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>');
   var t=document.createElement("span"); t.textContent=pinText(PINS[0]); bar.appendChild(t);
   var e=document.createElement("em");
-  if(PINS.length>1){ e.textContent="ดูทั้งหมด "+PINS.length; bar.removeAttribute("href"); bar.onclick=function(ev){ ev.preventDefault(); openPins(); }; }
-  else { e.textContent="เปิดการ์ด ›"; bar.href=safeLink(PINS[0].link); bar.onclick=null; }
+  bar.removeAttribute("href");
+  if(PINS.length>1){ e.textContent="ดูทั้งหมด "+PINS.length; bar.onclick=function(ev){ ev.preventDefault(); openPins(); }; }
+  else { e.textContent="ไปที่ข้อความ ›"; var p0=PINS[0]; bar.onclick=function(ev){ ev.preventDefault(); goPin(p0); }; }
   bar.appendChild(e);
   bar.classList.remove("hide");
 }
 function openPins(){
   var box=$("memList"); box.innerHTML="";
   $("members").querySelector(".shead b").textContent="ปักหมุด ("+PINS.length+")";
-  if(!PINS.length){ var n=document.createElement("p"); n.className="ntxt"; n.textContent="ไม่มีบิลพักค้าง"; box.appendChild(n); }
+  if(!PINS.length){ var n=document.createElement("p"); n.className="ntxt"; n.textContent="ยังไม่มีหมุด — กดค้างที่ข้อความเพื่อปักหมุด"; box.appendChild(n); }
   PINS.forEach(function(p){
-    var a=document.createElement("a"); a.className="prow"; a.href=safeLink(p.link); a.rel="noopener";
+    var a=document.createElement("a"); a.className="prow"; a.href="#"; 
+    a.onclick=function(ev){ ev.preventDefault(); goPin(p); };
     var t=document.createElement("span"); t.textContent="📌 "+pinText(p); a.appendChild(t);
-    var e=document.createElement("em"); e.textContent="เปิดการ์ด ›"; a.appendChild(e);
+    var e=document.createElement("em"); e.textContent="ไปที่ข้อความ ›"; a.appendChild(e);
     box.appendChild(a);
   });
   $("members").classList.remove("hide");

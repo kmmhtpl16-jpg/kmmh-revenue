@@ -114,7 +114,7 @@
     /* ยอดหักมัดจำต่อ RA สะสมจากทุกวัน (RA→บิล→ยอด · ภาพล่าสุดของคู่เดิมนับครั้งเดียว) */
     var snap={}; (acc.uses||[]).forEach(function(u){ var k=u.ra+"|"+u.bill; snap[k]=(snap[k]||0)+cents(u.amt); });   /* รวมแถวซ้ำในภาพวันนี้ก่อน (ฐานเดียวกับ depC) */
     Object.keys(snap).forEach(function(k){ var p=k.split("|"); (ctx.raUses[p[0]]=ctx.raUses[p[0]]||{})[p[1]]=snap[k]; });
-    var BOX={rcash:"เงินสดปลีก",scash:"ร้านค้าเงินสด",xfer:"โอน",credit:"ลงบัญชี",oldc:"บิลเก่าเงินสด",oldx:"บิลเก่าโอน",upk:"UPK"};
+    var BOX={rcash:"เงินสดปลีก",scash:"ร้านค้าเงินสด",xfer:"โอน",chqd:"เช็ค",credit:"ลงบัญชี",oldc:"บิลเก่าเงินสด",oldx:"บิลเก่าโอน",upk:"UPK"};
 
     /* ===== 0) ตรวจรูปแถว: ยอดต้องเป็นตัวเลข ≥ 0 · เลขบิลต้องมีใน ACC (ไม่มี = ติดธง ห้ามข้าม) ===== */
     Object.keys(BOX).forEach(function(k){ (f[k]||[]).forEach(function(r,i){
@@ -205,8 +205,14 @@
     rows("xfer").forEach(function(r){ var no=normBill(r.bill), both=!!(cents(r.kp)&&cents(r.ks));   /* both = แถวเดียวระบุสองบัญชี (ห้ามใช้กฎเลือกบัญชีผิด) */
       if(cents(r.kp)) X.push({bill:no, c:cents(r.kp), chs:["kp"], src:"โอน K+", split:both});
       if(cents(r.ks)) X.push({bill:no, c:cents(r.ks), chs:["ks"], src:"โอนกสิกร", split:both}); });
+    /* 20 พ.ย.69 (คุณหลิงสั่ง): เช็คไม่ต้องหาเงินในสเตทเมนต์ — ข้อมูลเช็คครบ + รูป = ตัดตามกฎ (เช็คเงินสด: เงินแยก ไม่อยู่ในใบนับ · เช็คเข้าบัญชี: ตามเงินเข้าทีหลัง แค่เตือน) */
+    var CHQK={cash:"เช็คเงินสด",acct:"เช็คเข้าบัญชี"};
+    function chqLine(lab,no,c,r){ var ok=/^\d{6,12}$/.test(String(r.chqNo||"")) && !!r.chqBank && /^\d{4}-\d{2}-\d{2}$/.test(String(r.chqDate||"")) && !!CHQK[r.chqKind], ip=String(r.chqImg||""), img=ip.indexOf(date+"/")===0 && /^\d{4}-\d{2}-\d{2}\/\d{10,16}-chq\.jpg$/.test(ip);
+      if(!ok||!img) line("hold","chq",lab+" "+no+" "+baht(c)+" จ่ายด้วยเช็ค แต่"+(!ok?"ข้อมูลเช็คไม่ครบ (เลขที่/ธนาคาร/วันที่/ชนิด)":"ไม่มีรูปเช็ค")+" — ไม่ตัดอัตโนมัติ",{bill:no});
+      else line("note","chq",lab+" "+no+" "+baht(c)+" "+CHQK[r.chqKind]+" "+r.chqBank+" "+r.chqNo+" ลงวันที่ "+dmy(r.chqDate)+" (มีรูป) — ไม่ใช่เงินสด/โอนของวัน"+(r.chqKind==="acct"?" · ตามเงินเข้าบัญชีทีหลัง":""),{bill:no}); }
+    rows("chqd").forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt); if(c) chqLine("บิล",no,c,r); });
     rows("oldx").forEach(function(r){ var no=normBill(r.bill), c=cents(r.amt); if(!c) return;
-      if(r.chq){ line("hold","xfer","บิลเก่า "+no+" "+baht(c)+" จ่ายด้วยเช็ค — หน้านี้ไม่ตรวจเช็ค ให้คุณหลิงกดในการ์ดตามทางเดิม",{bill:no}); return; }
+      if(r.chq){ chqLine("บิลเก่า",no,c,r); return; }
       var chs=r.ch==="kplus"?["kp"]:r.ch==="ksk"?["ks"]:["kp","ks"];
       X.push({bill:no, c:c, chs:chs, src:"บิลเก่าโอน"+(r.ch==="kplus"?" K+":r.ch==="ksk"?" กสิกร":" (ไม่ระบุบัญชี)"), old:true}); });
     (d.others||[]).forEach(function(o){ if(o.ch!=="xfer"||o._bad) return; var c=cents(o.amt);
@@ -350,6 +356,7 @@
     function addPaid(b,c,src){ (paid[b]=paid[b]||[]).push({c:c,src:src}); }
     rows("scash").forEach(function(r){ addPaid(normBill(r.bill),cents(r.amt),"เงินสด"); });
     rows("xfer").forEach(function(r){ addPaid(normBill(r.bill),cents(r.kp)+cents(r.ks),"โอน"); });
+    rows("chqd").forEach(function(r){ addPaid(normBill(r.bill),cents(r.amt),"เช็ค"); });
     rows("credit").forEach(function(r){ addPaid(normBill(r.bill),cents(r.amt),"ลงบัญชี"); });
     rows("upk").forEach(function(r){ addPaid(normBill(r.bill),cents(r.amt),"UPK"); });
     /* คืนเงินเพราะรับเกิน (kind overpay) → ยอดที่บิลได้จริง = ที่ลงรับ − ที่คืน */
@@ -402,7 +409,7 @@
       if(!full && sumOld[no]>cap) line("bad","old","บิลเก่า "+no+" ลงรับ "+baht(sumOld[no])+" เกินยอดบิลที่ต้องจ่าย "+baht(cap),{bill:no}); });
     rows("upk").forEach(function(r){ var no=normBill(r.bill), b=billOf(no); if(b && !/UPK/i.test(b.name||"")) line("bad","upk",no+" ลงกล่อง UPK แต่บิลเป็นของ "+(b.name||""),{bill:no}); });
 
-    ["scash","xfer","credit","upk","oldc","oldx"].forEach(function(k){ (f[k]||[]).forEach(function(r){ var no=normBill(r.bill); if(isKM(no)) ctx.seenBill[no]=ctx.seenBill[no]||date; }); });
+    ["scash","xfer","chqd","credit","upk","oldc","oldx"].forEach(function(k){ (f[k]||[]).forEach(function(r){ var no=normBill(r.bill); if(isKM(no)) ctx.seenBill[no]=ctx.seenBill[no]||date; }); });
 
     var lv=R.lines.some(function(l){return l.lv==="bad";})?"bad":R.lines.some(function(l){return l.lv==="hold";})?"hold":R.lines.some(function(l){return l.lv==="wait";})?"wait":"ok";
     R.status=lv;

@@ -7,7 +7,7 @@
   var EPOCH="2026-10-28", ROW_CAP=900;   /* EPOCH = ฟอร์มแรกที่ส่งในระบบ → ไล่ตรวจตั้งแต่ฟอร์มแรกทุกครั้ง ผลไม่ขึ้นกับช่วงที่เลือก (เงินก้อนละครั้งตลอดประวัติ) */
   function iso(dn){ return new Date(dn*864e5).toISOString().slice(0,10); }
   function dn(s){ var p=String(s).slice(0,10).split("-"); return Math.round(Date.UTC(+p[0],+p[1]-1,+p[2])/864e5); }
-  function billsIn(e){ var s={}; ["scash","xfer","credit","oldc","oldx","upk"].forEach(function(k){ (e[k]||[]).forEach(function(r){ var b=String(r.bill||"").trim().toUpperCase(); if(/^(KM|RA)\d{4}-\d{4}$/.test(b)) s[b]=1; }); });
+  function billsIn(e){ var s={}; ["scash","xfer","chqd","credit","oldc","oldx","upk"].forEach(function(k){ (e[k]||[]).forEach(function(r){ var b=String(r.bill||"").trim().toUpperCase(); if(/^(KM|RA)\d{4}-\d{4}$/.test(b)) s[b]=1; }); });
     (e.rcash||[]).forEach(function(r){ var b=String(r.ra||"").trim().toUpperCase(); if(/^RA\d{4}-\d{4}$/.test(b)) s[b]=1; }); return Object.keys(s); }
   async function must(q, what){ var r=await q; if(r.error) throw new Error((what||"ดึงข้อมูล")+": "+(r.error.message||String(r.error)));
     if(Array.isArray(r.data) && r.data.length>=ROW_CAP) throw new Error((what||"ดึงข้อมูล")+" มีแถวมากเกิน "+ROW_CAP+" — เลือกช่วงวันสั้นลง");

@@ -16,14 +16,14 @@
     (d.bills||[]).forEach(function(b){ acc.bills[b[0]]={code:b[2],name:b[3],date:b[1],total:+b[4]}; });
     (d.deps||[]).forEach(function(x){ acc.deps[x[0]]={code:x[2],name:x[3],date:x[1],total:+x[4],method:x[5]}; });
     return acc; }
-  function bills(e){ var out=[]; ["scash","xfer","credit","oldc","oldx","upk"].forEach(function(k){ (e[k]||[]).forEach(function(r){ if(r.bill&&out.indexOf(r.bill)<0) out.push(r.bill); }); }); return out; }
+  function bills(e){ var out=[]; ["scash","xfer","chqd","credit","oldc","oldx","upk"].forEach(function(k){ (e[k]||[]).forEach(function(r){ if(r.bill&&out.indexOf(r.bill)<0) out.push(r.bill); }); }); return out; }
   function clean(e){ /* ตัดแถวที่เลขบิลผิดรูปแบบ (ฟอร์มกันส่งไว้แล้ว แต่กันซ้ำอีกชั้น) */
     var o={rcash:e.rcash||[]}, bad=[];
     /* 26 ต.ค.69: แถวเปล่า (ไม่มีทั้งเลขบิลและยอด) ข้ามเงียบๆ · มียอดแต่ไม่มีเลขบิล = บอกเป็น "กล่อง แถว n ไม่มีเลขบิล (ยอด x)" (เดิมขึ้น "เลขบิลผิดรูปแบบ" แล้วว่าง อ่านไม่รู้เรื่อง) */
-    var BOX={scash:"ร้านค้าเงินสด",xfer:"โอน",credit:"ลงบัญชี",oldc:"บิลเก่า-เงินสด",oldx:"บิลเก่า-โอน",upk:"UPK"};
+    var BOX={scash:"ร้านค้าเงินสด",xfer:"โอน",chqd:"เช็ค",credit:"ลงบัญชี",oldc:"บิลเก่า-เงินสด",oldx:"บิลเก่า-โอน",upk:"UPK"};
     /* ช่องยอดที่มีค่า (ไม่ว่าง ไม่ใช่ 0 — ติดลบ/ตัวอักษรก็นับว่ามีค่า ไม่ข้ามเงียบ) */
     var vals=function(r){ return ["amt","kp","ks"].map(function(f){ return String(r&&r[f]!=null?r[f]:"").trim(); }).filter(function(v){ return v!=="" && +v.replace(/,/g,"")!==0; }); };
-    ["scash","xfer","credit","oldc","oldx","upk"].forEach(function(k){ o[k]=(e[k]||[]).map(function(r){ return Object.assign({},r,{bill:String(r.bill||"").trim()}); }).filter(function(r,i){ var b=r.bill, v=vals(r);
+    ["scash","xfer","chqd","credit","oldc","oldx","upk"].forEach(function(k){ o[k]=(e[k]||[]).map(function(r){ return Object.assign({},r,{bill:String(r.bill||"").trim()}); }).filter(function(r,i){ var b=r.bill, v=vals(r);
       if(!b&&!v.length) return false;
       var ok=CashierForm.BILL_RE.test(b); if(!ok) bad.push(b? b : BOX[k]+" แถว "+(i+1)+" ไม่มีเลขบิล (ยอด "+v.join(" / ")+")"); return ok; }); });
     return {e:o,bad:bad}; }
@@ -47,7 +47,7 @@
     var wb=CashierForm.buildWorkbook(XLSX,e,acc);
     /* แถวที่มียอดจริง (ไม่นับแถวเปล่า) + รายรับอื่น/คืนเงินของวัน · ใช้ตัดสินว่าร่างว่างไหม */
     var hasAmt=function(r){ return ["amt","kp","ks"].some(function(f){ return +String(r&&r[f]!=null?r[f]:"").replace(/,/g,"")>0; }); };
-    var nRows=["rcash","scash","xfer","credit","oldc","oldx","upk"].reduce(function(s,k){ return s+((c.e[k]||[]).filter(hasAmt).length); },0)+c.bad.length+e.other.length+e.refund.length;
+    var nRows=["rcash","scash","xfer","chqd","credit","oldc","oldx","upk"].reduce(function(s,k){ return s+((c.e[k]||[]).filter(hasAmt).length); },0)+c.bad.length+e.other.length+e.refund.length;
     return {row:f.data, wb:wb, done:done, miss:miss, bad:c.bad, nRows:nRows};
   }
   async function pull(ev){
@@ -80,7 +80,7 @@
     }catch(err){ msg("ดึงไม่สำเร็จ: "+esc((err&&err.message)||err),"#b91c1c"); }
   }
   /* ช่วงทดลองคู่ขนาน: เทียบไฟล์ Excel ที่อัป กับฟอร์มในโปรแกรมของวันเดียวกัน */
-  var FIELDS=[["cash","เงินสด (รวมมัดจำ)"],["knv","โอน K+NV"],["ksk","โอนกสิกร"],["acc","ลงบัญชี"],["upk","UPK"],["refund","คืนเงิน"],["old","บิลเก่า"],["otherCash","รายรับอื่นๆ เงินสด"],["otherXfer","รายรับอื่นๆ โอน"]];
+  var FIELDS=[["cash","เงินสด (รวมมัดจำ)"],["knv","โอน K+NV"],["ksk","โอนกสิกร"],["chq","รับเช็ค (บิลวันนี้)"],["acc","ลงบัญชี"],["upk","UPK"],["refund","คืนเงิน"],["old","บิลเก่า"],["otherCash","รายรับอื่นๆ เงินสด"],["otherXfer","รายรับอื่นๆ โอน"]];
   async function compareAfterUpload(){
     var fx=DATA&&DATA.form; if(!fx||!fx.date) return;
     var fn=(DATA._files&&DATA._files.form)||""; if(window.__cfPulling) return;

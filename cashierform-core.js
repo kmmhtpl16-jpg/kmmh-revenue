@@ -28,17 +28,19 @@
     var out=[];
     function chk(arr){ (arr||[]).forEach(function(r){ var b=r.bill; if(!b||!BILL_RE.test(b)) return;
       var ok=isRA(b)?(acc.deps&&acc.deps[b]):(acc.bills&&acc.bills[b]); if(!ok && out.indexOf(b)<0) out.push(b); }); }
-    chk(e.scash); chk(e.xfer); chk(e.credit); chk(e.oldc); chk(e.oldx); chk(e.upk);
+    chk(e.scash); chk(e.xfer); chk(e.chqd); chk(e.credit); chk(e.oldc); chk(e.oldx); chk(e.upk);
     return out;
   }
 
   /* ยอดรวมแบบใบปะหน้า */
   function totals(e, acc){
-    var t={cash:{r:0,s:0},knv:{r:0,s:0},ksk:{r:0,s:0},cr:{r:0,s:0},old:{c:{r:0,s:0},x:{r:0,s:0}},oc:0,ox:0,rc:0,rx:0,upk:0};
+    var t={cash:{r:0,s:0},knv:{r:0,s:0},ksk:{r:0,s:0},chq:{r:0,s:0},cr:{r:0,s:0},old:{c:{r:0,s:0},x:{r:0,s:0}},oc:0,ox:0,rc:0,rx:0,upk:0};
     var n2=function(v){ return r2(num(v)); };   /* ปัดทีละแถวก่อนรวม ให้ตรงกับยอดรายแถวที่ลงในชีต */
     (e.rcash||[]).forEach(function(r){ t.cash.r+=n2(r.amt); });
     (e.scash||[]).forEach(function(r){ t.cash.s+=n2(r.amt); });
     (e.xfer||[]).forEach(function(r){ var s=sideOf(r.bill,acc); t.knv[s]+=n2(r.kp); t.ksk[s]+=n2(r.ks); });
+    /* 20 พ.ย.69 เช็คของบิลวันนี้ (แท็บเช็ค) — เป็นยอดขายของวัน แต่ไม่ใช่เงินสด/โอน (ไม่อยู่ในเงินสดนำส่ง) */
+    (e.chqd||[]).forEach(function(r){ t.chq[sideOf(r.bill,acc)]+=n2(r.amt); });
     (e.credit||[]).forEach(function(r){ t.cr[sideOf(r.bill,acc)]+=n2(r.amt); });
     (e.oldc||[]).forEach(function(r){ t.old.c[sideOf(r.bill,acc)]+=n2(r.amt); });
     (e.oldx||[]).forEach(function(r){ t.old.x[sideOf(r.bill,acc)]+=n2(r.amt); });
@@ -67,6 +69,7 @@
       ["เงินสด (รวมมัดจำ)",r2(t.cash.r),r2(t.cash.s),S(t.cash)],
       ["โอน K+NV",r2(t.knv.r),r2(t.knv.s),S(t.knv)],
       ["โอนเข้าบัญชี กสิกร",r2(t.ksk.r),r2(t.ksk.s),S(t.ksk)],
+      ["รับเช็ค (บิลวันนี้)",r2(t.chq.r),r2(t.chq.s),S(t.chq)],   /* 20 พ.ย.69 — หน้าตรวจรายได้ (parseForm) นับเข้ายอดขายในฟอร์ม · ไฟล์ Excel เก่าไม่มีบรรทัดนี้ = 0 */
       ["ลงบัญชี รวมสั่งทำ",r2(t.cr.r),r2(t.cr.s),S(t.cr)],
       [null,"เงินสด","เงินโอน",null],
       ["รายรับอื่นๆ",r2(t.oc),r2(t.ox),r2(t.oc+t.ox)],
@@ -94,6 +97,11 @@
                b?i+1:null, b?b.bill:null, b&&num(b.kp)?r2(num(b.kp)):null, b&&num(b.ks)?r2(num(b.ks)):null]); }
     xo.push(["รวม",null,r2(t.knv.r),r2(t.ksk.r),null,"รวม",null,r2(t.knv.s),r2(t.ksk.s)]);
     add("โอน",xo,["H1"]);
+    /* 3b) เช็คของบิลวันนี้ — เลขบิล/ยอด/ชนิด/ธนาคาร/เลขเช็ค/วันที่บนเช็ค (อ่านดูอย่างเดียว · ตัวตัดบิลอ่านจากฟอร์มในโปรแกรมตรง) */
+    var cq=[["รับเช็ค (บิลวันนี้)",null,null,null,null,null,ser],["ลำดับ","เลขบิล","ยอดเงิน","ชนิด","ธนาคาร","เลขที่เช็ค","วันที่บนเช็ค"]];
+    (e.chqd||[]).forEach(function(r,i){ cq.push([i+1, r.bill, r2(num(r.amt)), r.chqKind==="cash"?"เช็คเงินสด":r.chqKind==="acct"?"เช็คเข้าบัญชี":"", r.chqBank||"", r.chqNo||"", r.chqDate||""]); });
+    cq.push([null,"ยอดรวม",r2(S(t.chq))]);
+    add("เช็ค",cq,["G1"]);
     /* 4) ลงบัญชี — ซ้าย B เลขบิล/C ยอด (ปลีก) · ขวา E ชื่อร้าน/F ยอด (ร้านค้า) · F1 = วันที่ */
     var cl=(e.credit||[]).filter(function(r){return sideOf(r.bill,acc)==="r";}), cs=(e.credit||[]).filter(function(r){return sideOf(r.bill,acc)==="s";});
     var cr=[["ลงบัญชี (รวมงานสั่งทำ)",null,null,null,null,ser],["ลำดับ","เลขบิล","ยอดเงิน",null,"สมาชิก/ร้านค้า","ยอดเงิน"]];

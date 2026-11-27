@@ -147,7 +147,7 @@ td.wdc select{max-width:210px}
 <main id="app" class="hide">
 <header>
   <h1>💼 การเงินบริษัท</h1>
-  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.11 (โอนคืนลูกค้าไม่นับเป็นรายจ่าย · เงินสดล้วน · ต้นทุนจาก ACC-BILLING · กระทบยอดใบสำคัญจ่ายรวมเงินเบิกสด · จับคู่โอนยอมต่าง ≤2 บาท)</span></div>
+  <div class="sub">กิจมั่งมีโฮม · รายรับ–รายจ่าย–กระแสเงินสด–กำไรขั้นต้น <span style="opacity:.6">· v4.14 (การ์ดกู้ UOB โชว์วันครบกำหนด · โอนคืนลูกค้าไม่นับเป็นรายจ่าย · เงินสดล้วน · ต้นทุนจาก ACC-BILLING · กระทบยอดใบสำคัญจ่ายรวมเงินเบิกสด · จับคู่โอนยอมต่าง ≤2 บาท)</span></div>
 </header>
 <div class="wrap">
   <nav class="topnav">
@@ -1227,19 +1227,35 @@ window.undoAdvanceMatch=async function(billId){
   await reloadAll(); tab("expense");
 };
 /* ================= 🏦 เงินกู้ UOB (จ่ายซัพด้วยกู้ UOB · จ่ายคืนหักดอกเบี้ย) ================= */
+/* วันครบกำหนดกู้ = uob_due_date (จากใบยืนยันกู้ TR) ถ้าไม่มี = วันกู้ + 90 วัน (กติกาเดียวกับ view acc_uob_loans) */
+function uobDue(b){
+  if(b.uob_due_date) return {d:String(b.uob_due_date).slice(0,10),est:false};
+  const base=String(b.uob_draw_date||b.exp_date||"").slice(0,10); if(!base) return {d:"",est:true};
+  const t=new Date(base+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+90);
+  return {d:t.toISOString().slice(0,10),est:true};
+}
+function uobDueCell(b){
+  const u=uobDue(b); if(!u.d) return '<td class="muted">—</td>';
+  const today=new Date(); const t0=Date.UTC(today.getFullYear(),today.getMonth(),today.getDate());
+  const left=Math.round((Date.parse(u.d+"T00:00:00Z")-t0)/86400000);
+  const col=left<0?"#dc2626":left<=14?"#b45309":"#57534e";
+  const txt=left<0?"เลยกำหนด "+(-left)+" วัน":left===0?"ครบวันนี้":"อีก "+left+" วัน";
+  return `<td style="white-space:nowrap">${beDate(u.d)}${u.est?' <span class="muted" title="ไม่มีวันครบจากใบยืนยันกู้ — ประมาณวันกู้+90 วัน">(ประมาณ)</span>':''}<div style="font-size:11px;color:${col};font-weight:${left<=14?700:400}">${txt}</div></td>`;
+}
 function buildUobHtml(){
   const loans=STATE.uobLoans||[];
   if(ROLE!=="owner") return "";
-  const out=loans.filter(b=>!b.uob_repay_date), paid=loans.filter(b=>b.uob_repay_date);
+  const out=loans.filter(b=>!b.uob_repay_date).sort((a,b)=>uobDue(a).d.localeCompare(uobDue(b).d)), paid=loans.filter(b=>b.uob_repay_date);
   const outTot=out.reduce((s,b)=>s+num(b.amount),0), intTot=paid.reduce((s,b)=>s+num(b.uob_interest),0);
   const paidTot=paid.reduce((s,b)=>s+num(b.amount),0);              /* เงินต้นที่ชำระแล้ว */
   const repaidTot=paid.reduce((s,b)=>s+num(b.uob_repay_amount),0);  /* ยอดโอนคืนจริง (ต้น+ดอก) */
   const outRows=out.length?out.map(b=>`<tr>
       <td>${beDate(b.exp_date)}</td><td>${esc(b.description||b.ref||"")}${b.source==="uob_manual"?' <span class="chip" style="background:#a78bfa;color:#fff">เพิ่มเอง</span>':''}</td>
       <td class="n">${TH(num(b.amount))}</td>
+      ${uobDueCell(b)}
       <td><button class="btn sm gray" onclick="repayUobManual('${b.id}')">💵 บันทึกจ่ายคืน</button>
           <button class="btn sm red" onclick="undoUobLoan('${b.id}')">${b.source==="uob_manual"?"ลบ":"ยกเลิก"}</button></td></tr>`).join("")
-    :`<tr><td colspan="4" class="muted">— ไม่มีหนี้ค้าง —</td></tr>`;
+    :`<tr><td colspan="5" class="muted">— ไม่มีหนี้ค้าง —</td></tr>`;
   const paidRows=paid.map(b=>`<tr>
       <td>${beDate(b.uob_repay_date)}</td><td>${esc(b.description||b.ref||"")}</td>
       <td class="n">${TH(num(b.amount))}</td><td class="n">${TH(num(b.uob_repay_amount))}</td>
@@ -1259,7 +1275,7 @@ function buildUobHtml(){
     </div>
     <div class="note">บิลที่จ่ายซัพด้วยเงินกู้ UOB (เงินต้น = ยอดบิล) · จ่ายคืนโดยกด "🏦 คืนกู้ UOB" ที่รายการเงินออกจากสเตทเมนต์วันที่โอนคืน — ระบบหักส่วนต่างเป็น <b>ดอกเบี้ย</b> อัตโนมัติ (ดอกเบี้ยลงเป็นค่าใช้จ่าย · เงินต้นไม่นับซ้ำต้นทุน · เงินโอนคืนถูกตัดออกจากยอดรวมกันนับซ้ำ)</div>
     <div class="scroll"><table>
-      <thead><tr><th>วันที่บิล</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้</th><th></th></tr></thead>
+      <thead><tr><th>วันที่กู้</th><th>ผู้ขาย/บิล</th><th class="n">ยอดกู้</th><th>ครบกำหนด</th><th></th></tr></thead>
       <tbody>${outRows}</tbody></table></div>
     <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #c4b5fd">
       <b style="color:#5b21b6">➕ เพิ่มหนี้กู้ UOB เอง (ก้อนที่ไม่มีบิลในระบบ)</b>
@@ -1267,6 +1283,7 @@ function buildUobHtml(){
         <input type="date" id="uobm_date" class="sm" value="${gTo()}">
         <input id="uobm_desc" class="sm" placeholder="ผู้ขาย / หมายเหตุ (เช่น กู้ก้อน พ.ค.69)" style="min-width:230px">
         <input id="uobm_amt" class="sm" placeholder="ยอดกู้ (เงินต้น)" style="width:150px" inputmode="decimal">
+        <label class="muted" style="font-size:12px">ครบกำหนด <input type="date" id="uobm_due" class="sm" title="ดูจาก Maturity Date ในใบยืนยันกู้ TR · เว้นว่าง = วันกู้+90 วัน"></label>
         <button class="btn sm" style="background:#7c3aed;color:#fff" onclick="addUobLoanManual()">บันทึกหนี้กู้</button>
       </div>
       <div class="muted" style="font-size:12px;margin-top:4px">ใช้กับหนี้กู้ที่<b>ไม่มีบิลซื้อในระบบ</b> (เช่น ก้อนที่กู้ก่อนเริ่มใช้ระบบ) — บันทึกเป็น<b>หนี้อย่างเดียว ไม่นับเป็นรายจ่าย/ต้นทุน</b> · พอโอนคืนแล้วกด "🏦 คืนกู้ UOB" ที่รายการเงินออกวันที่โอน ระบบจะหักดอกเบี้ยให้เอง</div>
@@ -1333,8 +1350,10 @@ window.addUobLoanManual=async function(){
   const amt=r2((document.getElementById("uobm_amt")||{}).value);
   if(!desc){ alert("ใส่ผู้ขาย/หมายเหตุด้วย จะได้รู้ว่าเป็นก้อนไหน"); return; }
   if(!(amt>0)){ alert("ยอดกู้ไม่ถูกต้อง"); return; }
-  if(!confirm(`เพิ่มหนี้เงินกู้ UOB เอง?\n\nวันที่กู้: ${beDate(d)}\nรายละเอียด: ${desc}\nเงินต้น: ${TH(amt)} บาท\n\n• บันทึกเป็นหนี้อย่างเดียว ไม่นับเป็นรายจ่าย/ต้นทุน\n• ไปโผล่ใน "หนี้เงินกู้ UOB คงเหลือ" รอจ่ายคืน`)) return;
-  const {error}=await sb.from("rev_expenses").insert([{exp_date:d,category:"เงินกู้ UOB (ไม่ผูกบิล)",description:desc,amount:amt,source:"uob_manual",is_cogs:false,pay_status:"paid",paid_date:d,uob_loan:true,created_by:"owner"}]);
+  const due=(document.getElementById("uobm_due")||{}).value||"";
+  if(due && due<=d){ alert("วันครบกำหนดต้องอยู่หลังวันที่กู้"); return; }
+  if(!confirm(`เพิ่มหนี้เงินกู้ UOB เอง?\n\nวันที่กู้: ${beDate(d)}\nรายละเอียด: ${desc}\nเงินต้น: ${TH(amt)} บาท\nครบกำหนด: ${due?beDate(due):"(ไม่ใส่ — ประมาณวันกู้+90 วัน)"}\n\n• บันทึกเป็นหนี้อย่างเดียว ไม่นับเป็นรายจ่าย/ต้นทุน\n• ไปโผล่ใน "หนี้เงินกู้ UOB คงเหลือ" รอจ่ายคืน`)) return;
+  const {error}=await sb.from("rev_expenses").insert([{exp_date:d,category:"เงินกู้ UOB (ไม่ผูกบิล)",description:desc,amount:amt,source:"uob_manual",is_cogs:false,pay_status:"paid",paid_date:d,uob_loan:true,uob_draw_date:d,uob_due_date:due||null,created_by:"owner"}]);
   if(error){ alert("บันทึกไม่สำเร็จ: "+error.message); return; }
   await reloadAll(); tab("expense");
 };
